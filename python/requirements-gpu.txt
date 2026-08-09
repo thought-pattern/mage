@@ -1,5 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cu126
-boto3==1.36.23
+boto3==1.43.67
 defusedxml==0.7.1
 duckdb==1.2.1
 elasticsearch==8.17.0
@@ -24,4 +24,4 @@ scipy==1.13.1
 sentence-transformers==5.1.1
 six==1.17.0
 torch==2.6.0
-torchmetrics==0.10.0 
+torchmetrics==0.10.0
