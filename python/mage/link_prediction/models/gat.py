@@ -1,11 +1,17 @@
-import dgl
-import torch
-from dgl.nn.pytorch import GATConv
-from dgl.nn import HeteroGraphConv
+"""Utilities for gat."""
+
 from typing import Dict, List
 
+from dgl import graph as dgl_graph
+from dgl.nn import HeteroGraphConv
+from dgl.nn.pytorch import GATConv
+from torch import Tensor as torch_Tensor
+from torch import device as torch_device
+from torch import mean as torch_mean
+from torch import nn as torch_nn
 
-class GAT(torch.nn.Module):
+
+class GAT(torch_nn.Module):
     def __init__(
         self,
         in_feats: int,
@@ -16,7 +22,7 @@ class GAT(torch.nn.Module):
         alphas: List[float],
         residuals: List[bool],
         edge_types: List[str],
-        device: torch.device,
+        device: torch_device,
     ):
         """Initializes GAT module with layer sizes.
 
@@ -31,13 +37,13 @@ class GAT(torch.nn.Module):
             edge_types (List[str]): All edge types that are occurring in the heterogeneous network.
         """
         super(GAT, self).__init__()
-        self.layers = torch.nn.ModuleList()
+        self.layers = torch_nn.ModuleList()
         self.num_layers = len(hidden_features_size)
         # Define activations
         activations = [
-            torch.nn.functional.elu for _ in range(self.num_layers - 1)
+            torch_nn.functional.elu for _ in range(self.num_layers - 1)
         ]  # All activations except last layer
-        activations.append(None)
+        activations.append(False)
         # Iterate through all layers
         for i in range(self.num_layers):
             gat_layer = GATConv(
@@ -54,32 +60,30 @@ class GAT(torch.nn.Module):
 
             self.layers.append(
                 HeteroGraphConv(
-                    {edge_type: gat_layer for edge_type in edge_types}, aggregate="sum"
+                    dict.fromkeys(edge_types, gat_layer), aggregate="sum"
                 ).to(device)
             )
             in_feats = hidden_features_size[i]
 
     def forward(
-        self, blocks: List[dgl.graph], h: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
-        """Performs forward pass on batches.
-
-        Args:
-            blocks (List[dgl.heterograph.DGLBlock]): First block is DGLBlock of all nodes that are needed to compute representations for second block. Second block is sampled graph.
-            h (Dict[str, torch.Tensor]): Input features for every node type.
-
-        Returns:
-            Dict[str, torch.Tensor]: Embeddings for every node type.
-        """
+        self, blocks: List[dgl_graph], h: Dict[str, torch_Tensor]
+    ) -> Dict[str, torch_Tensor]:
+        (
+            "Performs forward pass on batches.\n\n        Args:\n            blocks (List[dgl.heterograph.DG"  # Continue literal.
+            "LBlock]): First block is DGLBlock of all nodes that are needed to compute representations fo"  # Continue literal.
+            "r second block. Second block is sampled graph.\n            h (Dict[str, torch.Tensor]): Inpu"  # Continue literal.
+            "t features for every node type.\n\n        Returns:\n            Dict[str, torch.Tensor]: Embed"  # Continue literal.
+            "dings for every node type.\n"
+        )
         for index, layer in enumerate(self.layers):
             h = layer(blocks[index], h)
-            h = {k: torch.mean(v, dim=1) for k, v in h.items()}
+            h = {k: torch_mean(v, dim=1) for k, v in h.items()}
 
         return h
 
     def online_forward(
-        self, graph: dgl.graph, h: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
+        self, graph: dgl_graph, h: Dict[str, torch_Tensor]
+    ) -> Dict[str, torch_Tensor]:
         """Performs forward pass on batches.
 
         Args:
@@ -91,6 +95,6 @@ class GAT(torch.nn.Module):
         """
         for layer in self.layers:
             h = layer(graph, h)
-            h = {k: torch.mean(v, dim=1) for k, v in h.items()}
+            h = {k: torch_mean(v, dim=1) for k, v in h.items()}
 
         return h

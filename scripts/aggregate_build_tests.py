@@ -1,9 +1,11 @@
-import subprocess
-import json
+"""Utilities for aggregate build tests."""
+
+from argparse import ArgumentParser as argparse_ArgumentParser
+from json import dumps as json_dumps
+from os import getenv as os_getenv
+from subprocess import run as subprocess_run
 from typing import List
-import os
 from urllib.parse import quote
-import argparse
 
 
 def list_build_files(date: int, image_type: str = "mage") -> List[str]:
@@ -22,14 +24,16 @@ def list_build_files(date: int, image_type: str = "mage") -> List[str]:
     files: list[str]
         list of package s3 keys for this date
     """
-    p = subprocess.run(
+    p = subprocess_run(
         [
-            "aws", "s3", "ls",
+            "aws",
+            "s3",
+            "ls",
             f"s3://deps.memgraph.io/daily-build/{image_type}/{date}/",
-            "--recursive"
+            "--recursive",
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     # extract the file keys found
@@ -72,7 +76,7 @@ def parse_file_os_arch(file, image_type):
 
         if "cuda" in file:
             arch = f"{arch}-cuda"
-            
+
     elif image_type == "memgraph":
         if "aarch64" in file:
             arch = "arm64"
@@ -85,13 +89,11 @@ def parse_file_os_arch(file, image_type):
         if "malloc" in file:
             arch = f"{arch}-malloc"
 
-        os = file.split("/")[3].replace(
-            "-malloc", ""
-        ).replace(
-            "-aarch64", ""
-        ).replace(
-            "-relwithdebinfo",
-            ""
+        os = (
+            file.split("/")[3]
+            .replace("-malloc", "")
+            .replace("-aarch64", "")
+            .replace("-relwithdebinfo", "")
         )
     else:
         raise ValueError(f"Unsupported image_type: {image_type}")
@@ -99,7 +101,9 @@ def parse_file_os_arch(file, image_type):
     return os, arch
 
 
-def build_package_json(files: List[str], return_url: bool = True, image_type: str = "mage") -> dict:
+def build_package_json(
+    files: List[str], return_url: bool = True, image_type: str = "mage"
+) -> dict:
     """
     Extracts the OS and CPU architecture and builds the dict/json used by the
     daily-builds workflow
@@ -128,8 +132,7 @@ def build_package_json(files: List[str], return_url: bool = True, image_type: st
     for file in files:
         if return_url:
             url = quote(
-                f"https://s3.eu-west-1.amazonaws.com/deps.memgraph.io/{file}",
-                safe=":/"
+                f"https://s3.eu-west-1.amazonaws.com/deps.memgraph.io/{file}", safe=":/"
             )
         else:
             url = file
@@ -139,12 +142,14 @@ def build_package_json(files: List[str], return_url: bool = True, image_type: st
         if os not in out:
             out[os] = {}
 
-        out[os][arch] = url
+        out.get(os, {})[arch] = url
 
     return out
 
 
-def list_daily_release_packages(date: int, return_url: bool = True, image_type: str = "mage") -> dict:
+def list_daily_release_packages(
+    date: int, return_url: bool = True, image_type: str = "mage"
+) -> dict:
     """
     returns dict containing all packages for a specific date
 
@@ -176,7 +181,7 @@ def list_daily_release_packages(date: int, return_url: bool = True, image_type: 
     return packages
 
 
-def main(image_type: str) -> None:
+def main(image_type: str) -> bool:
     """
     Collect BUILD_TEST_RESULTS, CURRENT_BUILD_DATE, s3 keys of packages and
     build a JSON payload to be sent to the daily build repo workflow
@@ -197,10 +202,10 @@ def main(image_type: str) -> None:
     }
     """
 
-    date = int(os.getenv("CURRENT_BUILD_DATE"))
+    date = int(os_getenv("CURRENT_BUILD_DATE"))
 
     # TODO: add individual test results and URL to each one
-    tests = os.getenv("TEST_RESULT")
+    tests = os_getenv("TEST_RESULT")
 
     # collect packages part of the payload
     packages = list_daily_release_packages(date, image_type=image_type)
@@ -211,20 +216,19 @@ def main(image_type: str) -> None:
         "client_payload": {
             "table": "mage",
             "limit": 42,
-            "build_data": {
-                "date": date,
-                "tests": tests,
-                "packages": packages
-            }
-        }
+            "build_data": {"date": date, "tests": tests, "packages": packages},
+        },
     }
-    payload = json.dumps(payload)
+    payload = json_dumps(payload)
     print(payload)
+    return False
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('image_type', type=str, choices=['memgraph', 'mage'], default='mage')
+    parser = argparse_ArgumentParser()
+    parser.add_argument(
+        "image_type", type=str, choices=["memgraph", "mage"], default="mage"
+    )
     args = parser.parse_args()
 
     main(args.image_type)

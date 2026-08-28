@@ -1,10 +1,11 @@
+"""Utilities for second order random walk."""
+
 from typing import List
 
-import numpy as np
+from numpy import random as np_random
+from utils import math_functions
 
 from mage.node2vec.graph import Graph
-
-from utils import math_functions
 
 
 class SecondOrderRandomWalk:
@@ -42,7 +43,7 @@ class SecondOrderRandomWalk:
         self.set_graph_transition_probs(graph)
         walks = []
         for node in graph.nodes:
-            for i in range(self.num_walks):
+            for _i in range(self.num_walks):
                 walks.append(self.sample_walk(graph, node))
 
         return walks
@@ -74,16 +75,16 @@ class SecondOrderRandomWalk:
 
             if len(walk) == 1:
                 walk.append(
-                    np.random.choice(
+                    np_random.choice(
                         node_neighbors,
-                        p=graph.get_node_first_pass_transition_probs((current_node_id)),
+                        p=graph.get_node_first_pass_transition_probs(current_node_id),
                     )
                 )
                 continue
 
             previous_node_id = walk[-2]
 
-            next = np.random.choice(
+            next = np_random.choice(
                 node_neighbors,
                 p=graph.get_edge_transition_probs(
                     edge=(previous_node_id, current_node_id)
@@ -93,7 +94,7 @@ class SecondOrderRandomWalk:
             walk.append(next)
         return walk
 
-    def set_first_pass_transition_probs(self, graph: Graph) -> None:
+    def set_first_pass_transition_probs(self, graph: Graph) -> bool:
         """
         Calculates and sets first pass transition probs in graph.
 
@@ -109,6 +110,7 @@ class SecondOrderRandomWalk:
             graph.set_node_first_pass_transition_probs(
                 source_node_id, math_functions.normalize(unnormalized_probs)
             )
+        return False
 
     def calculate_edge_transition_probs(
         self, graph: Graph, src_node_id: int, dest_node_id: int
@@ -143,9 +145,10 @@ class SecondOrderRandomWalk:
             else:
                 unnorm_trans_probs.append(edge_weight / self.q)
 
-        return math_functions.normalize(unnorm_trans_probs)
+        _return_value = math_functions.normalize(unnorm_trans_probs)
+        return _return_value
 
-    def set_graph_transition_probs(self, graph: Graph) -> None:
+    def set_graph_transition_probs(self, graph: Graph) -> bool:
         """
         Sets first graph transition probs in graph.
 
@@ -164,3 +167,4 @@ class SecondOrderRandomWalk:
                 (node_to, node_from),
                 self.calculate_edge_transition_probs(graph, node_to, node_from),
             )
+        return False

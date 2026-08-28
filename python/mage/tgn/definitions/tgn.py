@@ -1,52 +1,68 @@
-import numpy as np
-import torch
-import torch.nn as nn
+"""Utilities for tgn."""
+
+from typing import Dict, List, Tuple
+
+from numpy import array as np_array
+from numpy import float32 as np_float32
+from numpy import issubdtype as np_issubdtype
+from numpy import ndarray as np_ndarray
+from torch import Tensor as torch_Tensor
+from torch import concat as torch_concat
+from torch import device as torch_device
+from torch import flatten as torch_flatten
+from torch import nn
+from torch import rand as torch_rand
+from torch import tensor as torch_tensor
+from torch import zeros as torch_zeros
 
 from mage.tgn.constants import (
-    TGNLayerType,
-    MessageFunctionType,
     MemoryUpdaterType,
     MessageAggregatorType,
+    MessageFunctionType,
+    TGNLayerType,
 )
-from mage.tgn.definitions.events import Event, InteractionEvent, NodeEvent
+from mage.tgn.definitions.events import (
+    Event,
+    InteractionEvent,
+    NodeEvent,
+    create_interaction_events,
+)
 from mage.tgn.definitions.memory import Memory
-from mage.tgn.definitions.memory_updater import MemoryUpdaterGRU, MemoryUpdaterRNN
+from mage.tgn.definitions.memory_updater import (
+    MemoryUpdater,
+    MemoryUpdaterGRU,
+    MemoryUpdaterRNN,
+)
 from mage.tgn.definitions.message_aggregator import (
-    MeanMessageAggregator,
     LastMessageAggregator,
+    MeanMessageAggregator,
     MessageAggregator,
 )
 from mage.tgn.definitions.message_function import (
-    MessageFunctionMLP,
-    MessageFunctionIdentity,
     MessageFunction,
+    MessageFunctionIdentity,
+    MessageFunctionMLP,
 )
 from mage.tgn.definitions.messages import (
-    RawMessage,
-    NodeRawMessage,
     InteractionRawMessage,
+    NodeRawMessage,
+    RawMessage,
 )
 from mage.tgn.definitions.raw_message_store import RawMessageStore
 from mage.tgn.definitions.temporal_neighborhood import TemporalNeighborhood
 from mage.tgn.definitions.time_encoding import TimeEncoder
-
-from typing import List, Dict, Tuple, Union
-
-from mage.tgn.definitions.memory_updater import MemoryUpdater
-
-from mage.tgn.definitions.events import create_interaction_events
 
 GraphSumDataType = Tuple[
     List[List[Tuple[int, int]]],
     List[Dict[Tuple[int, int], int]],
     List[List[int]],
     List[List[Tuple[int, int]]],
-    torch.Tensor,
-    List[torch.Tensor],
-    List[torch.Tensor],
+    torch_Tensor,
+    List[torch_Tensor],
+    List[torch_Tensor],
 ]
-GraphAttnDataType = Tuple[GraphSumDataType, torch.Tensor]
-GraphDataType = Union[GraphSumDataType, GraphAttnDataType]
+GraphAttnDataType = Tuple[GraphSumDataType, torch_Tensor]
+GraphDataType = object
 
 
 class TGN(nn.Module):
@@ -63,7 +79,7 @@ class TGN(nn.Module):
         edge_message_function_type: MessageFunctionType,
         message_aggregator_type: MessageAggregatorType,
         memory_updater_type: MemoryUpdaterType,
-        device: torch.device,
+        device: torch_device,
     ):
         super().__init__()
         self.num_of_layers = num_of_layers
@@ -76,8 +92,8 @@ class TGN(nn.Module):
 
         self.num_neighbors = num_neighbors
 
-        self.edge_features: Dict[int, torch.Tensor] = {}
-        self.node_features: Dict[int, torch.Tensor] = {}
+        self.edge_features: Dict[int, torch_Tensor] = {}
+        self.node_features: Dict[int, torch_Tensor] = {}
 
         self.temporal_neighborhood = TemporalNeighborhood()
 
@@ -144,41 +160,45 @@ class TGN(nn.Module):
             out_dimension=self.time_dimension, device=self.device
         )
 
-    def detach_tensor_grads(self) -> None:
+    def detach_tensor_grads(self) -> bool:
         self.memory.detach_tensor_grads()
         self.raw_message_store.detach_grads()
+        return False
 
     def init_memory(self):
         self.memory.init_memory()
+        return False
 
     def init_temporal_neighborhood(self):
         self.temporal_neighborhood.init_temporal_neighborhood()
+        return False
 
     def init_message_store(self):
         self.raw_message_store.init_message_store()
+        return False
 
     def forward(
         self,
         data: Tuple[
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            Dict[int, torch.Tensor],
-            Dict[int, torch.Tensor],
+            np_ndarray,
+            np_ndarray,
+            np_ndarray,
+            np_ndarray,
+            Dict[int, torch_Tensor],
+            Dict[int, torch_Tensor],
         ],
     ):
         raise Exception("Not implemented")
 
     def _process_current_batch(
         self,
-        sources: np.array,
-        destinations: np.array,
-        node_features: Dict[int, torch.Tensor],
-        edge_features: Dict[int, torch.Tensor],
-        edge_idxs: np.array,
-        timestamps: np.array,
-    ) -> None:
+        sources: np_array,
+        destinations: np_array,
+        node_features: Dict[int, torch_Tensor],
+        edge_features: Dict[int, torch_Tensor],
+        edge_idxs: np_array,
+        timestamps: np_array,
+    ) -> bool:
         self._update_raw_message_store_current_batch(
             sources=sources,
             destinations=destinations,
@@ -200,8 +220,9 @@ class TGN(nn.Module):
 
         for node_id, node_feature in node_features.items():
             self.node_features[node_id] = node_feature
+        return False
 
-    def _process_previous_batches(self) -> None:
+    def _process_previous_batches(self) -> bool:
         # dict nodeid -> List[event]
         raw_messages = self.raw_message_store.get_messages()
 
@@ -214,16 +235,17 @@ class TGN(nn.Module):
         )
 
         self._update_memory(aggregated_messages)
+        return False
 
     def _update_raw_message_store_current_batch(
         self,
-        sources: np.array,
-        destinations: np.array,
-        timestamps: np.array,
-        edge_idxs: np.array,
-        edge_features: Dict[int, torch.Tensor],
-        node_features: Dict[int, torch.Tensor],
-    ) -> None:
+        sources: np_array,
+        destinations: np_array,
+        timestamps: np_array,
+        edge_idxs: np_array,
+        edge_features: Dict[int, torch_Tensor],
+        node_features: Dict[int, torch_Tensor],
+    ) -> bool:
         interaction_events: Dict[int, List[Event]] = create_interaction_events(
             sources=sources,
             destinations=destinations,
@@ -241,6 +263,7 @@ class TGN(nn.Module):
         )
 
         self.raw_message_store.update_messages(raw_messages)
+        return False
 
     def _create_node_events(
         self,
@@ -250,13 +273,13 @@ class TGN(nn.Module):
     def _create_messages(
         self,
         raw_messages: Dict[int, List[RawMessage]],
-    ) -> Dict[int, List[torch.Tensor]]:
+    ) -> Dict[int, List[torch_Tensor]]:
         processed_messages_dict = {node: [] for node in raw_messages}
         for node in raw_messages:
-            for message in raw_messages[node]:
+            for message in raw_messages.get(node, False):
                 if type(message) is NodeRawMessage:
                     node_raw_message = message
-                    processed_messages_dict[node].append(
+                    processed_messages_dict.get(node, []).append(
                         self.node_message_function(
                             (
                                 node_raw_message.source_memory,
@@ -268,7 +291,7 @@ class TGN(nn.Module):
                 elif type(message) is InteractionRawMessage:
                     interaction_raw_message = message
 
-                    processed_messages_dict[node].append(
+                    processed_messages_dict.get(node, []).append(
                         self.edge_message_function(
                             (
                                 interaction_raw_message.source_memory,
@@ -285,48 +308,48 @@ class TGN(nn.Module):
     def _create_raw_messages(
         self,
         events: Dict[int, List[Event]],
-        node_features: Dict[int, torch.Tensor],
-        edge_features: Dict[int, torch.Tensor],
+        node_features: Dict[int, torch_Tensor],
+        edge_features: Dict[int, torch_Tensor],
     ) -> Dict[int, List[RawMessage]]:
         raw_messages = {node: [] for node in events}
         for node in events:
-            for event in events[node]:
+            for event in events.get(node, False):
                 assert node == event.source
                 if type(event) is NodeEvent:
-                    raw_messages[node].append(
+                    raw_messages.get(node, []).append(
                         NodeRawMessage(
                             source_memory=self.memory.get_node_memory(node),
                             timestamp=event.timestamp,
-                            node_features=node_features[node],
+                            node_features=node_features.get(node, False),
                             source=node,
                         )
                     )
                 elif type(event) is InteractionEvent:
                     # every interaction event creates two raw messages
-                    raw_messages[event.source].append(
+                    raw_messages.get(event.source, []).append(
                         InteractionRawMessage(
                             source_memory=self.memory.get_node_memory(event.source),
                             timestamp=event.timestamp,
                             dest_memory=self.memory.get_node_memory(event.dest),
                             source=node,
-                            edge_features=edge_features[event.edge_idx],
-                            delta_time=torch.tensor(
-                                np.array(event.timestamp).astype("float"),
+                            edge_features=edge_features.get(event.edge_idx, False),
+                            delta_time=torch_tensor(
+                                np_array(event.timestamp).astype("float"),
                                 requires_grad=True,
                                 device=self.device,
                             )
                             - self.memory.get_last_node_update(event.source),
                         )
                     )
-                    raw_messages[event.dest].append(
+                    raw_messages.get(event.dest, []).append(
                         InteractionRawMessage(
                             source_memory=self.memory.get_node_memory(event.dest),
                             timestamp=event.timestamp,
                             dest_memory=self.memory.get_node_memory(event.source),
                             source=event.dest,
-                            edge_features=edge_features[event.edge_idx],
-                            delta_time=torch.tensor(
-                                np.array(event.timestamp).astype("float"),
+                            edge_features=edge_features.get(event.edge_idx, False),
+                            delta_time=torch_tensor(
+                                np_array(event.timestamp).astype("float"),
                                 requires_grad=True,
                                 device=self.device,
                             )
@@ -339,27 +362,28 @@ class TGN(nn.Module):
 
     def _aggregate_messages(
         self,
-        processed_messages: Dict[int, List[torch.Tensor]],
-    ) -> Dict[int, torch.Tensor]:
-        aggregated_messages = {node: None for node in processed_messages}
+        processed_messages: Dict[int, List[torch_Tensor]],
+    ) -> Dict[int, torch_Tensor]:
+        aggregated_messages = dict.fromkeys(processed_messages, False)
         for node in processed_messages:
             aggregated_messages[node] = self.message_aggregator(
-                processed_messages[node]
+                processed_messages.get(node, False)
             )
         return aggregated_messages
 
-    def _update_memory(self, messages) -> None:
+    def _update_memory(self, messages) -> bool:
         for node in messages:
             updated_memory = self.memory_updater(
                 (messages[node], self.memory.get_node_memory(node))
             )
 
             # here we use flatten to get shape (memory_dim,)
-            updated_memory = torch.flatten(updated_memory)
+            updated_memory = torch_flatten(updated_memory)
             self.memory.set_node_memory(node, updated_memory)
+        return False
 
     def _form_computation_graph(
-        self, nodes: np.array, timestamps: np.array
+        self, nodes: np_array, timestamps: np_array
     ) -> Tuple[
         List[List[Tuple[int, int]]],
         List[Dict[Tuple[int, int], int]],
@@ -405,14 +429,14 @@ class TGN(nn.Module):
                 This is used here, where on index 0 of global_neighbor array are temporal neighbors of (node,timestamp)
                 from node_layers[0]
         """
-        assert np.issubdtype(
-            timestamps[0], int
-        ), f"Expected int type for timestamps, got {type(timestamps[0])}"
+        assert np_issubdtype(timestamps[0], int), (
+            f"Expected int type for timestamps, got {type(timestamps[0])}"
+        )
 
-        node_layers = [[(n, t) for (n, t) in zip(nodes, timestamps)]]
+        node_layers = [[(n, t) for (n, t) in zip(nodes, timestamps, strict=False)]]
 
         sampled_neighborhood: Dict[
-            Tuple[int, int], Tuple[np.array, np.array, np.array]
+            Tuple[int, int], Tuple[np_array, np_array, np_array]
         ] = {}
 
         for _ in range(self.num_of_layers):
@@ -421,17 +445,23 @@ class TGN(nn.Module):
 
             node_arr = []
             for v, t in cur_arr:
-                (neighbors, edge_idxs, timestamps,) = (
+                (
+                    neighbors,
+                    edge_idxs,
+                    timestamps,
+                ) = (
                     self.temporal_neighborhood.get_neighborhood(
                         v, t, self.num_neighbors
                     )
                     if (v, t) not in sampled_neighborhood
-                    else sampled_neighborhood[(v, t)]
+                    else sampled_neighborhood.get((v, t), False)
                 )
 
                 sampled_neighborhood[(v, t)] = (neighbors, edge_idxs, timestamps)
 
-                node_arr.extend([(ni, ti) for (ni, ti) in zip(neighbors, timestamps)])
+                node_arr.extend(
+                    [(ni, ti) for (ni, ti) in zip(neighbors, timestamps, strict=False)]
+                )
             cur_arr.extend(node_arr)
             cur_arr = list(set(cur_arr))
             node_layers.append(cur_arr)
@@ -444,10 +474,14 @@ class TGN(nn.Module):
         global_edge_indexes = []
         global_timestamps = []
         for v, t in node_layers[0]:
-            (neighbors, edge_idxs, timestamps,) = (
+            (
+                neighbors,
+                edge_idxs,
+                timestamps,
+            ) = (
                 self.temporal_neighborhood.get_neighborhood(v, t, self.num_neighbors)
                 if (v, t) not in sampled_neighborhood
-                else sampled_neighborhood[(v, t)]
+                else sampled_neighborhood.get((v, t), False)
             )
 
             sampled_neighborhood[(v, t)] = (neighbors, edge_idxs, timestamps)
@@ -464,8 +498,8 @@ class TGN(nn.Module):
                 neighbors,
                 edge_idxs,
                 timestamps,
-            ) = sampled_neighborhood[(v, t)]
-            for vi, ti in zip(neighbors, timestamps):
+            ) = sampled_neighborhood.get((v, t), False)
+            for vi, ti in zip(neighbors, timestamps, strict=False):
                 row.append((vi, ti))
             global_neighbors.append(row)
 
@@ -477,35 +511,37 @@ class TGN(nn.Module):
             global_neighbors,
         )
 
-    def _get_edge_features(self, edge_idx: int) -> torch.Tensor:
-        return (
-            self.edge_features[edge_idx]
+    def _get_edge_features(self, edge_idx: int) -> torch_Tensor:
+        _return_value = (
+            self.edge_features.get(edge_idx, False)
             if edge_idx in self.edge_features
-            else torch.rand(
+            else torch_rand(
                 self.num_edge_features, requires_grad=True, device=self.device
             )
         )
+        return _return_value
 
-    def _get_edges_features(self, edge_idxs: List[int]) -> torch.Tensor:
-        edges_features = torch.zeros(
+    def _get_edges_features(self, edge_idxs: List[int]) -> torch_Tensor:
+        edges_features = torch_zeros(
             self.num_neighbors, self.num_edge_features, device=self.device
         )
         for i, edge_idx in enumerate(edge_idxs):
             edges_features[i, :] = self._get_edge_features(edge_idx)
         return edges_features
 
-    def _get_graph_data(self, nodes: np.array, timestamps: np.array) -> GraphDataType:
+    def _get_graph_data(self, nodes: np_array, timestamps: np_array) -> GraphDataType:
         graph_data_tuple = self._get_graph_sum_data(nodes, timestamps)
         if self.layer_type == TGNLayerType.GraphSumEmbedding:
             return graph_data_tuple
-        graph_attn_zeros: torch.Tensor = self.time_encoder(
-            torch.zeros(1, 1, device=self.device)
+        graph_attn_zeros: torch_Tensor = self.time_encoder(
+            torch_zeros(1, 1, device=self.device)
         ).unsqueeze(0)
 
-        return graph_data_tuple + tuple(graph_attn_zeros)
+        _return_value = graph_data_tuple + tuple(graph_attn_zeros)
+        return _return_value
 
     def _get_graph_sum_data(
-        self, nodes: np.array, timestamps: np.array
+        self, nodes: np_array, timestamps: np_array
     ) -> GraphSumDataType:
         """
         :param nodes: nodes for which to get data for graph sum embedding layer forward propagation
@@ -522,7 +558,7 @@ class TGN(nn.Module):
 
         nodes = node_layers[0]
 
-        node_features = torch.zeros(
+        node_features = torch_zeros(
             len(nodes),
             self.memory_dimension + self.num_node_features,
             device=self.device,
@@ -530,27 +566,27 @@ class TGN(nn.Module):
 
         for i, (node, _) in enumerate(nodes):
             node_feature = (
-                self.node_features[node]
+                self.node_features.get(node, False)
                 if node in self.node_features
-                else torch.zeros(
+                else torch_zeros(
                     self.num_node_features, requires_grad=True, device=self.device
                 )
             )
-            node_memory = torch.tensor(
+            node_memory = torch_tensor(
                 self.memory.get_node_memory(node).cpu().detach().numpy(),
                 device=self.device,
             )
-            node_features[i, :] = torch.concat((node_memory, node_feature))
+            node_features[i, :] = torch_concat((node_memory, node_feature))
 
         edge_features = [
             self._get_edges_features(node_neighbors)
             for node_neighbors in global_edge_indexes
         ]
 
-        timestamp_features: List[torch.Tensor] = [
+        timestamp_features: List[torch_Tensor] = [
             self.time_encoder(
-                torch.tensor(
-                    np.array(time, dtype=np.float32),
+                torch_tensor(
+                    np_array(time, dtype=np_float32),
                     requires_grad=True,
                     device=self.device,
                 ).reshape((len(time), 1))

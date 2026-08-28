@@ -1,4 +1,7 @@
-import mgp
+"""Utilities for gatv2."""
+
+from mgp import List as mgp_List
+
 from mage.node_classification.models.inductive_model import InductiveModel
 
 
@@ -6,7 +9,7 @@ class GATv2(InductiveModel):
     def __init__(
         self,
         in_channels: int,
-        hidden_features_size: mgp.List[int],
+        hidden_features_size: mgp_List[int],
         out_channels: int,
         aggr: str,
     ):

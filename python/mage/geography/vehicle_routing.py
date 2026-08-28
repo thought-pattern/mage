@@ -1,10 +1,11 @@
+"""
+VRP Path is an edge from a starting to ending node
+"""
+
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from typing import List
 
-"""
-VRP Path is an edge from a starting to ending node
-"""
 VRPPath = namedtuple("VRPPath", ("from_vertex, to_vertex"))
 
 
@@ -27,14 +28,14 @@ class VRPSolver(ABC):
         """
         Implementation method.
         """
-        pass
+        ...
 
     @abstractmethod
     def get_result(self):
         """
         Extract results from solved problem.
         """
-        pass
+        ...
 
 
 class InvalidDepotException(Exception):

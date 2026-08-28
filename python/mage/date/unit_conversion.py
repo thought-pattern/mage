@@ -1,33 +1,46 @@
-import datetime
+"""Utilities for unit conversion."""
+
+from datetime import timedelta as datetime_timedelta
 
 from mage.date.constants import Units
 
 
-def to_timedelta(time: int, unit: str) -> datetime.timedelta:
+def to_timedelta(time: int, unit: str) -> datetime_timedelta:
     if unit in Units.MILLISECOND:
-        return datetime.timedelta(milliseconds=time)
+        _return_value = datetime_timedelta(milliseconds=time)
+        return _return_value
     elif unit in Units.SECOND:
-        return datetime.timedelta(seconds=time)
+        _return_value = datetime_timedelta(seconds=time)
+        return _return_value
     elif unit in Units.MINUTE:
-        return datetime.timedelta(minutes=time)
+        _return_value = datetime_timedelta(minutes=time)
+        return _return_value
     elif unit in Units.HOUR:
-        return datetime.timedelta(hours=time)
+        _return_value = datetime_timedelta(hours=time)
+        return _return_value
     elif unit in Units.DAY:
-        return datetime.timedelta(days=time)
+        _return_value = datetime_timedelta(days=time)
+        return _return_value
     else:
         raise TypeError(f"The unit {unit} is not correct.")
 
 
-def to_int(duration: datetime.timedelta, unit: str) -> int:
+def to_int(duration: datetime_timedelta, unit: str) -> int:
     if unit in Units.MILLISECOND:
-        return duration / datetime.timedelta(milliseconds=1)
+        _return_value = duration / datetime_timedelta(milliseconds=1)
+        return _return_value
     elif unit in Units.SECOND:
-        return duration.total_seconds()
+        _return_value = duration.total_seconds()
+        return _return_value
     elif unit in Units.MINUTE:
-        return duration / datetime.timedelta(minutes=1)
+        _return_value = duration / datetime_timedelta(minutes=1)
+        return _return_value
     elif unit in Units.HOUR:
-        return duration / datetime.timedelta(hours=1)
+        _return_value = duration / datetime_timedelta(hours=1)
+        return _return_value
     elif unit in Units.DAY:
-        return duration / datetime.timedelta(days=1)
+        _return_value = duration / datetime_timedelta(days=1)
+        return _return_value
     else:
         raise TypeError(f"The unit {unit} is not correct.")
+    return 0

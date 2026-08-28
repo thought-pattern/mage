@@ -1,23 +1,29 @@
-import random
-import pytest
+"""Tests for test operators."""
 
-from mage.graph_coloring_module import Graph
-from mage.graph_coloring_module import Individual
-from mage.graph_coloring_module import MISMutation
-from mage.graph_coloring_module import MultipleMutation
-from mage.graph_coloring_module import RandomMutation
-from mage.graph_coloring_module import SimpleMutation
-from mage.graph_coloring_module import Parameter
+from random import seed as random_seed
+
+from pytest import fixture as pytest_fixture
+
+from mage.graph_coloring_module import (
+    Graph,
+    Individual,
+    MISMutation,
+    MultipleMutation,
+    Parameter,
+    RandomMutation,
+    SimpleMutation,
+)
 
 
-@pytest.fixture
+@pytest_fixture
 def set_seed():
-    random.seed(42)
+    random_seed(42)
+    return False
 
 
-@pytest.fixture
+@pytest_fixture
 def graph():
-    return Graph(
+    _return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -27,6 +33,7 @@ def graph():
             4: [(1, 5)],
         },
     )
+    return _return_value
 
 
 def test_mis_mutation(set_seed, graph):
@@ -37,6 +44,7 @@ def test_mis_mutation(set_seed, graph):
     expected_nodes = [3, 1]
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
+    return False
 
 
 def test_multiple_mutation(set_seed, graph):
@@ -51,6 +59,7 @@ def test_multiple_mutation(set_seed, graph):
     expected_nodes = [0, 0]
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
+    return False
 
 
 def test_random_mutation_no_conflict(set_seed, graph):
@@ -67,6 +76,7 @@ def test_random_mutation_no_conflict(set_seed, graph):
     expected_nodes = []
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
+    return False
 
 
 def test_random_mutation(set_seed, graph):
@@ -85,6 +95,7 @@ def test_random_mutation(set_seed, graph):
     expected_nodes = [0]
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
+    return False
 
 
 def test_simple_no_conflict(set_seed, graph):
@@ -94,6 +105,7 @@ def test_simple_no_conflict(set_seed, graph):
     expected_nodes = []
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
+    return False
 
 
 def test_simple_mutation(set_seed, graph):
@@ -105,3 +117,4 @@ def test_simple_mutation(set_seed, graph):
     expected_nodes = [0]
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
+    return False

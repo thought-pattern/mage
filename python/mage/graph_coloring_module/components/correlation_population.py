@@ -1,7 +1,10 @@
+"""Utilities for correlation population."""
+
 from abc import abstractmethod
 from typing import List, Tuple
-from mage.graph_coloring_module.components.population import Population
+
 from mage.graph_coloring_module.components.individual import Individual
+from mage.graph_coloring_module.components.population import Population
 from mage.graph_coloring_module.graph import Graph
 
 
@@ -12,32 +15,33 @@ class CorrelationPopulation(Population):
         self._correlation = []
 
     @abstractmethod
-    def _set_correlations(self) -> None:
+    def _set_correlations(self) -> bool:
         """Calculates the correlations between individuals
         and stores them in correlation list."""
-        pass
+        ...
 
     @abstractmethod
     def _get_prev_correlation_index(self, index: int) -> int:
         """Returns the index of the correlation between an individual
         on the given index and the previous individual in the chain of individuals."""
-        pass
+        return 0
 
     @abstractmethod
     def _get_next_correlation_index(self, index: int) -> int:
         """Returns the index of the correlation between an individual
         on the given index and the next individual in the chain of individuals."""
-        pass
+        return 0
 
     def set_individual(
         self, index: int, individual: Individual, diff_nodes: List[int]
-    ) -> None:
+    ) -> bool:
         """Sets the individual on the specified index to the given individual
         and updates appropriate correlations and metrics."""
         old_individual = self._individuals[index]
         self._individuals[index] = individual
         self._update_correlation(index, old_individual, diff_nodes)
         self._update_metrics(index, old_individual)
+        return False
 
     @property
     def correlation(self) -> int:
@@ -58,7 +62,8 @@ class CorrelationPopulation(Population):
         and the previous and next individual."""
         prev_index = self._get_prev_correlation_index(index)
         next_index = self._get_next_correlation_index(index)
-        return self._correlation[prev_index], self._correlation[next_index]
+        _return_value = self._correlation[prev_index], self._correlation[next_index]
+        return _return_value
 
     def _calculate_correlation(self, first: Individual, second: Individual) -> float:
         correlation = 0

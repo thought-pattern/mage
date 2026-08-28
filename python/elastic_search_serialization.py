@@ -1,12 +1,22 @@
-import json
-from typing import Any, List, Dict, Tuple, Union
+"""Utilities for elastic search serialization."""
+
 from datetime import datetime
+from json import loads as json_loads
+from typing import Any, Dict, List, Tuple
 
-import elasticsearch
-from elasticsearch.helpers import streaming_bulk, parallel_bulk
-
-import mgp
-
+from elasticsearch import Elasticsearch as elasticsearch_Elasticsearch
+from elasticsearch import helpers as elasticsearch_helpers
+from elasticsearch.helpers import parallel_bulk, streaming_bulk
+from mgp import Any as mgp_Any
+from mgp import Edge as mgp_Edge
+from mgp import List as mgp_List
+from mgp import Logger as mgp_Logger
+from mgp import Map as mgp_Map
+from mgp import Nullable as mgp_Nullable
+from mgp import ProcCtx as mgp_ProcCtx
+from mgp import Record as mgp_Record
+from mgp import Vertex as mgp_Vertex
+from mgp import read_proc as mgp_read_proc
 
 # Elasticsearch constants
 ACTION = "action"
@@ -52,14 +62,14 @@ meme_mapping[datetime] = MEM_DATE
 
 
 # Create global logger object
-logger: mgp.Logger = mgp.Logger()
+logger: mgp_Logger = mgp_Logger()
 
 # Singleton client object
-client: elasticsearch.Elasticsearch
+client: elasticsearch_Elasticsearch
 
 
 # Helper method
-def serialize_vertex(vertex: mgp.Vertex) -> Dict[str, Any]:
+def serialize_vertex(vertex: mgp_Vertex) -> Dict[str, Any]:
     """Serializes vertex to specified ElasticSearch schema.
     Args:
         vertex (mgp.Vertex): Reference to the vertex in Memgraph DB
@@ -72,7 +82,7 @@ def serialize_vertex(vertex: mgp.Vertex) -> Dict[str, Any]:
     return doc
 
 
-def serialize_edge(edge: mgp.Edge) -> Dict[str, Any]:
+def serialize_edge(edge: mgp_Edge) -> Dict[str, Any]:
     """Serializes edge to specified ElasticSearch schema.
     Args:
         edge (mgp.Edge): Reference to the edge in Memgraph DB.
@@ -95,41 +105,47 @@ def serialize_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
     source: Dict[str, Any] = {}
     for prop_key, prop_value in properties:
         if isinstance(prop_value, datetime):
-            # Convert datetime to str, replace microsecond and add Z suffix(Zulu or zero offset) manually because Python doesn't support it out of the box
+            # Convert datetime to str, replace microsecond and add Z suffix(Zulu or zero offset) manually because Python doesn't
+            # support it out of the box
             prop_value = f"{prop_value.replace(microsecond=0).isoformat()}Z"
             source[f"{prop_key}{MEM_DATE}"] = prop_value
         elif type(prop_value) in meme_mapping:
-            source[f"{prop_key}{meme_mapping[type(prop_value)]}"] = prop_value
+            source[f"{prop_key}{meme_mapping.get(type(prop_value), False)}"] = (
+                prop_value
+            )
     return source
 
 
 def generate_document(context_object: Any) -> Tuple[Dict[str, Any], str]:
-    if context_object[EVENT_TYPE] == CREATED_VERTEX:
-        return serialize_vertex(context_object[VERTEX]), VERTEX
-    elif context_object[EVENT_TYPE] == CREATED_EDGE:
-        return serialize_edge(context_object[EDGE]), EDGE
+    if context_object.get(EVENT_TYPE, False) == CREATED_VERTEX:
+        _return_value = serialize_vertex(context_object.get(VERTEX, False)), VERTEX
+        return _return_value
+    elif context_object.get(EVENT_TYPE, False) == CREATED_EDGE:
+        _return_value = serialize_edge(context_object.get(EDGE, False)), EDGE
+        return _return_value
+    return ()
 
 
 def generate_documents_from_triggered_objects(
-    context_objects: List[Dict[str, Any]]
+    context_objects: List[Dict[str, Any]],
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Generates vertices and edges documents for indexing and returns them as lists.
-    Args:
-        context_objects (List[Dict[str, Any]]): Objects that are sent as parameters because of some trigger that was called. Trigger can be for update or for create.
-    Returns:
-        Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]: Serialized vertices and edges.
-    """
+    (
+        "Generates vertices and edges documents for indexing and returns them as lists.\n    Args:\n   "  # Continue literal.
+        "     context_objects (List[Dict[str, Any]]): Objects that are sent as parameters because of "  # Continue literal.
+        "some trigger that was called. Trigger can be for update or for create.\n    Returns:\n        "  # Continue literal.
+        "Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]: Serialized vertices and edges.\n"
+    )
     vertices, edges = [], []
     for context_object in context_objects:
-        if context_object[EVENT_TYPE] == CREATED_VERTEX:
-            vertices.append(serialize_vertex(context_object[VERTEX]))
-        elif context_object[EVENT_TYPE] == CREATED_EDGE:
-            edges.append(serialize_edge(context_object[EDGE]))
+        if context_object.get(EVENT_TYPE, False) == CREATED_VERTEX:
+            vertices.append(serialize_vertex(context_object.get(VERTEX, False)))
+        elif context_object.get(EVENT_TYPE, False) == CREATED_EDGE:
+            edges.append(serialize_edge(context_object.get(EDGE, False)))
     return vertices, edges
 
 
 def generate_documents_from_db(
-    context: mgp.ProcCtx,
+    context: mgp_ProcCtx,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Generates vertices and edges from the database.
     Args:
@@ -157,21 +173,23 @@ def elastic_search_streaming_bulk(
     initial_backoff: float = 2.0,
     max_backoff: float = 600.0,
     yield_ok: bool = True,
-) -> None:
-    """
-    Sends streaming_bulk requests for the given objects to the provided index with the parameters specified.
-    Args:
-        objects (List[Any]): serialized nodes and edges that will be sent to the ElasticSearch.
-        index (str): The name of the index where you want to save the data.
-        chunk_size (int): The number of docs in one chunk sent to es (default: 500).
-        max_chunk_bytes (int): The maximum size of the request in bytes (default: 100MB).
-        raise_on_error (bool): Raise bulkIndexError containing errors (as .errors) from the execution of the last chunk when some occur. By default we raise.
-        raise_on_exception (bool): If False then don’t propagate exceptions from call to bulk and just report the items that failed as failed.
-        max_retries (int): Maximum number of times a document will be retried when 429 is received, set to 0 (default) for no retries on 429.
-        initial_backoff (float): The number of seconds we should wait before the first retry. Any subsequent retries will be powers of initial_backoff * 2**retry_number.
-        max_backoff (float): The maximum number of seconds a retry will wait.
-        yield_ok (float): If set to False will skip successful documents in the output.
-    """
+) -> bool:
+    (
+        "\n    Sends streaming_bulk requests for the given objects to the provided index with the para"  # Continue literal.
+        "meters specified.\n    Args:\n        objects (List[Any]): serialized nodes and edges that wil"  # Continue literal.
+        "l be sent to the ElasticSearch.\n        index (str): The name of the index where you want to"  # Continue literal.
+        " save the data.\n        chunk_size (int): The number of docs in one chunk sent to es (defaul"  # Continue literal.
+        "t: 500).\n        max_chunk_bytes (int): The maximum size of the request in bytes (default: 1"  # Continue literal.
+        "00MB).\n        raise_on_error (bool): Raise bulkIndexError containing errors (as .errors) fr"  # Continue literal.
+        "om the execution of the last chunk when some occur. By default we raise.\n        raise_on_ex"  # Continue literal.
+        "ception (bool): If False then don’t propagate exceptions from call to bulk and just report t"  # Continue literal.
+        "he items that failed as failed.\n        max_retries (int): Maximum number of times a documen"  # Continue literal.
+        "t will be retried when 429 is received, set to 0 (default) for no retries on 429.\n        in"  # Continue literal.
+        "itial_backoff (float): The number of seconds we should wait before the first retry. Any subs"  # Continue literal.
+        "equent retries will be powers of initial_backoff * 2**retry_number.\n        max_backoff (flo"  # Continue literal.
+        "at): The maximum number of seconds a retry will wait.\n        yield_ok (float): If set to Fa"  # Continue literal.
+        "lse will skip successful documents in the output.\n"
+    )
     for _, _ in streaming_bulk(
         client=client,
         index=index,
@@ -186,6 +204,7 @@ def elastic_search_streaming_bulk(
         max_retries=max_retries,
     ):
         pass
+    return False
 
 
 def elastic_search_parallel_bulk(
@@ -197,19 +216,20 @@ def elastic_search_parallel_bulk(
     raise_on_error: bool = True,
     raise_on_exception: bool = True,
     queue_size: int = 4,
-) -> None:
-    """
-    Sends parallel_bulk requests for the given objects to the provided index with the parameters specified.
-    Args:
-        objects (List[Any]): Serialized nodes and edges that will be sent to the ElasticSearch.
-        index (str): The name of the index where you want to save the data.
-        thread_count (int): Size of the threadpool to use for the bulk requests.
-        chunk_size (int): The number of docs in one chunk sent to es (default: 500).
-        max_chunk_bytes (int): The maximum size of the request in bytes (default: 100MB).
-        raise_on_error (bool): Raise bulkIndexError containing errors (as .errors) from the execution of the last chunk when some occur. By default we raise.
-        raise_on_exception (bool): If False then don’t propagate exceptions from call to bulk and just report the items that failed as failed.
-        queue_size (int): Size of the task queue between the main thread (producing chunks to send) and the processing threads.
-    """
+) -> bool:
+    (
+        "\n    Sends parallel_bulk requests for the given objects to the provided index with the param"  # Continue literal.
+        "eters specified.\n    Args:\n        objects (List[Any]): Serialized nodes and edges that will"  # Continue literal.
+        " be sent to the ElasticSearch.\n        index (str): The name of the index where you want to "  # Continue literal.
+        "save the data.\n        thread_count (int): Size of the threadpool to use for the bulk reques"  # Continue literal.
+        "ts.\n        chunk_size (int): The number of docs in one chunk sent to es (default: 500).\n   "  # Continue literal.
+        "     max_chunk_bytes (int): The maximum size of the request in bytes (default: 100MB).\n     "  # Continue literal.
+        "   raise_on_error (bool): Raise bulkIndexError containing errors (as .errors) from the execu"  # Continue literal.
+        "tion of the last chunk when some occur. By default we raise.\n        raise_on_exception (boo"  # Continue literal.
+        "l): If False then don’t propagate exceptions from call to bulk and just report the items tha"  # Continue literal.
+        "t failed as failed.\n        queue_size (int): Size of the task queue between the main thread"  # Continue literal.
+        " (producing chunks to send) and the processing threads.\n"
+    )
     for _, _ in parallel_bulk(
         client=client,
         index=index,
@@ -222,41 +242,42 @@ def elastic_search_parallel_bulk(
         queue_size=queue_size,
     ):
         pass
+    return False
 
 
-@mgp.read_proc
+@mgp_read_proc
 def connect(
     elastic_url: str,
-    ca_certs: Union[str, None] = None,
+    ca_certs: str = "",
     elastic_user: str = "",
     elastic_password: str = "",
-) -> mgp.Record(connection_status=mgp.Map):
-    """Establishes connection with the Elasticsearch. This configuration needs to be specific to the Elasticsearch deployment. Uses basic authentication
-    Args:
-        elastic_url (str): URL for connecting to the Elasticsearch instance.
-        ca_certs (str): Path to the certificate file.
-        elastic_user (str): The user trying to connect to the Elasticsearch.
-        elastic_password (str): User's password for connecting to the Elasticsearch.
-    Returns:
-        mgp.Record(connection_status=mgp.Map): Connection info.
-    """
+) -> mgp_Record(connection_status=mgp_Map):
+    (
+        "Establishes connection with the Elasticsearch. This configuration needs to be specific to th"  # Continue literal.
+        "e Elasticsearch deployment. Uses basic authentication\n    Args:\n        elastic_url (str): U"  # Continue literal.
+        "RL for connecting to the Elasticsearch instance.\n        ca_certs (str): Path to the certifi"  # Continue literal.
+        "cate file.\n        elastic_user (str): The user trying to connect to the Elasticsearch.\n    "  # Continue literal.
+        "    elastic_password (str): User's password for connecting to the Elasticsearch.\n    Returns"  # Continue literal.
+        ":\n        mgp.Record(connection_status=mgp.Map): Connection info.\n"
+    )
     global client
-    client = elasticsearch.Elasticsearch(
+    client = elasticsearch_Elasticsearch(
         hosts=elastic_url,
         ca_certs=ca_certs,
         basic_auth=(elastic_user, elastic_password),
     )
     logger.info(f"Client info: {client.info()}")
-    return mgp.Record(connection_status=dict(client.info()))
+    _return_value = mgp_Record(connection_status=dict(client.info()))
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def create_index(
-    context: mgp.ProcCtx,
+    context: mgp_ProcCtx,
     index_name: str,
     schema_path: str,
-    schema_parameters: mgp.Map,
-) -> mgp.Record(response=mgp.Map):
+    schema_parameters: mgp_Map,
+) -> mgp_Record(response=mgp_Map):
     """Creates index with the given index name.
     Args:
         index_name (str): Name of the index that needs to be created.
@@ -271,7 +292,7 @@ def create_index(
     global client
     # Read schema from the path given
     with open(schema_path, "r") as schema_file:
-        schema_json = json.loads(schema_file.read())
+        schema_json = json_loads(schema_file.read())
     # Update default schema if specified
     if NUMBER_OF_SHARDS in schema_parameters:
         schema_json[SETTINGS][INDEX][NUMBER_OF_SHARDS] = schema_parameters[
@@ -288,9 +309,9 @@ def create_index(
             f"Number of replicas updated to: {schema_parameters[NUMBER_OF_REPLICAS]}"
         )
     if ANALYZER in schema_parameters and INDEX_TYPE in schema_parameters:
-        schema_json[MAPPINGS][DYNAMIC_TEMPLATES][1][STRING][MAPPING][
-            ANALYZER
-        ] = schema_parameters[ANALYZER]
+        schema_json[MAPPINGS][DYNAMIC_TEMPLATES][1][STRING][MAPPING][ANALYZER] = (
+            schema_parameters[ANALYZER]
+        )
         if schema_parameters[INDEX_TYPE] == VERTEX:
             schema_json[MAPPINGS][DYNAMIC_TEMPLATES][0][MEM_CATEGORIES_HAS_RAW][
                 MAPPING
@@ -301,16 +322,17 @@ def create_index(
             ] = schema_parameters[ANALYZER]
         logger.info(f"Analyzer set to: {schema_parameters[ANALYZER]}")
     logger.info(f"Schema dict: {schema_json}")
-    return mgp.Record(
+    _return_value = mgp_Record(
         response=dict(
             client.indices.create(index=index_name, body=schema_json, ignore=400)
         )
     )
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def index_db(
-    context: mgp.ProcCtx,
+    context: mgp_ProcCtx,
     node_index: str,
     edge_index: str,
     thread_count: int = 1,
@@ -323,26 +345,28 @@ def index_db(
     max_backoff: float = 600.0,
     yield_ok: bool = True,
     queue_size: int = 4,
-) -> mgp.Record(nodes=int, edges=int):
-    """The method serializes all vertices and relationships that are in Memgraph DB to an ElasticSearch schema.
-    Args:
-        context (mgp.ProcCtx): Reference to the executing context.
-        node_index (str): The name of the node index. Can be used for both streaming and parallel bulk.
-        edge_index (str): The name of the edge index. Can be used for both streaming and parallel bulk.
-        chunk_size (int): The number of docs in one chunk sent to es (default: 500).
-        max_chunk_bytes (int): The maximum size of the request in bytes (default: 100MB).
-        raise_on_error (bool): Raise bulkIndexError containing errors (as .errors) from the execution of the last chunk when some occur. By default we raise.
-        raise_on_exception (bool): If False then don’t propagate exceptions from call to bulk and just report the items that failed as failed.
-        max_retries (int): Maximum number of times a document will be retried when 429 is received, set to 0 (default) for no retries on 429.
-        initial_backoff (float): The number of seconds we should wait before the first retry. Any subsequent retries will be powers of initial_backoff * 2**retry_number.
-        max_backoff (float): The maximum number of seconds a retry will wait.
-        yield_ok (float): If set to False will skip successful documents in the output.
-        thread_count (int): Size of the threadpool to use for the bulk requests.
-        queue_size (int): Size of the task queue between the main thread (producing chunks to send) and the processing threads.
-    Returns:
-        mgp.Record(): Returns number of nodes and edges.
-    """
+) -> mgp_Record(nodes=int, edges=int):
     # Now create iterable of documents that need to be indexed
+    (
+        "The method serializes all vertices and relationships that are in Memgraph DB to an ElasticSe"  # Continue literal.
+        "arch schema.\n    Args:\n        context (mgp.ProcCtx): Reference to the executing context.\n  "  # Continue literal.
+        "      node_index (str): The name of the node index. Can be used for both streaming and paral"  # Continue literal.
+        "lel bulk.\n        edge_index (str): The name of the edge index. Can be used for both streami"  # Continue literal.
+        "ng and parallel bulk.\n        chunk_size (int): The number of docs in one chunk sent to es ("  # Continue literal.
+        "default: 500).\n        max_chunk_bytes (int): The maximum size of the request in bytes (defa"  # Continue literal.
+        "ult: 100MB).\n        raise_on_error (bool): Raise bulkIndexError containing errors (as .erro"  # Continue literal.
+        "rs) from the execution of the last chunk when some occur. By default we raise.\n        raise"  # Continue literal.
+        "_on_exception (bool): If False then don’t propagate exceptions from call to bulk and just re"  # Continue literal.
+        "port the items that failed as failed.\n        max_retries (int): Maximum number of times a d"  # Continue literal.
+        "ocument will be retried when 429 is received, set to 0 (default) for no retries on 429.\n    "  # Continue literal.
+        "    initial_backoff (float): The number of seconds we should wait before the first retry. An"  # Continue literal.
+        "y subsequent retries will be powers of initial_backoff * 2**retry_number.\n        max_backof"  # Continue literal.
+        "f (float): The maximum number of seconds a retry will wait.\n        yield_ok (float): If set"  # Continue literal.
+        " to False will skip successful documents in the output.\n        thread_count (int): Size of "  # Continue literal.
+        "the threadpool to use for the bulk requests.\n        queue_size (int): Size of the task queu"  # Continue literal.
+        "e between the main thread (producing chunks to send) and the processing threads.\n    Returns"  # Continue literal.
+        ":\n        mgp.Record(): Returns number of nodes and edges.\n"
+    )  # Now create iterable of documents that need to be indexed
     nodes, edges = generate_documents_from_db(context)
 
     if thread_count < 1:
@@ -398,13 +422,14 @@ def index_db(
             queue_size,
         )
 
-    return mgp.Record(nodes=len(nodes), edges=len(edges))
+    _return_value = mgp_Record(nodes=len(nodes), edges=len(edges))
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def index(
-    context: mgp.ProcCtx,
-    createdObjects: mgp.List[mgp.Map],
+    context: mgp_ProcCtx,
+    createdObjects: mgp_List[mgp_Map],
     node_index: str,
     edge_index: str,
     thread_count: int = 1,
@@ -417,27 +442,29 @@ def index(
     max_backoff: float = 600.0,
     yield_ok: bool = True,
     queue_size: int = 4,
-) -> mgp.Record(nodes=int, edges=int):
-    """The method serializes all vertices and relationships that came into the Memgraph DB to an ElasticSearch schema and sends streaming_bulk request to ElasticSearch's API.
-    Args:
-        context (mgp.ProcCtx): Reference to the executing context.
-        createdObjects (List[Dict[str, Any]]): List of all objects that were created and then sent as arguments to this method with the help of "create trigger".
-        node_index (str): The name of the node index.
-        edge_index (str): The name of the edge index.
-        chunk_size (int): The number of docs in one chunk sent to es (default: 500).
-        max_chunk_bytes (int): The maximum size of the request in bytes (default: 100MB).
-        raise_on_error (bool): Raise bulkIndexError containing errors (as .errors) from the execution of the last chunk when some occur. By default we raise.
-        raise_on_exception (bool): If False then don’t propagate exceptions from call to bulk and just report the items that failed as failed.
-        max_retries (int): Maximum number of times a document will be retried when 429 is received, set to 0 (default) for no retries on 429.
-        initial_backoff (float): The number of seconds we should wait before the first retry. Any subsequent retries will be powers of initial_backoff * 2**retry_number.
-        max_backoff (float): The maximum number of seconds a retry will wait.
-        yield_ok (float): If set to False will skip successful documents in the output.
-        thread_count (int): Size of the threadpool to use for the bulk requests.
-        queue_size (int): Size of the task queue between the main thread (producing chunks to send) and the processing threads.
-    Returns:
-        mgp.Record(): Returns number of nodes and edges.
-    """
+) -> mgp_Record(nodes=int, edges=int):
     # Now create iterable of documents that need to be indexed
+    (
+        "The method serializes all vertices and relationships that came into the Memgraph DB to an El"  # Continue literal.
+        "asticSearch schema and sends streaming_bulk request to ElasticSearch's API.\n    Args:\n      "  # Continue literal.
+        "  context (mgp.ProcCtx): Reference to the executing context.\n        createdObjects (List[Di"  # Continue literal.
+        "ct[str, Any]]): List of all objects that were created and then sent as arguments to this met"  # Continue literal.
+        'hod with the help of "create trigger".\n        node_index (str): The name of the node index.'  # Continue literal.
+        "\n        edge_index (str): The name of the edge index.\n        chunk_size (int): The number "  # Continue literal.
+        "of docs in one chunk sent to es (default: 500).\n        max_chunk_bytes (int): The maximum s"  # Continue literal.
+        "ize of the request in bytes (default: 100MB).\n        raise_on_error (bool): Raise bulkIndex"  # Continue literal.
+        "Error containing errors (as .errors) from the execution of the last chunk when some occur. B"  # Continue literal.
+        "y default we raise.\n        raise_on_exception (bool): If False then don’t propagate excepti"  # Continue literal.
+        "ons from call to bulk and just report the items that failed as failed.\n        max_retries ("  # Continue literal.
+        "int): Maximum number of times a document will be retried when 429 is received, set to 0 (def"  # Continue literal.
+        "ault) for no retries on 429.\n        initial_backoff (float): The number of seconds we shoul"  # Continue literal.
+        "d wait before the first retry. Any subsequent retries will be powers of initial_backoff * 2*"  # Continue literal.
+        "*retry_number.\n        max_backoff (float): The maximum number of seconds a retry will wait."  # Continue literal.
+        "\n        yield_ok (float): If set to False will skip successful documents in the output.\n   "  # Continue literal.
+        "     thread_count (int): Size of the threadpool to use for the bulk requests.\n        queue_"  # Continue literal.
+        "size (int): Size of the task queue between the main thread (producing chunks to send) and th"  # Continue literal.
+        "e processing threads.\n    Returns:\n        mgp.Record(): Returns number of nodes and edges.\n"
+    )  # Now create iterable of documents that need to be indexed
     nodes, edges = generate_documents_from_triggered_objects(createdObjects)
 
     if thread_count < 1:
@@ -491,48 +518,53 @@ def index(
             raise_on_exception,
             queue_size,
         )
-    return mgp.Record(nodes=len(nodes), edges=len(edges))
+    _return_value = mgp_Record(nodes=len(nodes), edges=len(edges))
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def reindex(
-    context: mgp.ProcCtx,
-    source_index: mgp.Any,
+    context: mgp_ProcCtx,
+    source_index: mgp_Any,
     target_index: str,
     query: str,
     chunk_size: int = 500,
     scroll: str = "5m",
-    op_type: mgp.Nullable[str] = None,
-) -> mgp.Record(response=str):
-    """Reindex all documents that satisfy a given query from one index to another, potentially (if target_client is specified) on a different cluster. If you don’t specify the query you will reindex all the documents.
-    Args:
-        context (mgp.ProcCtx): Reference to the executing context.
-        updatatedObjects (List[Dict[str, Any]]): List of all objects that were updated and then sent as arguments to this method with the help of the "update trigger".
-        source_index (Union[str, List[str]]): Identifies source index(or more of them) from where documents need to be indexed.
-        target_index (str): Identifies target index to where documents need to be indexed.
-        query (str): Query written as JSON.
-        chunk_size (int): Number of docs in one chunk sent to es (default: 500).
-        scroll (str): Specifies how long a consistent view of the index should be maintained for scrolled search.
-        op_type (Optional[str]): Explicit operation type. Defaults to ‘_index’. Data streams must be set to ‘create’. If not specified, will auto-detect if target_index is a data stream.
-    Returns:
-        response (str): Number of documents matched by a query in the source_index.
-    """
+    op_type: mgp_Nullable[str] = False,
+) -> mgp_Record(response=str):
+    (
+        "Reindex all documents that satisfy a given query from one index to another, potentially (if "  # Continue literal.
+        "target_client is specified) on a different cluster. If you don’t specify the query you will "  # Continue literal.
+        "reindex all the documents.\n    Args:\n        context (mgp.ProcCtx): Reference to the executi"  # Continue literal.
+        "ng context.\n        updatatedObjects (List[Dict[str, Any]]): List of all objects that were u"  # Continue literal.
+        'pdated and then sent as arguments to this method with the help of the "update trigger".\n    '  # Continue literal.
+        "    source_index (Union[str, List[str]]): Identifies source index(or more of them) from wher"  # Continue literal.
+        "e documents need to be indexed.\n        target_index (str): Identifies target index to where"  # Continue literal.
+        " documents need to be indexed.\n        query (str): Query written as JSON.\n        chunk_siz"  # Continue literal.
+        "e (int): Number of docs in one chunk sent to es (default: 500).\n        scroll (str): Specif"  # Continue literal.
+        "ies how long a consistent view of the index should be maintained for scrolled search.\n      "  # Continue literal.
+        "  op_type (Optional[str]): Explicit operation type. Defaults to ‘_index’. Data streams must "  # Continue literal.
+        "be set to ‘create’. If not specified, will auto-detect if target_index is a data stream.\n   "  # Continue literal.
+        " Returns:\n        response (str): Number of documents matched by a query in the source_index"  # Continue literal.
+        ".\n"
+    )
     global client
-    response = elasticsearch.helpers.reindex(
+    response = elasticsearch_helpers.reindex(
         client=client,
         source_index=source_index,
         target_index=target_index,
-        query=json.loads(query),
+        query=json_loads(query),
         chunk_size=chunk_size,
         scroll=scroll,
         op_type=op_type,
     )
-    return mgp.Record(response=str(response[0]))
+    _return_value = mgp_Record(response=str(response[0]))
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def scan(
-    context: mgp.ProcCtx,
+    context: mgp_ProcCtx,
     index_name: str,
     query: str,
     scroll: str = "5m",
@@ -540,28 +572,30 @@ def scan(
     preserve_order: bool = False,
     size: int = 1000,
     from_: int = 0,
-    request_timeout: mgp.Nullable[float] = None,
+    request_timeout: mgp_Nullable[float] = False,
     clear_scroll: bool = False,
-) -> mgp.Record(items=mgp.List[mgp.Map]):
-    """Runs a query on a index specified by the index_name.
-    Args:
-        context (mgp.ProcCtx): Reference to the executing context.
-        index_name (str): A name of the index.
-        query (str): Query written as JSON.
-        scroll (int): Specifies how long a consistent view of the index should be maintained for scrolled search.
-        raise_on_error (bool): Raises an exception (ScanError) if an error is encountered (some shards fail to execute). By default we raise.
-        preserve_order (bool): Don’t set the search_type to scan - this will cause the scroll to paginate with preserving the order. Note that this can be an extremely expensive operation and can easily lead to unpredictable results, use with caution.
-        size (int): Size (per shard) of the batch send at each iteration.
-        from (int): Starting document offset. By default, you cannot page through more than 10,000 hits using the from and size parameters. To page through more hits, use the search_after parameter.
-        request_timeout (mgp.Nullable[float]): Explicit timeout for each call to scan.
-        clear_scroll (bool): Explicitly calls delete on the scroll id via the clear scroll API at the end of the method on completion or error, defaults to true.
-    Returns:
-         mgp.Record(items=mgp.List[mgp.Map]): List of all items matched by the specific query.
-    """
+) -> mgp_Record(items=mgp_List[mgp_Map]):
+    (
+        "Runs a query on a index specified by the index_name.\n    Args:\n        context (mgp.ProcCtx)"  # Continue literal.
+        ": Reference to the executing context.\n        index_name (str): A name of the index.\n       "  # Continue literal.
+        " query (str): Query written as JSON.\n        scroll (int): Specifies how long a consistent v"  # Continue literal.
+        "iew of the index should be maintained for scrolled search.\n        raise_on_error (bool): Ra"  # Continue literal.
+        "ises an exception (ScanError) if an error is encountered (some shards fail to execute). By d"  # Continue literal.
+        "efault we raise.\n        preserve_order (bool): Don’t set the search_type to scan - this wil"  # Continue literal.
+        "l cause the scroll to paginate with preserving the order. Note that this can be an extremely"  # Continue literal.
+        " expensive operation and can easily lead to unpredictable results, use with caution.\n       "  # Continue literal.
+        " size (int): Size (per shard) of the batch send at each iteration.\n        from (int): Start"  # Continue literal.
+        "ing document offset. By default, you cannot page through more than 10,000 hits using the fro"  # Continue literal.
+        "m and size parameters. To page through more hits, use the search_after parameter.\n        re"  # Continue literal.
+        "quest_timeout (mgp.Nullable[float]): Explicit timeout for each call to scan.\n        clear_s"  # Continue literal.
+        "croll (bool): Explicitly calls delete on the scroll id via the clear scroll API at the end o"  # Continue literal.
+        "f the method on completion or error, defaults to true.\n    Returns:\n         mgp.Record(item"  # Continue literal.
+        "s=mgp.List[mgp.Map]): List of all items matched by the specific query.\n"
+    )
     global client
-    response = elasticsearch.helpers.scan(
+    response = elasticsearch_helpers.scan(
         client,
-        query=json.loads(query),
+        query=json_loads(query),
         index=index_name,
         scroll=scroll,
         raise_on_error=raise_on_error,
@@ -573,24 +607,25 @@ def scan(
     )
     items = []
     for item in response:
-        if _SOURCE in item and INDEX in item[_SOURCE]:
-            item[ID] = item[_SOURCE][INDEX][ID]
-            item[_SOURCE].pop(INDEX, None)
+        if _SOURCE in item and INDEX in item.get(_SOURCE, {}):
+            item[ID] = item.get(_SOURCE, {})[INDEX][ID]
+            item.get(_SOURCE, {}).pop(INDEX, False)
         items.append(item)
 
-    return mgp.Record(items=items)
+    _return_value = mgp_Record(items=items)
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def search(
-    context: mgp.ProcCtx,
+    context: mgp_ProcCtx,
     index_name: str,
     query: str,
     size: int = 1000,
     from_: int = 0,
-    aggregations: mgp.Nullable[mgp.Map] = None,
-    aggs: mgp.Nullable[mgp.Map] = None,
-) -> mgp.Record(result=mgp.Map):
+    aggregations: mgp_Nullable[mgp_Map] = False,
+    aggs: mgp_Nullable[mgp_Map] = False,
+) -> mgp_Record(result=mgp_Map):
     """Searches for all documents by specifying query and index.
     Args:
         context (mgp.ProcCtx): Reference to the executing context.
@@ -604,7 +639,7 @@ def search(
     global client
     response = client.search(
         index=index_name,
-        query=json.loads(query),
+        query=json_loads(query),
         aggregations=aggregations,
         aggs=aggs,
         size=size,
@@ -614,7 +649,7 @@ def search(
     for hit in response[HITS][HITS]:
         if _SOURCE in hit and INDEX in hit[_SOURCE]:
             hit[ID] = hit[_SOURCE][INDEX][ID]
-            hit[_SOURCE].pop(INDEX, None)
+            hit[_SOURCE].pop(INDEX, False)
         hits.append(hit)
 
     result = {}
@@ -624,4 +659,5 @@ def search(
     else:
         result[AGGREGATIONS] = dict()
 
-    return mgp.Record(result=result)
+    _return_value = mgp_Record(result=result)
+    return _return_value

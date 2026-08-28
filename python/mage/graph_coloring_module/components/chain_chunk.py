@@ -1,25 +1,32 @@
-from typing import List, Dict, Any, Optional
-from mage.graph_coloring_module.components.individual import Individual
+"""Utilities for chain chunk."""
+
+from typing import Any, Dict, List
+
 from mage.graph_coloring_module.components.correlation_population import (
     CorrelationPopulation,
 )
-from mage.graph_coloring_module.graph import Graph
-from mage.graph_coloring_module.utils.generate_individuals import generate_individuals
-from mage.graph_coloring_module.utils.validation import validate
-from mage.graph_coloring_module.parameters import Parameter
+from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.components.population import Population
+from mage.graph_coloring_module.graph import Graph
+from mage.graph_coloring_module.parameters import Parameter
+from mage.graph_coloring_module.utils.generate_individuals import generate_individuals
 from mage.graph_coloring_module.utils.parameters_utils import param_value
+from mage.graph_coloring_module.utils.validation import validate
+
+_DEFAULT_ARGUMENT_DICT = {}
 
 
 class ChainChunkFactory:
     @staticmethod
     @validate(Parameter.POPULATION_SIZE, Parameter.NO_OF_PROCESSES)
     def create(
-        graph: Graph, parameters: Dict[str, Any] = None
-    ) -> Optional[List[Population]]:
+        graph: Graph, parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT
+    ) -> List[Population]:
         """Returns a list of no_of_processes populations that have approximately
         population_size / no_of_processes individuals."""
 
+        if parameters is _DEFAULT_ARGUMENT_DICT:
+            parameters = _DEFAULT_ARGUMENT_DICT.copy()
         population_size = param_value(graph, parameters, Parameter.POPULATION_SIZE)
         no_of_processes = param_value(graph, parameters, Parameter.NO_OF_PROCESSES)
 
@@ -74,7 +81,8 @@ class ChainChunk(CorrelationPopulation):
     def _get_prev_correlation_index(self, index: int) -> int:
         """Returns the index of the correlation with the
         previous individual in the chain of individuals."""
-        return index - 1 if index - 1 >= 0 else self.size
+        _return_value = index - 1 if index - 1 >= 0 else self.size
+        return _return_value
 
     def _get_next_correlation_index(Self, index: int) -> int:
         """Returns the index of the correlation with the
@@ -88,7 +96,8 @@ class ChainChunk(CorrelationPopulation):
             raise IndexError()
         if index == 0:
             return self._prev_indv
-        return self.individuals[index - 1]
+        _return_value = self.individuals[index - 1]
+        return _return_value
 
     def get_next_individual(self, index: int) -> Individual:
         """Returns the individual that follows the
@@ -97,9 +106,10 @@ class ChainChunk(CorrelationPopulation):
             raise IndexError()
         if index + 1 == self.size:
             return self._next_indv
-        return self.individuals[index + 1]
+        _return_value = self.individuals[index + 1]
+        return _return_value
 
-    def _set_correlations(self) -> None:
+    def _set_correlations(self) -> bool:
         for i in range(self.size + 1):
             if i == self.size:
                 c = self._calculate_correlation(self.individuals[0], self._prev_indv)
@@ -110,8 +120,9 @@ class ChainChunk(CorrelationPopulation):
                 c = self._calculate_correlation(self.individuals[i], next_indv)
             self._correlation.append(c)
             self._cumulative_correlation += c
+        return False
 
-    def set_prev_individual(self, individual: Individual) -> None:
+    def set_prev_individual(self, individual: Individual) -> bool:
         """Sets the unit that precedes the current piece of chain."""
         self._cumulative_correlation -= self._correlation[self.size]
         self._correlation[self.size] = self._calculate_correlation(
@@ -119,8 +130,9 @@ class ChainChunk(CorrelationPopulation):
         )
         self._cumulative_correlation += self._correlation[self.size]
         self._prev_indv = individual
+        return False
 
-    def set_next_individual(self, individual: Individual) -> None:
+    def set_next_individual(self, individual: Individual) -> bool:
         """Sets the individual that follows the current piece of chain."""
         self._cumulative_correlation -= self._correlation[self.size - 1]
         self._correlation[self.size - 1] = self._calculate_correlation(
@@ -128,3 +140,4 @@ class ChainChunk(CorrelationPopulation):
         )
         self._cumulative_correlation += self._correlation[self.size - 1]
         self._next_indv = individual
+        return False

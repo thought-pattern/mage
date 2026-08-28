@@ -1,18 +1,19 @@
-import mgp
+"""Utilities for train model."""
 
-import torch
+from mgp import Any as mgp_Any
+from torch import tensor as torch_tensor
 from torch_geometric.loader import HGTLoader
 
 
 def train_epoch(
-    model: mgp.Any,
-    opt: mgp.Any,
-    data: mgp.Any,
-    criterion: mgp.Any,
+    model: mgp_Any,
+    opt: mgp_Any,
+    data: mgp_Any,
+    criterion: mgp_Any,
     batch_size: int,
     observed_attribute: str,
     num_samples: dict,
-) -> torch.tensor:
+) -> torch_tensor:
     """In this function, one epoch of training is performed.
 
     Args:
@@ -59,11 +60,13 @@ def train_epoch(
             float: returns loss calculated during training or validation
         """
         ret = 0.0
+        batch_count = 0
 
         # Set the model to train or eval mode depending on the flag gradient.
         model.train() if gradient else model.eval()
 
-        for n, batch in enumerate(loader):
+        for batch in loader:
+            batch_count += 1
             if gradient:
                 opt.zero_grad()  # Clear gradients.
 
@@ -80,7 +83,8 @@ def train_epoch(
 
             ret += loss.item()
 
-        return ret / (n + 1)
+        _return_value = ret / batch_count if batch_count else 0.0
+        return _return_value
 
     ret = training_loop(train_loader, True)
     ret_val = training_loop(val_loader, False)

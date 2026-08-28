@@ -1,11 +1,12 @@
-import pytest
+"""Tests for test chain chunk."""
 
-from mage.graph_coloring_module import Individual
-from mage.graph_coloring_module import ChainChunk
-from mage.graph_coloring_module import Graph
+from pytest import fixture as pytest_fixture
+from pytest import raises as pytest_raises
+
+from mage.graph_coloring_module import ChainChunk, Graph, Individual
 
 
-@pytest.fixture
+@pytest_fixture
 def chain_chunk_population():
     graph = Graph(
         [0, 1, 2, 3, 4],
@@ -37,16 +38,19 @@ def test_get_prev_individual(chain_chunk_population):
     expected_indv = chain_chunk_population[1]
 
     assert result_indv == expected_indv
+    return False
 
 
 def test_prev_out_of_range(chain_chunk_population):
-    with pytest.raises(IndexError):
+    with pytest_raises(IndexError):
         chain_chunk_population.get_prev_individual(10)
+    return False
 
 
 def test_prev_individual_negative_index(chain_chunk_population):
-    with pytest.raises(IndexError):
+    with pytest_raises(IndexError):
         chain_chunk_population.get_prev_individual(-2)
+    return False
 
 
 def test_prev_individual_of_first_item(chain_chunk_population):
@@ -54,6 +58,7 @@ def test_prev_individual_of_first_item(chain_chunk_population):
     expected_indv = chain_chunk_population._prev_indv
 
     assert result_indv == expected_indv
+    return False
 
 
 def test_get_next_individual(chain_chunk_population):
@@ -61,6 +66,7 @@ def test_get_next_individual(chain_chunk_population):
     expected_indv = chain_chunk_population[2]
 
     assert result_indv == expected_indv
+    return False
 
 
 def test_next_individual_last_item(chain_chunk_population):
@@ -68,13 +74,16 @@ def test_next_individual_last_item(chain_chunk_population):
     expected_indv = chain_chunk_population._next_indv
 
     assert result_indv == expected_indv
+    return False
 
 
 def test_next_out_of_range(chain_chunk_population):
-    with pytest.raises(IndexError):
+    with pytest_raises(IndexError):
         chain_chunk_population.get_next_individual(10)
+    return False
 
 
 def test_next_negative_index(chain_chunk_population):
-    with pytest.raises(IndexError):
+    with pytest_raises(IndexError):
         chain_chunk_population.get_next_individual(-1)
+    return False

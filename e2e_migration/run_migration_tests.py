@@ -5,14 +5,14 @@ This script runs pytest directly without Docker management.
 Docker containers are managed by test_e2e_migration.py.
 """
 
-import sys
-import subprocess
-import argparse
+from argparse import ArgumentParser as argparse_ArgumentParser
+from subprocess import run as subprocess_run
+from sys import exit as sys_exit
 
 
 def parse_arguments():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Run e2e migration tests")
+    parser = argparse_ArgumentParser(description="Run e2e migration tests")
     parser.add_argument(
         "-k",
         dest="test_filter",
@@ -20,24 +20,25 @@ def parse_arguments():
         type=str,
         required=False,
     )
-    return parser.parse_args()
+    _return_value = parser.parse_args()
+    return _return_value
 
 
 def main():
     """Main function to run migration tests."""
     args = parse_arguments()
-    
+
     # Build pytest command
     pytest_cmd = ["python3", "-m", "pytest", "test_migration.py", "-v", "--tb=short"]
-    
+
     # Add filter if provided
     if args.test_filter:
         pytest_cmd.extend(["-k", args.test_filter])
-    
+
     # Run pytest
-    result = subprocess.run(pytest_cmd)
+    result = subprocess_run(pytest_cmd)
     return result.returncode
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys_exit(main())

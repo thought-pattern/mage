@@ -1,11 +1,18 @@
-import pytest
+"""Tests for test individual."""
 
-from mage.graph_coloring_module import Individual
-from mage.graph_coloring_module import Graph
+from pytest import fixture as pytest_fixture
+from pytest import mark as pytest_mark
+from pytest import raises as pytest_raises
+
+from mage.graph_coloring_module import Graph, Individual
+from mage.graph_coloring_module.exceptions import (
+    IllegalColorException,
+    IllegalNodeException,
+)
 
 
 def graph():
-    return Graph(
+    _return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -15,10 +22,11 @@ def graph():
             4: [(1, 5)],
         },
     )
+    return _return_value
 
 
 def graph_not_connected():
-    return Graph(
+    _return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -28,9 +36,10 @@ def graph_not_connected():
             4: [(3, 3)],
         },
     )
+    return _return_value
 
 
-@pytest.fixture
+@pytest_fixture
 def conflict_individual(graph):
     indv = Individual(
         no_of_colors=3,
@@ -41,13 +50,13 @@ def conflict_individual(graph):
     return indv
 
 
-@pytest.fixture
+@pytest_fixture
 def individual(graph):
     indv = Individual(no_of_colors=3, graph=graph, chromosome=[1, 2, 0, 2, 1])
     return indv
 
 
-@pytest.mark.parametrize(
+@pytest_mark.parametrize(
     "no_of_colors,graph,chromosome,expected",
     [
         (3, graph(), [1, 1, 1, 2, 0], {0, 1, 2}),
@@ -62,9 +71,10 @@ def test_conflict_nodes(no_of_colors, graph, chromosome, expected):
     indv = Individual(no_of_colors=no_of_colors, graph=graph, chromosome=chromosome)
     result = indv.conflict_nodes
     assert result == expected
+    return False
 
 
-@pytest.mark.parametrize(
+@pytest_mark.parametrize(
     "no_of_colors,graph,chromosome,expected",
     [
         (3, graph(), [1, 1, 1, 2, 0], 7),
@@ -79,9 +89,10 @@ def test_conflict_weights(no_of_colors, graph, chromosome, expected):
     indv = Individual(no_of_colors=no_of_colors, graph=graph, chromosome=chromosome)
     result = indv.conflicts_weight
     assert result == expected
+    return False
 
 
-@pytest.mark.parametrize(
+@pytest_mark.parametrize(
     "no_of_colors,graph,chromosome,expected",
     [
         (3, graph(), [1, 1, 1, 2, 0], False),
@@ -97,9 +108,10 @@ def test_check_coloring(no_of_colors, graph, chromosome, expected):
     indv = Individual(no_of_colors=no_of_colors, graph=graph, chromosome=chromosome)
     result = indv.check_coloring()
     assert result == expected
+    return False
 
 
-@pytest.mark.parametrize(
+@pytest_mark.parametrize(
     "no_of_colors,graph,chromosome, inds, colors, is_none, expected_chromosome, "
     "expected_conflicts, expected_weights, expected_coloring",
     [
@@ -115,7 +127,7 @@ def test_check_coloring(no_of_colors, graph, chromosome, expected):
             2,
             False,
         ),
-        (3, graph(), [1, 2, 0, 2, 1], [6], [0], True, None, None, None, False),
+        (3, graph(), [1, 2, 0, 2, 1], [6], [0], True, False, False, False, False),
         (
             3,
             graph(),
@@ -135,9 +147,9 @@ def test_check_coloring(no_of_colors, graph, chromosome, expected):
             [2],
             [7],
             True,
-            None,
-            None,
-            None,
+            False,
+            False,
+            False,
             False,
         ),
         (
@@ -192,7 +204,7 @@ def test_replace_units(
 ):
     indv = Individual(no_of_colors=no_of_colors, graph=graph, chromosome=chromosome)
     if is_none:
-        with pytest.raises(Exception):
+        with pytest_raises((IllegalColorException, IllegalNodeException)):
             new_indv = indv.replace_units(inds, colors)
     else:
         new_indv = indv.replace_units(inds, colors)
@@ -200,3 +212,4 @@ def test_replace_units(
         assert new_indv.conflict_nodes == expected_conflicts
         assert new_indv.conflicts_weight == expected_weights
         assert new_indv.check_coloring() == expected_coloring
+    return False

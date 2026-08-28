@@ -1,21 +1,24 @@
 """
 Instances of TGN
 """
-from typing import Tuple, Dict
 
-import numpy as np
-import torch
-import torch.nn as nn
+from typing import Dict, Tuple
+
+from numpy import concatenate as np_concatenate
+from numpy import ndarray as np_ndarray
+from torch import Tensor as torch_Tensor
+from torch import device as torch_device
+from torch import nn
 
 from mage.tgn.constants import (
-    MessageFunctionType,
-    MessageAggregatorType,
     MemoryUpdaterType,
+    MessageAggregatorType,
+    MessageFunctionType,
     TGNLayerType,
 )
 from mage.tgn.definitions.layers import (
-    TGNLayerGraphSumEmbedding,
     TGNLayerGraphAttentionEmbedding,
+    TGNLayerGraphSumEmbedding,
 )
 from mage.tgn.definitions.tgn import TGN
 
@@ -28,16 +31,16 @@ class TGNEdgesSelfSupervised(TGN):
     def forward(
         self,
         data: Tuple[
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            Dict[int, torch.Tensor],
-            Dict[int, torch.Tensor],
+            np_ndarray,
+            np_ndarray,
+            np_ndarray,
+            np_ndarray,
+            np_ndarray,
+            np_ndarray,
+            Dict[int, torch_Tensor],
+            Dict[int, torch_Tensor],
         ],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch_Tensor, torch_Tensor]:
         """
         :param data: input containing sources, destinations, negative_sources,  negative_destinations,
             timestamps, edge_idxs, edge_features, node_features
@@ -64,8 +67,9 @@ class TGNEdgesSelfSupervised(TGN):
             == len(edge_idxs)
             == len(edge_features)
         ), (
-            f"Sources, destinations, negative sources, negative destinations, timestamps, edge_indexes and edge_features must be of same dimension, but got "
-            f"{sources.shape[0]}, {destinations.shape[0]}, {timestamps.shape[0]}, {len(edge_idxs)}, {len(edge_features)}"
+            f"Sources, destinations, negative sources, negative destinations, timestamps, edge_indexes and"
+            f" edge_features must be of same dimension, but got {sources.shape[0]}, "
+            f"{destinations.shape[0]}, {timestamps.shape[0]}, {len(edge_idxs)}, {len(edge_features)}"
         )
 
         # part of 1->2->3, all till point 4 in paper from Figure 2
@@ -75,17 +79,17 @@ class TGNEdgesSelfSupervised(TGN):
         self._process_previous_batches()
 
         graph_data = self._get_graph_data(
-            np.concatenate([sources.copy(), destinations.copy()], dtype=int),
-            np.concatenate([timestamps, timestamps]),
+            np_concatenate([sources.copy(), destinations.copy()], dtype=int),
+            np_concatenate([timestamps, timestamps]),
         )
 
         embeddings = self.tgn_net(graph_data)
 
         graph_data_negative = self._get_graph_data(
-            np.concatenate(
+            np_concatenate(
                 [negative_sources.copy(), negative_destinations.copy()], dtype=int
             ),
-            np.concatenate([timestamps, timestamps]),
+            np_concatenate([timestamps, timestamps]),
         )
 
         embeddings_negative = self.tgn_net(graph_data_negative)
@@ -110,14 +114,14 @@ class TGNSupervised(TGN):
     def forward(
         self,
         data: Tuple[
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            Dict[int, torch.Tensor],
-            Dict[int, torch.Tensor],
+            np_ndarray,
+            np_ndarray,
+            np_ndarray,
+            np_ndarray,
+            Dict[int, torch_Tensor],
+            Dict[int, torch_Tensor],
         ],
-    ) -> torch.Tensor:
+    ) -> torch_Tensor:
         """
         :param data: input containing sources, destinations,
             timestamps, edge_idxs, edge_features, node_features
@@ -151,8 +155,8 @@ class TGNSupervised(TGN):
         self._process_previous_batches()
 
         graph_data = self._get_graph_data(
-            np.concatenate([sources.copy(), destinations.copy()], dtype=int),
-            np.concatenate([timestamps, timestamps]),
+            np_concatenate([sources.copy(), destinations.copy()], dtype=int),
+            np_concatenate([timestamps, timestamps]),
         )
 
         embeddings = self.tgn_net(graph_data)
@@ -184,7 +188,7 @@ class TGNGraphAttentionEmbedding(TGN):
         message_aggregator_type: MessageAggregatorType,
         memory_updater_type: MemoryUpdaterType,
         num_attention_heads: int,
-        device: torch.device,
+        device: torch_device,
     ):
         super().__init__(
             num_of_layers,
@@ -238,7 +242,7 @@ class TGNGraphSumEmbedding(TGN):
         edge_message_function_type: MessageFunctionType,
         message_aggregator_type: MessageAggregatorType,
         memory_updater_type: MemoryUpdaterType,
-        device: torch.device,
+        device: torch_device,
     ):
         super().__init__(
             num_of_layers,
@@ -298,7 +302,7 @@ class TGNGraphAttentionEdgeSelfSupervised(
         message_aggregator_type: MessageAggregatorType,
         memory_updater_type: MemoryUpdaterType,
         num_attention_heads: int,
-        device: torch.device,
+        device: torch_device,
     ):
         super().__init__(
             num_of_layers,
@@ -332,7 +336,7 @@ class TGNGraphSumEdgeSelfSupervised(TGNGraphSumEmbedding, TGNEdgesSelfSupervised
         edge_message_function_type: MessageFunctionType,
         message_aggregator_type: MessageAggregatorType,
         memory_updater_type: MemoryUpdaterType,
-        device: torch.device,
+        device: torch_device,
     ):
         super().__init__(
             num_of_layers,
@@ -365,7 +369,7 @@ class TGNGraphSumSupervised(TGNGraphSumEmbedding, TGNSupervised):
         edge_message_function_type: MessageFunctionType,
         message_aggregator_type: MessageAggregatorType,
         memory_updater_type: MemoryUpdaterType,
-        device: torch.device,
+        device: torch_device,
     ):
         super().__init__(
             num_of_layers,
@@ -399,7 +403,7 @@ class TGNGraphAttentionSupervised(TGNGraphAttentionEmbedding, TGNSupervised):
         message_aggregator_type: MessageAggregatorType,
         memory_updater_type: MemoryUpdaterType,
         num_attention_heads: int,
-        device: torch.device,
+        device: torch_device,
     ):
         super().__init__(
             num_of_layers,

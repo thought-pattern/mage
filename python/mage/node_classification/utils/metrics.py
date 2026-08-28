@@ -1,7 +1,10 @@
-import torch
-from torchmetrics import Accuracy, AUC, Precision, Recall, F1Score
+"""Utilities for metrics."""
+
+from typing import Dict, List
+
+from torch import tensor as torch_tensor
 from torch_geometric.data import Data
-from typing import List, Dict
+from torchmetrics import AUC, Accuracy, F1Score, Precision, Recall
 
 METRICS = {
     "accuracy": Accuracy,
@@ -13,8 +16,8 @@ METRICS = {
 
 
 def metrics(
-    mask: torch.tensor,
-    out: torch.tensor,
+    mask: torch_tensor,
+    out: torch_tensor,
     data: Data,
     options: List[str],
     observed_attribute: str,
@@ -37,17 +40,17 @@ def metrics(
         dim=1
     )  # Use the class with highest probability.
 
-    data = data[observed_attribute]
+    data = data.get(observed_attribute, {})
 
     ret = {}
 
     multiclass = True
     num_classes = len(set(data.y.detach().cpu().numpy()))
 
-    for metrics in METRICS.keys():
+    for metrics in METRICS:
         if metrics not in options:
             continue
-        func = METRICS[metrics](
+        func = METRICS.get(metrics, Accuracy)(
             num_classes=num_classes,
             multiclass=multiclass,
             average="weighted",

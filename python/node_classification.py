@@ -1,22 +1,37 @@
-import os
-from tqdm import tqdm
-import typing
-from datetime import datetime
-from time import time
+"""Utilities for node classification."""
 
-import mgp
-import torch
-from torch_geometric.nn import to_hetero
+from datetime import datetime
+from os import getcwd as os_getcwd
+from os import listdir as os_listdir
+from os import makedirs as os_makedirs
+from os import path as os_path
+from os import remove as os_remove
+from time import time
+from typing import Dict as typing_Dict
+
+from mgp import Any as mgp_Any
+from mgp import List as mgp_List
+from mgp import ProcCtx as mgp_ProcCtx
+from mgp import Record as mgp_Record
+from mgp import Vertex as mgp_Vertex
+from mgp import read_proc as mgp_read_proc
+from torch import cuda as torch_cuda
+from torch import device as torch_device
+from torch import load as torch_load
+from torch import nn as torch_nn
+from torch import optim as torch_optim
+from torch import save as torch_save
 from torch_geometric.data import HeteroData
+from torch_geometric.nn import to_hetero
+from tqdm import tqdm
 
 from mage.node_classification.models.gat import GAT
+from mage.node_classification.models.gatjk import GATJK
 from mage.node_classification.models.gatv2 import GATv2
 from mage.node_classification.models.sage import SAGE
-from mage.node_classification.models.gatjk import GATJK
-from mage.node_classification.utils.metrics import metrics
-from mage.node_classification.utils.extract_from_database import extract_from_database
 from mage.node_classification.models.train_model import train_epoch
-
+from mage.node_classification.utils.extract_from_database import extract_from_database
+from mage.node_classification.utils.metrics import metrics
 
 ##############################
 # constants
@@ -24,6 +39,9 @@ from mage.node_classification.models.train_model import train_epoch
 
 
 # parameters for the model
+_DEFAULT_ARGUMENT_DICT = {}
+
+
 class ModelParams:
     IN_CHANNELS = "in_channels"
     OUT_CHANNELS = "out_channels"
@@ -90,11 +108,11 @@ MODELS = {GAT_MODEL: GAT, GATV2_MODEL: GATv2, SAGE_MODEL: SAGE, GAT_WITH_JK: GAT
 
 global model, current_values
 
-model: mgp.Any = None
-current_values: typing.Dict = {}
+model: mgp_Any = False
+current_values: typing_Dict = {}
 
 # list for saving logged data
-logged_data: mgp.List = []
+logged_data: mgp_List = []
 
 # dictionary of defined input types
 DEFINED_INPUT_TYPES = {
@@ -167,7 +185,7 @@ DEFAULT_VALUES = {
 ##############################
 
 
-def declare_data(ctx: mgp.ProcCtx) -> HeteroData:
+def declare_data(ctx: mgp_ProcCtx) -> HeteroData:
     """This function initializes global variable data.
 
     Args:
@@ -176,8 +194,8 @@ def declare_data(ctx: mgp.ProcCtx) -> HeteroData:
     global current_values
 
     # change device type to cuda if possible
-    current_values[OtherParams.DEVICE_TYPE] = torch.device(
-        "cuda:0" if torch.cuda.is_available() else "cpu"
+    current_values[OtherParams.DEVICE_TYPE] = torch_device(
+        "cuda:0" if torch_cuda.is_available() else "cpu"
     )
 
     nodes = list(iter(ctx.graph.vertices))  # obtain nodes from context
@@ -194,13 +212,15 @@ def declare_data(ctx: mgp.ProcCtx) -> HeteroData:
         current_values[HeteroParams.INV_LABEL_REINDEXING],
     ) = extract_from_database(
         nodes,
-        current_values[DataParams.SPLIT_RATIO],
-        current_values[HeteroParams.FEATURES_NAME],
-        current_values[HeteroParams.CLASS_NAME],
-        current_values[OtherParams.DEVICE_TYPE],
+        current_values.get(DataParams.SPLIT_RATIO, False),
+        current_values.get(HeteroParams.FEATURES_NAME, False),
+        current_values.get(HeteroParams.CLASS_NAME, False),
+        current_values.get(OtherParams.DEVICE_TYPE, False),
     )
 
-    observed_attribute_data = data[current_values[HeteroParams.OBSERVED_ATTRIBUTE]]
+    observed_attribute_data = data.get(
+        current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False), {}
+    )
 
     # second parameter of shape of feature matrix is number of input channels
     current_values[ModelParams.IN_CHANNELS] = observed_attribute_data.x.size(dim=1)
@@ -213,7 +233,7 @@ def declare_data(ctx: mgp.ProcCtx) -> HeteroData:
     return data
 
 
-def declare_model(data: mgp.Any):
+def declare_model(data: mgp_Any):
     """This function initializes global variables model, opt and criterion.
 
     Args:
@@ -224,29 +244,29 @@ def declare_model(data: mgp.Any):
     global model, current_values
 
     args_gatjk = [
-        current_values[ModelParams.IN_CHANNELS],
-        current_values[ModelParams.HIDDEN_FEATURES_SIZE],
-        current_values[ModelParams.OUT_CHANNELS],
+        current_values.get(ModelParams.IN_CHANNELS, False),
+        current_values.get(ModelParams.HIDDEN_FEATURES_SIZE, False),
+        current_values.get(ModelParams.OUT_CHANNELS, False),
     ]
 
     args_inductive = [
-        current_values[ModelParams.IN_CHANNELS],
-        current_values[ModelParams.HIDDEN_FEATURES_SIZE],
-        current_values[ModelParams.OUT_CHANNELS],
-        current_values[ModelParams.AGGREGATOR],
+        current_values.get(ModelParams.IN_CHANNELS, False),
+        current_values.get(ModelParams.HIDDEN_FEATURES_SIZE, False),
+        current_values.get(ModelParams.OUT_CHANNELS, False),
+        current_values.get(ModelParams.AGGREGATOR, False),
     ]
 
     # choose model architecture according to layer type
-    layer_type = current_values[ModelParams.LAYER_TYPE]
+    layer_type = current_values.get(ModelParams.LAYER_TYPE, "")
 
-    if layer_type not in MODELS.keys():
+    if layer_type not in MODELS:
         raise Exception(
             "You didn't choose one of currently available models (GAT, GATv2, GATJK and SAGE). Please choose one of them."
         )
 
     args = args_gatjk if layer_type == GAT_WITH_JK else args_inductive
 
-    model = MODELS[layer_type](*args)
+    model = MODELS.get(layer_type, GAT)(*args)
 
     # convert model to hetero structure
     # (if graph is homogeneous, we also do this conversion since all calculations are same)
@@ -254,17 +274,17 @@ def declare_model(data: mgp.Any):
     model = to_hetero(model, metadata)
 
     # move model to device
-    model.to(current_values[OtherParams.DEVICE_TYPE])
+    model.to(current_values.get(OtherParams.DEVICE_TYPE, False))
 
     # set default optimizer
-    opt = torch.optim.Adam(
+    opt = torch_optim.Adam(
         model.parameters(),
-        lr=current_values[OptimizerParams.LEARNING_RATE],
-        weight_decay=current_values[OptimizerParams.WEIGHT_DECAY],
+        lr=current_values.get(OptimizerParams.LEARNING_RATE, False),
+        weight_decay=current_values.get(OptimizerParams.WEIGHT_DECAY, False),
     )
 
     # set default criterion
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = torch_nn.CrossEntropyLoss()
 
     return opt, criterion
 
@@ -274,32 +294,33 @@ def declare_saving_paths():
     global current_values
     # either make new folder for saving models, or use existing one with exactly this name
     try:
-        path = os.path.join(
-            os.getcwd(), current_values[OtherParams.MODEL_SAVING_FOLDER]
+        path = os_path.join(
+            os_getcwd(), current_values.get(OtherParams.MODEL_SAVING_FOLDER, False)
         )
-        os.makedirs(path)
+        os_makedirs(path)
         print(f"New folder for saving models was created on destination {path}.")
     except FileExistsError:
         print(f"Folder for saving models already exists on destination {path}.")
 
-    current_values[OtherParams.PATH_TO_MODEL] = os.path.join(
-        os.getcwd(),
-        current_values[OtherParams.MODEL_SAVING_FOLDER],
-        "model_" + current_values[ModelParams.LAYER_TYPE] + "_",
+    current_values[OtherParams.PATH_TO_MODEL] = os_path.join(
+        os_getcwd(),
+        current_values.get(OtherParams.MODEL_SAVING_FOLDER, False),
+        "model_" + current_values.get(ModelParams.LAYER_TYPE, "") + "_",
     )
+    return False
 
 
-@mgp.read_proc
+@mgp_read_proc
 def set_model_parameters(
-    params: mgp.Any = {},
-) -> mgp.Record(
+    params: mgp_Any = _DEFAULT_ARGUMENT_DICT,
+) -> mgp_Record(
     hidden_features_size=list,
     layer_type=str,
     aggregator=str,
     learning_rate=float,
     weight_decay=float,
     split_ratio=float,
-    metrics=mgp.Any,
+    metrics=mgp_Any,
     node_id_property=str,
     num_epochs=int,
     console_log_freq=int,
@@ -339,36 +360,38 @@ def set_model_parameters(
         path_to_model (str): path where model is load and saved
     )
     """
+    if params is _DEFAULT_ARGUMENT_DICT:
+        params = _DEFAULT_ARGUMENT_DICT.copy()
     global DEFINED_INPUT_TYPES, DEFAULT_VALUES, current_values
 
     # function checks if input values in dictionary are correctly typed
     def is_correctly_typed(defined_types, input_values):
         if isinstance(defined_types, dict) and isinstance(input_values, dict):
             # defined_types is a dict of types
-            return all(
+            _return_value = all(
                 k in input_values  # check if exists
                 and is_correctly_typed(
                     defined_types[k], input_values[k]
                 )  # check for correct type
                 for k in defined_types
             )
+            return _return_value
         elif isinstance(defined_types, type):
-            return isinstance(input_values, defined_types)
+            _return_value = isinstance(input_values, defined_types)
+            return _return_value
         else:
             return False
 
     # hidden_features_size and metrics are sometimes translated as tuples,
     # which are not hashable, but conversion to lists makes them hashable
-    if (
-        ModelParams.HIDDEN_FEATURES_SIZE in params.keys()
-        and isinstance(params[ModelParams.HIDDEN_FEATURES_SIZE], tuple)
+    if ModelParams.HIDDEN_FEATURES_SIZE in params.keys() and isinstance(
+        params[ModelParams.HIDDEN_FEATURES_SIZE], tuple
     ):
         params[ModelParams.HIDDEN_FEATURES_SIZE] = list(
             params[ModelParams.HIDDEN_FEATURES_SIZE]
         )
-    if (
-        DataParams.METRICS in params.keys()
-        and isinstance(params[DataParams.METRICS], tuple)
+    if DataParams.METRICS in params.keys() and isinstance(
+        params[DataParams.METRICS], tuple
     ):
         params[DataParams.METRICS] = list(params[DataParams.METRICS])
 
@@ -382,21 +405,22 @@ def set_model_parameters(
     # define paths
     declare_saving_paths()
 
-    return mgp.Record(
-        hidden_features_size=current_values[ModelParams.HIDDEN_FEATURES_SIZE],
-        layer_type=current_values[ModelParams.LAYER_TYPE],
-        aggregator=current_values[ModelParams.AGGREGATOR],
-        learning_rate=current_values[OptimizerParams.LEARNING_RATE],
-        weight_decay=current_values[OptimizerParams.WEIGHT_DECAY],
-        split_ratio=current_values[DataParams.SPLIT_RATIO],
-        metrics=current_values[DataParams.METRICS],
-        node_id_property=current_values[MemgraphParams.NODE_ID_PROPERTY],
-        num_epochs=current_values[TrainParams.NUM_EPOCHS],
-        console_log_freq=current_values[TrainParams.CONSOLE_LOG_FREQ],
-        checkpoint_freq=current_values[TrainParams.CHECKPOINT_FREQ],
-        device_type=current_values[OtherParams.DEVICE_TYPE],
-        path_to_model=current_values[OtherParams.PATH_TO_MODEL],
+    _return_value = mgp_Record(
+        hidden_features_size=current_values.get(ModelParams.HIDDEN_FEATURES_SIZE, 0),
+        layer_type=current_values.get(ModelParams.LAYER_TYPE, ""),
+        aggregator=current_values.get(ModelParams.AGGREGATOR, False),
+        learning_rate=current_values.get(OptimizerParams.LEARNING_RATE, 0.0),
+        weight_decay=current_values.get(OptimizerParams.WEIGHT_DECAY, False),
+        split_ratio=current_values.get(DataParams.SPLIT_RATIO, 0.0),
+        metrics=current_values.get(DataParams.METRICS, False),
+        node_id_property=current_values.get(MemgraphParams.NODE_ID_PROPERTY, False),
+        num_epochs=current_values.get(TrainParams.NUM_EPOCHS, False),
+        console_log_freq=current_values.get(TrainParams.CONSOLE_LOG_FREQ, False),
+        checkpoint_freq=current_values.get(TrainParams.CHECKPOINT_FREQ, False),
+        device_type=current_values.get(OtherParams.DEVICE_TYPE, ""),
+        path_to_model=current_values.get(OtherParams.PATH_TO_MODEL, ""),
     )
+    return _return_value
 
 
 ##############################
@@ -412,11 +436,13 @@ def fetch_saved_models():
         models (list): list of paths of saved models
     """
     global model
-    model_saving_folder = os.path.join(current_values[OtherParams.MODEL_SAVING_FOLDER])
+    model_saving_folder = os_path.join(
+        current_values.get(OtherParams.MODEL_SAVING_FOLDER, False)
+    )
     models = [
         f
-        for f in os.listdir(model_saving_folder)
-        if os.path.isfile(os.path.join(model_saving_folder, f))
+        for f in os_listdir(model_saving_folder)
+        if os_path.isfile(os_path.join(model_saving_folder, f))
         and f.endswith(".pt")
         and f.startswith("model")
     ]
@@ -435,15 +461,17 @@ def save_model_to_folder() -> str:
     model_saving_folder, models = fetch_saved_models()
 
     # delete oldest models if there are more than max models to keep
-    for i in range(current_values[TrainParams.MAX_MODELS_TO_KEEP] - 1, len(models)):
-        os.remove(os.path.join(model_saving_folder, models[i]))
+    for i in range(
+        current_values.get(TrainParams.MAX_MODELS_TO_KEEP, 0) - 1, len(models)
+    ):
+        os_remove(os_path.join(model_saving_folder, models[i]))
 
     path_to_saved_model = (
-        current_values[OtherParams.PATH_TO_MODEL]
+        current_values.get(OtherParams.PATH_TO_MODEL, 0.0)
         + datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         + ".pt"
     )
-    torch.save(
+    torch_save(
         model.state_dict(),
         path_to_saved_model,
     )
@@ -451,11 +479,9 @@ def save_model_to_folder() -> str:
     return path_to_saved_model
 
 
-@mgp.read_proc
-def train(
-    ctx: mgp.ProcCtx, num_epochs: int = 100
-) -> mgp.Record(
-    epoch=int, loss=float, val_loss=float, train_log=mgp.Any, val_log=mgp.Any
+@mgp_read_proc
+def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> mgp_Record(
+    epoch=int, loss=float, val_loss=float, train_log=mgp_Any, val_log=mgp_Any
 ):
     """This function performs training of model. It first declares data, model,
     optimizer and criterion. Then it performs training.
@@ -484,8 +510,10 @@ def train(
     opt, criterion = declare_model(data)
 
     current_values[TrainParams.NUM_EPOCHS] = num_epochs
-    num_nodes_sample = current_values[HeteroParams.NUM_NODES_SAMPLE]
-    num_iterations_sample = current_values[HeteroParams.NUM_ITERATIONS_SAMPLE]
+    num_nodes_sample = current_values.get(HeteroParams.NUM_NODES_SAMPLE, False)
+    num_iterations_sample = current_values.get(
+        HeteroParams.NUM_ITERATIONS_SAMPLE, False
+    )
 
     # variables for early stopping
     last_loss = float("inf")
@@ -499,8 +527,8 @@ def train(
             opt,
             data,
             criterion,
-            current_values[TrainParams.BATCH_SIZE],
-            current_values[HeteroParams.OBSERVED_ATTRIBUTE],
+            current_values.get(TrainParams.BATCH_SIZE, False),
+            current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False),
             {
                 key: [num_nodes_sample] * num_iterations_sample
                 for key in data.node_types
@@ -517,7 +545,9 @@ def train(
                 + ("consecutive epochs" if trigger_times > 1 else "consecutive epoch")
             )
 
-            times_until_stopping = current_values[OtherParams.PATIENCE] - trigger_times
+            times_until_stopping = (
+                current_values.get(OtherParams.PATIENCE, 0.0) - trigger_times
+            )
 
             stop_after = (
                 str(times_until_stopping)
@@ -527,7 +557,7 @@ def train(
 
             print(f"Loss has dropped for {drop_epochs}. Stopping after {stop_after}.")
 
-            if trigger_times >= current_values[OtherParams.PATIENCE]:
+            if trigger_times >= current_values.get(OtherParams.PATIENCE, 0):
                 print("Early stopping!")
                 break
 
@@ -537,24 +567,26 @@ def train(
         last_loss = val_loss
 
         # log data every console_log_freq epochs
-        if epoch % current_values[TrainParams.CONSOLE_LOG_FREQ] == 0:
+        if epoch % current_values.get(TrainParams.CONSOLE_LOG_FREQ, 0.0) == 0:
             model.eval()
             out = model(data.x_dict, data.edge_index_dict)
             dict_train = metrics(
-                data[current_values[HeteroParams.OBSERVED_ATTRIBUTE]].train_mask,
+                data[
+                    current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, "")
+                ].train_mask,
                 out,
                 data,
-                current_values[DataParams.METRICS],
-                current_values[HeteroParams.OBSERVED_ATTRIBUTE],
-                current_values[OtherParams.DEVICE_TYPE],
+                current_values.get(DataParams.METRICS, False),
+                current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False),
+                current_values.get(OtherParams.DEVICE_TYPE, False),
             )
             dict_val = metrics(
-                data[current_values[HeteroParams.OBSERVED_ATTRIBUTE]].val_mask,
+                data[current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, "")].val_mask,
                 out,
                 data,
-                current_values[DataParams.METRICS],
-                current_values[HeteroParams.OBSERVED_ATTRIBUTE],
-                current_values[OtherParams.DEVICE_TYPE],
+                current_values.get(DataParams.METRICS, False),
+                current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False),
+                current_values.get(OtherParams.DEVICE_TYPE, False),
             )
             logged_data.append(
                 {
@@ -568,28 +600,31 @@ def train(
 
             print(
                 f"Epoch: {epoch:03d}, Loss: {loss:.4f}, Val Loss: {val_loss:.4f},"
-                + f'Accuracy: {logged_data[-1]["train"]["accuracy"]:.4f}, Accuracy: {logged_data[-1]["val"]["accuracy"]:.4f}'
+                + (
+                    f"Accuracy: {logged_data[-1].get('train', {}).get('accuracy', False):.4f}, Accuracy: "
+                    f"{logged_data[-1].get('val', {}).get('accuracy', False):.4f}"
+                )
             )
 
         # save model every checkpoint_freq epochs
-        if epoch % current_values[TrainParams.CHECKPOINT_FREQ] == 0:
-            if (
-                time() - last_time
-                > current_values[TrainParams.TIME_BETWEEN_CHECKPOINTS]
+        if epoch % current_values.get(TrainParams.CHECKPOINT_FREQ, 0.0) == 0:
+            if time() - last_time > current_values.get(
+                TrainParams.TIME_BETWEEN_CHECKPOINTS, 0.0
             ):
                 save_model_to_folder()
                 last_time = time()
 
-    return [
-        mgp.Record(
-            epoch=data["epoch"],
-            loss=data["loss"],
-            val_loss=data["val_loss"],
-            train_log=data["train"],
-            val_log=data["val"],
+    _return_value = [
+        mgp_Record(
+            epoch=data.get("epoch", False),
+            loss=data.get("loss", []),
+            val_loss=data.get("val_loss", []),
+            train_log=data.get("train", False),
+            val_log=data.get("val", False),
         )
         for data in logged_data
     ]
+    return _return_value
 
 
 ##############################
@@ -597,11 +632,9 @@ def train(
 ##############################
 
 
-@mgp.read_proc
-def get_training_data() -> (
-    mgp.Record(
-        epoch=int, loss=float, val_loss=float, train_log=mgp.Any, val_log=mgp.Any
-    )
+@mgp_read_proc
+def get_training_data() -> mgp_Record(
+    epoch=int, loss=float, val_loss=float, train_log=mgp_Any, val_log=mgp_Any
 ):
     """This function is used so user can see what is logged data from training.
 
@@ -618,16 +651,17 @@ def get_training_data() -> (
 
     """
 
-    return [
-        mgp.Record(
-            epoch=data["epoch"],
-            loss=data["loss"],
-            val_loss=data["val_loss"],
-            train_log=data["train"],
-            val_log=data["val"],
+    _return_value = [
+        mgp_Record(
+            epoch=data.get("epoch", False),
+            loss=data.get("loss", []),
+            val_loss=data.get("val_loss", []),
+            train_log=data.get("train", False),
+            val_log=data.get("val", False),
         )
         for data in logged_data
     ]
+    return _return_value
 
 
 ##############################
@@ -635,8 +669,8 @@ def get_training_data() -> (
 ##############################
 
 
-@mgp.read_proc
-def save_model() -> mgp.Record(path=str, status=str):
+@mgp_read_proc
+def save_model() -> mgp_Record(path=str, status=str):
     """This function saves model to model saving folder. If there are already total
     of max_models_to_keep models in model saving folder, oldest model is deleted.
 
@@ -649,20 +683,21 @@ def save_model() -> mgp.Record(path=str, status=str):
             ): return record
     """
 
-    if model is None:
+    if model is False:
         raise Exception(
             "There are no initialized or loaded models. First load or initialize a model to be able save it."
         )
 
     path_to_saved_model = save_model_to_folder()
 
-    return mgp.Record(
+    _return_value = mgp_Record(
         path=path_to_saved_model, status="Model has been successfully saved."
     )
+    return _return_value
 
 
-@mgp.read_proc
-def load_model(ctx: mgp.ProcCtx, num: int = 0) -> mgp.Record(path=str, status=str):
+@mgp_read_proc
+def load_model(ctx: mgp_ProcCtx, num: int = 0) -> mgp_Record(path=str, status=str):
     """This function loads model from defined folder for saved models.
 
     Args:
@@ -686,19 +721,20 @@ def load_model(ctx: mgp.ProcCtx, num: int = 0) -> mgp.Record(path=str, status=st
             f"Model with number {num} does not exist. There are {len(models)} models saved."
         )
 
-    path_to_load_model = os.path.join(model_saving_folder, models[num])
+    path_to_load_model = os_path.join(model_saving_folder, models[num])
 
-    model.load_state_dict(torch.load(path_to_load_model))
+    model.load_state_dict(torch_load(path_to_load_model))
 
-    return mgp.Record(
+    _return_value = mgp_Record(
         path=path_to_load_model, status="Model has been successfully loaded."
     )
+    return _return_value
 
 
-@mgp.read_proc
-def predict(
-    ctx: mgp.ProcCtx, vertex: mgp.Vertex
-) -> mgp.Record(predicted_class=int, status=str):
+@mgp_read_proc
+def predict(ctx: mgp_ProcCtx, vertex: mgp_Vertex) -> mgp_Record(
+    predicted_class=int, status=str
+):
     """This function predicts metrics on one node. It is suggested that user previously
     loads unseen test data to predict on it.
 
@@ -722,30 +758,31 @@ def predict(
     # define fresh data
     data = declare_data(ctx)
 
-    if model is None:
+    if model is False:
         raise Exception("Load a model before predicting.")
 
     model.eval()
     out = model(data.x_dict, data.edge_index_dict)
-    pred = out[current_values[HeteroParams.OBSERVED_ATTRIBUTE]].argmax(dim=1)
+    pred = out[current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False)].argmax(dim=1)
 
     inv_reindexing = HeteroParams.INV_REINDEXING
-    observed_attribute = current_values[HeteroParams.OBSERVED_ATTRIBUTE]
+    observed_attribute = current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False)
 
-    position = current_values[inv_reindexing][observed_attribute][vertex.id]
+    position = current_values.get(inv_reindexing, {})[observed_attribute][vertex.id]
 
     predicted_class = int(pred.detach().cpu().numpy()[position])
 
-    return mgp.Record(
-        predicted_class=current_values[HeteroParams.INV_LABEL_REINDEXING][
+    _return_value = mgp_Record(
+        predicted_class=current_values.get(HeteroParams.INV_LABEL_REINDEXING, {})[
             predicted_class
         ],
         status="Prediction complete.",
     )
+    return _return_value
 
 
-@mgp.read_proc
-def reset() -> mgp.Record(status=str):
+@mgp_read_proc
+def reset() -> mgp_Record(status=str):
     """This function resets all variables to default values.
 
     Returns:
@@ -754,10 +791,13 @@ def reset() -> mgp.Record(status=str):
 
     # set model and logged_data to None
     global model, current_values, logged_data
-    model = None
+    model = False
     logged_data = []
 
     # reinitialize current_values
     current_values = DEFAULT_VALUES
 
-    return mgp.Record(status="Global parameters and logged data have been reset")
+    _return_value = mgp_Record(
+        status="Global parameters and logged data have been reset"
+    )
+    return _return_value

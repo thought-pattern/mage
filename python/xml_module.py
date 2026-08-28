@@ -1,6 +1,24 @@
-import mgp
-import defusedxml.ElementTree as ET
-import urllib.request
+"""
+Note: our implementation of xpath is different from neo4j,
+because python offers different support for xpath than java
+We cant have absolute paths
+And our xpath search starts from the root node,
+so ./something is equivalent to /root/something
+For example,
+python input : .//ZONE is equivalent to java input //ZONE
+https://docs.python.org/3/library/xml.etree.elementtree.html#xpath-support
+here are our avaliable xpath options
+"""
+
+from urllib import request as urllib_request
+
+from defusedxml import ElementTree as ET
+from mgp import Map as mgp_Map
+from mgp import Record as mgp_Record
+from mgp import function as mgp_function
+from mgp import read_proc as mgp_read_proc
+
+_DEFAULT_ARGUMENT_DICT = {}
 
 TYPE = "_type"
 TEXT = "_text"
@@ -33,18 +51,17 @@ def xml_file_to_string(xml_file):
     try:
         with open(xml_file, "r") as xml_file:
             xml_string = xml_file.read().replace("\n", "").replace("  ", "")
-    except PermissionError:
+    except PermissionError as _caught_error_53:
         raise PermissionError(
-            "You don't have permissions to write into that file."
-            "Make sure to give the necessary permissions to user memgraph."
-        )
-    except Exception:
-        raise OSError("Could not open or write to file.")
+            "You don't have permissions to write into that file.Make sure to give the necessary permissions to user memgraph."
+        ) from _caught_error_53
+    except Exception as _caught_error_57:
+        raise OSError("Could not open or write to file.") from _caught_error_57
     return xml_string
 
 
-@mgp.function
-def parse(xml_input: str, simple: bool = False, path: str = "") -> mgp.Map:
+@mgp_function
+def parse(xml_input: str, simple: bool = False, path: str = "") -> mgp_Map:
     """
     Function to parse xml string (or file) into a map.
 
@@ -65,7 +82,7 @@ def parse(xml_input: str, simple: bool = False, path: str = "") -> mgp.Map:
         mgp.Map -> XML file parsed as map
     """
 
-    root = None
+    root = False
     parser = ET.DefusedXMLParser()
     if path:
         root = ET.fromstring(xml_file_to_string(path), parser)
@@ -78,6 +95,7 @@ def parse(xml_input: str, simple: bool = False, path: str = "") -> mgp.Map:
 def check_url(url):
     if not url.endswith(".xml"):
         raise ValueError("File must be xml!")
+    return False
 
 
 def xpath_search(root, xpath_expression):
@@ -85,30 +103,17 @@ def xpath_search(root, xpath_expression):
         result = root.findall(xpath_expression)
         return result
     except Exception as e:
-        raise ValueError(f"XPath search error: {e}")
+        raise ValueError(f"XPath search error: {e}") from e
 
 
-"""
-Note: our implementation of xpath is different from neo4j,
-because python offers different support for xpath than java
-We cant have absolute paths
-And our xpath search starts from the root node,
-so ./something is equivalent to /root/something
-For example,
-python input : .//ZONE is equivalent to java input //ZONE
-https://docs.python.org/3/library/xml.etree.elementtree.html#xpath-support
-here are our avaliable xpath options
-"""
-
-
-@mgp.read_proc
+@mgp_read_proc
 def load(
     xml_url: str,
     simple: bool = False,
     path: str = "",
     xpath: str = "",
-    headers: mgp.Map = {},
-) -> mgp.Record(output_map=mgp.Map):
+    headers: mgp_Map = _DEFAULT_ARGUMENT_DICT,
+) -> mgp_Record(output_map=mgp_Map):
     """
     Procedure to load XML from url or from file to a map.
 
@@ -136,24 +141,27 @@ def load(
         mgp.Map -> XML file or URL parsed as map.
         In case XPATH is active, a map of for each element will be returned.
     """
-    root = None
+    if headers is _DEFAULT_ARGUMENT_DICT:
+        headers = _DEFAULT_ARGUMENT_DICT.copy()
+    root = False
     parser = ET.DefusedXMLParser()
     if path:
         root = ET.fromstring(xml_file_to_string(path), parser)
     else:
         check_url(xml_url)
         try:
-            request = urllib.request.Request(xml_url, headers=headers)
-            response = urllib.request.urlopen(request).read()
+            request = urllib_request.Request(xml_url, headers=headers)
+            response = urllib_request.urlopen(request).read()
             root = ET.fromstring(response)
         except Exception as e:
-            raise ValueError(f"Error while fetching or parsing XML: {e}")
+            raise ValueError(f"Error while fetching or parsing XML: {e}") from e
 
     if xpath:
         record_list = list()
         xpath_list = xpath_search(root, xpath)
         for element in xpath_list:
-            record_list.append(mgp.Record(output_map=parse_element(element, simple)))
+            record_list.append(mgp_Record(output_map=parse_element(element, simple)))
         return record_list
     output_map = parse_element(root, simple)
-    return mgp.Record(output_map=output_map)
+    _return_value = mgp_Record(output_map=output_map)
+    return _return_value

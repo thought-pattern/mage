@@ -1,38 +1,53 @@
-import mgp
+"""Utilities for graph coloring."""
+
 from collections import defaultdict
-from typing import Optional, Dict, Any
-import mage.graph_coloring_module
-from mage.graph_coloring_module import Parameter
-from mage.graph_coloring_module import Graph
-from mage.graph_coloring_module import IncorrectParametersException
+from typing import Any, Dict
+
+from mgp import Edge as mgp_Edge
+from mgp import List as mgp_List
+from mgp import Map as mgp_Map
+from mgp import ProcCtx as mgp_ProcCtx
+from mgp import Record as mgp_Record
+from mgp import Vertex as mgp_Vertex
+from mgp import read_proc as mgp_read_proc
+
+from mage import graph_coloring_module as mage_graph_coloring_module
+from mage.graph_coloring_module import Graph, IncorrectParametersException, Parameter
+
+_DEFAULT_ARGUMENT_DICT = {}
 
 
-@mgp.read_proc
+@mgp_read_proc
 def color_graph(
-    context: mgp.ProcCtx, parameters: mgp.Map = {}, edge_property: str = "weight"
-) -> mgp.Record(node=mgp.Vertex, color=int):
+    context: mgp_ProcCtx,
+    parameters: mgp_Map = _DEFAULT_ARGUMENT_DICT,
+    edge_property: str = "weight",
+) -> mgp_Record(node=mgp_Vertex, color=int):
     """
     Example:
     CALL graph_coloring.color_graph() YIELD *;
     """
+    if parameters is _DEFAULT_ARGUMENT_DICT:
+        parameters = _DEFAULT_ARGUMENT_DICT.copy()
     parameters = _get_parameters(parameters)
     graph = _convert_to_graph(context, edge_property)
-    algorithm = parameters[Parameter.ALGORITHM]
+    algorithm = parameters.get(Parameter.ALGORITHM, False)
     solution = algorithm.run(graph, parameters)
-    return [
-        mgp.Record(node=context.graph.get_vertex_by_id(graph.label(node)), color=color)
+    _return_value = [
+        mgp_Record(node=context.graph.get_vertex_by_id(graph.label(node)), color=color)
         for node, color in enumerate(solution.chromosome)
     ]
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def color_subgraph(
-    context: mgp.ProcCtx,
-    vertices: mgp.List[mgp.Vertex],
-    edges: mgp.List[mgp.Edge],
-    parameters: mgp.Map = {},
+    context: mgp_ProcCtx,
+    vertices: mgp_List[mgp_Vertex],
+    edges: mgp_List[mgp_Edge],
+    parameters: mgp_Map = _DEFAULT_ARGUMENT_DICT,
     edge_property: str = "weight",
-) -> mgp.Record(node=mgp.Vertex, color=int):
+) -> mgp_Record(node=mgp_Vertex, color=int):
     """
     Example:
     MATCH (a:Cell)-[e:CLOSE_TO]->(b:Cell)
@@ -41,29 +56,35 @@ def color_subgraph(
     YIELD color, node
     RETURN color, node;
     """
+    if parameters is _DEFAULT_ARGUMENT_DICT:
+        parameters = _DEFAULT_ARGUMENT_DICT.copy()
     parameters = _get_parameters(parameters)
     graph = _convert_to_subgraph(context, vertices, edges, edge_property)
-    algorithm = parameters[Parameter.ALGORITHM]
+    algorithm = parameters.get(Parameter.ALGORITHM, False)
     solution = algorithm.run(graph, parameters)
-    return [
-        mgp.Record(node=context.graph.get_vertex_by_id(graph.label(node)), color=color)
+    _return_value = [
+        mgp_Record(node=context.graph.get_vertex_by_id(graph.label(node)), color=color)
         for node, color in enumerate(solution.chromosome)
     ]
+    return _return_value
 
 
 def _str2Class(name: str):
-    if name not in dir(mage.graph_coloring_module):
+    if name not in dir(mage_graph_coloring_module):
         raise IncorrectParametersException(f"Parameter {name} is incorrect.")
-    return getattr(mage.graph_coloring_module, name)
+    _return_value = getattr(mage_graph_coloring_module, name)
+    return _return_value
 
 
 def _map_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
     for key in parameters:
-        if isinstance(parameters[key], str):
-            parameters[key] = _str2Class(parameters[key])()
-        if isinstance(parameters[key], tuple) or isinstance(parameters[key], list):
+        if isinstance(parameters.get(key, False), str):
+            parameters[key] = _str2Class(parameters.get(key, False))()
+        if isinstance(parameters.get(key, False), tuple) or isinstance(
+            parameters.get(key, False), list
+        ):
             new_list = []
-            for val in parameters[key]:
+            for val in parameters.get(key, False):
                 if isinstance(val, str):
                     new_list.append(_str2Class(val)())
                 else:
@@ -143,7 +164,7 @@ def _get_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
     return params
 
 
-def _convert_to_graph(context: mgp.ProcCtx, edge_property: str) -> Graph:
+def _convert_to_graph(context: mgp_ProcCtx, edge_property: str) -> Graph:
     nodes = []
     adj_list = defaultdict(list)
 
@@ -155,18 +176,19 @@ def _convert_to_graph(context: mgp.ProcCtx, edge_property: str) -> Graph:
         context.check_must_abort()
         for e in v.out_edges:
             weight = e.properties.get(edge_property, 1)
-            adj_list[e.from_vertex.id].append((e.to_vertex.id, weight))
-            adj_list[e.to_vertex.id].append((e.from_vertex.id, weight))
+            adj_list.get(e.from_vertex.id, []).append((e.to_vertex.id, weight))
+            adj_list.get(e.to_vertex.id, []).append((e.from_vertex.id, weight))
 
-    return Graph(nodes, adj_list)
+    _return_value = Graph(nodes, adj_list)
+    return _return_value
 
 
 def _convert_to_subgraph(
-    context: mgp.ProcCtx,
-    vertices: mgp.List[mgp.Vertex],
-    edges: mgp.List[mgp.Edge],
+    context: mgp_ProcCtx,
+    vertices: mgp_List[mgp_Vertex],
+    edges: mgp_List[mgp_Edge],
     edge_property: str,
-) -> Optional[Graph]:
+) -> Graph:
     vertices, edges = map(set, [vertices, edges])
 
     nodes = []
@@ -183,7 +205,8 @@ def _convert_to_subgraph(
             nodes.append(e.from_vertex.id)
         if e.to_vertex.id not in nodes:
             nodes.append(e.to_vertex.id)
-        adj_list[e.from_vertex.id].append((e.to_vertex.id, weight))
-        adj_list[e.to_vertex.id].append((e.from_vertex.id, weight))
+        adj_list.get(e.from_vertex.id, []).append((e.to_vertex.id, weight))
+        adj_list.get(e.to_vertex.id, []).append((e.from_vertex.id, weight))
 
-    return Graph(nodes, adj_list)
+    _return_value = Graph(nodes, adj_list)
+    return _return_value

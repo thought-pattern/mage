@@ -1,3 +1,5 @@
+"""Utilities for constants."""
+
 from enum import Enum, EnumMeta
 
 

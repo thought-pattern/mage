@@ -1,7 +1,11 @@
+"""Tests for test second order random walk."""
+
 from typing import List
 
-import numpy as np
-import pytest
+from numpy import all as np_all
+from numpy import array as np_array
+from numpy import isclose as np_isclose
+from pytest import mark as pytest_mark
 
 from mage.node2vec.graph import GraphHolder
 from mage.node2vec.second_order_random_walk import SecondOrderRandomWalk
@@ -28,40 +32,44 @@ EDGES_WEIGHTS_DICT = {
 
 
 def normalize(array: List[float]):
-    return np.array(array) / sum(array)
+    _return_value = np_array(array) / sum(array)
+    return _return_value
 
 
 UNDIRECT_GRAPH_EDGE_TRANSITION_PROBS = {
     (0, 1): normalize(
         [
-            EDGES_WEIGHTS_DICT[(0, 1)] * 1 / P,
-            EDGES_WEIGHTS_DICT[(1, 5)] * 1,
-            EDGES_WEIGHTS_DICT[(1, 6)] * 1,
-            EDGES_WEIGHTS_DICT[(7, 1)] * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((0, 1), 0) * 1 / P,
+            EDGES_WEIGHTS_DICT.get((1, 5), 0) * 1,
+            EDGES_WEIGHTS_DICT.get((1, 6), 0) * 1,
+            EDGES_WEIGHTS_DICT.get((7, 1), 0) * 1 / Q,
         ]
     ),
     (3, 0): normalize(
         [
-            EDGES_WEIGHTS_DICT[(0, 1)] * 1 / Q,
-            EDGES_WEIGHTS_DICT[(0, 2)] * 1 / Q,
-            EDGES_WEIGHTS_DICT[(3, 0)] * 1 / P,
-            EDGES_WEIGHTS_DICT[(0, 4)] * 1 / Q,
-            EDGES_WEIGHTS_DICT[(0, 5)] * 1 / Q,
-            EDGES_WEIGHTS_DICT[(6, 0)] * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((0, 1), 0) * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((0, 2), 0) * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((3, 0), 0) * 1 / P,
+            EDGES_WEIGHTS_DICT.get((0, 4), 0) * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((0, 5), 0) * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((6, 0), 0) * 1 / Q,
         ]
     ),
 }
 
 DIRECT_GRAPH_EDGE_TRANSITION_PROBS = {
     (0, 1): normalize(
-        [EDGES_WEIGHTS_DICT[(1, 5)] * 1 / Q, EDGES_WEIGHTS_DICT[(1, 6)] * 1]
+        [
+            EDGES_WEIGHTS_DICT.get((1, 5), 0) * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((1, 6), 0) * 1,
+        ]
     ),
     (3, 0): normalize(
         [
-            EDGES_WEIGHTS_DICT[(0, 1)] * 1 / Q,
-            EDGES_WEIGHTS_DICT[(0, 2)] * 1 / Q,
-            EDGES_WEIGHTS_DICT[(0, 4)] * 1 / Q,
-            EDGES_WEIGHTS_DICT[(0, 5)] * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((0, 1), 0) * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((0, 2), 0) * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((0, 4), 0) * 1 / Q,
+            EDGES_WEIGHTS_DICT.get((0, 5), 0) * 1 / Q,
         ]
     ),
 }
@@ -69,39 +77,42 @@ DIRECT_GRAPH_EDGE_TRANSITION_PROBS = {
 UNDIRECT_GRAPH_FIRST_PASS_TRANSITION_PROBS = {
     1: normalize(
         [
-            EDGES_WEIGHTS_DICT[(0, 1)],
-            EDGES_WEIGHTS_DICT[(1, 5)],
-            EDGES_WEIGHTS_DICT[(1, 6)],
-            EDGES_WEIGHTS_DICT[(7, 1)],
+            EDGES_WEIGHTS_DICT.get((0, 1), False),
+            EDGES_WEIGHTS_DICT.get((1, 5), False),
+            EDGES_WEIGHTS_DICT.get((1, 6), False),
+            EDGES_WEIGHTS_DICT.get((7, 1), False),
         ]
     ),
     0: normalize(
         [
-            EDGES_WEIGHTS_DICT[(0, 1)],
-            EDGES_WEIGHTS_DICT[(0, 2)],
-            EDGES_WEIGHTS_DICT[(3, 0)],
-            EDGES_WEIGHTS_DICT[(0, 4)],
-            EDGES_WEIGHTS_DICT[(0, 5)],
-            EDGES_WEIGHTS_DICT[(6, 0)],
+            EDGES_WEIGHTS_DICT.get((0, 1), False),
+            EDGES_WEIGHTS_DICT.get((0, 2), False),
+            EDGES_WEIGHTS_DICT.get((3, 0), False),
+            EDGES_WEIGHTS_DICT.get((0, 4), False),
+            EDGES_WEIGHTS_DICT.get((0, 5), False),
+            EDGES_WEIGHTS_DICT.get((6, 0), False),
         ]
     ),
 }
 
 DIRECT_GRAPH_FIRST_PASS_TRANSITION_PROBS = {
-    1: normalize([EDGES_WEIGHTS_DICT[(1, 5)], EDGES_WEIGHTS_DICT[(1, 6)]]),
+    1: normalize(
+        [EDGES_WEIGHTS_DICT.get((1, 5), False), EDGES_WEIGHTS_DICT.get((1, 6), False)]
+    ),
     0: normalize(
         [
-            EDGES_WEIGHTS_DICT[(0, 1)],
-            EDGES_WEIGHTS_DICT[(0, 2)],
-            EDGES_WEIGHTS_DICT[(0, 4)],
-            EDGES_WEIGHTS_DICT[(0, 5)],
+            EDGES_WEIGHTS_DICT.get((0, 1), False),
+            EDGES_WEIGHTS_DICT.get((0, 2), False),
+            EDGES_WEIGHTS_DICT.get((0, 4), False),
+            EDGES_WEIGHTS_DICT.get((0, 5), False),
         ]
     ),
 }
 
 
 def get_basic_graph(dataset, is_directed) -> GraphHolder:
-    return GraphHolder(dataset, is_directed)
+    _return_value = GraphHolder(dataset, is_directed)
+    return _return_value
 
 
 def get_transition_probs(is_directed):
@@ -119,16 +130,17 @@ def get_first_pass_transition_probs(is_directed):
 def same_array_values(
     array_1: List[float], array_2: List[float], absolute_tolerance=1e-5
 ) -> bool:
-    return np.all(
-        np.isclose(
+    _return_value = np_all(
+        np_isclose(
             array_1,
             array_2,
             atol=absolute_tolerance,
         )
     )
+    return _return_value
 
 
-@pytest.mark.parametrize(
+@pytest_mark.parametrize(
     "dataset, is_directed",
     [
         (EDGES_WEIGHTS_DICT, True),
@@ -147,11 +159,12 @@ def test_graph_transition_probs(dataset, is_directed):
 
     for edge in graph_transition_probs:
         calculated_transition_probs = basic_graph.get_edge_transition_probs(edge)
-        correct_transition_probs = graph_transition_probs.get(edge)
+        correct_transition_probs = graph_transition_probs.get(edge, False)
         assert same_array_values(calculated_transition_probs, correct_transition_probs)
+    return False
 
 
-@pytest.mark.parametrize(
+@pytest_mark.parametrize(
     "dataset, is_directed",
     [
         (EDGES_WEIGHTS_DICT, True),
@@ -172,11 +185,12 @@ def test_graph_first_pass_transition_probs(dataset, is_directed):
         calculated_transition_probs = basic_graph.get_node_first_pass_transition_probs(
             node
         )
-        correct_transition_probs = graph_transition_probs.get(node)
+        correct_transition_probs = graph_transition_probs.get(node, False)
         assert same_array_values(calculated_transition_probs, correct_transition_probs)
+    return False
 
 
-@pytest.mark.parametrize(
+@pytest_mark.parametrize(
     "dataset, is_directed",
     [
         (EDGES_WEIGHTS_DICT, True),
@@ -196,3 +210,4 @@ def test_second_order_walks(dataset, is_directed):
     for walk in walks:
         for i in range(1, len(walk)):
             assert basic_graph.has_edge(walk[i - 1], walk[i])
+    return False

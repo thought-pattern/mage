@@ -1,38 +1,60 @@
-import sys
-import mgp
+"""Utilities for graph analyzer."""
+
 from collections import OrderedDict
-from itertools import chain, repeat
 from inspect import cleandoc
+from itertools import chain, repeat
+from sys import stderr as sys_stderr
+from sys import version as sys_version
 from typing import List, Tuple
 
-try:
-    import networkx as nx
-except ImportError as import_error:
-    sys.stderr.write(
-        (
-            "\n"
-            "NOTE: Please install networkx to be able to use graph_analyzer "
-            "module. Using Python:\n" + sys.version + "\n"
-        )
-    )
-    raise import_error
+from mgp import Edge as mgp_Edge
+from mgp import List as mgp_List
+from mgp import Nullable as mgp_Nullable
+from mgp import ProcCtx as mgp_ProcCtx
+from mgp import Record as mgp_Record
+from mgp import Vertex as mgp_Vertex
+from mgp import read_proc as mgp_read_proc
+
 # Imported last because it also depends on networkx.
-from mgp_networkx import MemgraphMultiDiGraph  # noqa E402
+from mgp_networkx import MemgraphMultiDiGraph
+
+try:
+    from networkx import Graph as nx_Graph
+    from networkx import MultiDiGraph as nx_MultiDiGraph
+    from networkx import algorithms as nx_algorithms
+    from networkx import articulation_points as nx_articulation_points
+    from networkx import bridges as nx_bridges
+    from networkx import is_biconnected as nx_is_biconnected
+    from networkx import is_strongly_connected as nx_is_strongly_connected
+    from networkx import is_weakly_connected as nx_is_weakly_connected
+    from networkx import number_of_edges as nx_number_of_edges
+    from networkx import number_of_nodes as nx_number_of_nodes
+    from networkx import subgraph_view as nx_subgraph_view
+except ImportError as import_error:
+    sys_stderr.write(
+        "\nNOTE: Please install networkx to be able to use graph_analyzer module. Using Python:\n"
+        + sys_version
+        + "\n"
+    )
+    raise import_error from import_error
 
 
 _MAX_LIST_SIZE = 10
 
 
-@mgp.read_proc
-def help() -> mgp.Record(name=str, value=str):
+@mgp_read_proc
+def help() -> mgp_Record(name=str, value=str):
     """Shows manual page for graph_analyzer."""
     records = []
 
     def make_records(name, doc):
-        return (
-            mgp.Record(name=n, value=v)
-            for n, v in zip(chain([name], repeat("")), cleandoc(doc).splitlines())
+        _return_value = (
+            mgp_Record(name=n, value=v)
+            for n, v in zip(
+                chain([name], repeat("")), cleandoc(doc).splitlines(), strict=False
+            )
         )
+        return _return_value
 
     for func in (help, analyze, analyze_subgraph):
         records.extend(
@@ -45,10 +67,10 @@ def help() -> mgp.Record(name=str, value=str):
     return records
 
 
-@mgp.read_proc
+@mgp_read_proc
 def analyze(
-    context: mgp.ProcCtx, analyses: mgp.Nullable[List[str]] = None
-) -> mgp.Record(name=str, value=str):
+    context: mgp_ProcCtx, analyses: mgp_Nullable[List[str]] = False
+) -> mgp_Record(name=str, value=str):
     """
     Shows graph information.
 
@@ -65,16 +87,17 @@ def analyze(
     """
     g = MemgraphMultiDiGraph(ctx=context)
     recs = _analyze_graph(context, g, analyses)
-    return [mgp.Record(name=name, value=value) for name, value in recs]
+    _return_value = [mgp_Record(name=name, value=value) for name, value in recs]
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def analyze_subgraph(
-    context: mgp.ProcCtx,
-    vertices: mgp.List[mgp.Vertex],
-    edges: mgp.List[mgp.Edge],
-    analyses: mgp.Nullable[List[str]] = None,
-) -> mgp.Record(name=str, value=str):
+    context: mgp_ProcCtx,
+    vertices: mgp_List[mgp_Vertex],
+    edges: mgp_List[mgp_Edge],
+    analyses: mgp_Nullable[List[str]] = False,
+) -> mgp_Record(name=str, value=str):
     """
     Shows subgraph information.
 
@@ -99,17 +122,18 @@ def analyze_subgraph(
         RETURN name, value;
     """
     vertices, edges = map(set, [vertices, edges])
-    g = nx.subgraph_view(
+    g = nx_subgraph_view(
         MemgraphMultiDiGraph(ctx=context),
         lambda n: n in vertices,
         lambda n1, n2, e: e in edges,
     )
     recs = _analyze_graph(context, g, analyses)
-    return [mgp.Record(name=name, value=value) for name, value in recs]
+    _return_value = [mgp_Record(name=name, value=value) for name, value in recs]
+    return _return_value
 
 
 def _get_analysis_mapping():
-    return OrderedDict(
+    _return_value = OrderedDict(
         [
             ("nodes", _number_of_nodes),
             ("edges", _number_of_edges),
@@ -131,19 +155,22 @@ def _get_analysis_mapping():
             ("is_tree", _is_tree),
         ]
     )
+    return _return_value
 
 
 def _get_analysis_func(name: str):
     _name_to_proc = _get_analysis_mapping()
-    return _name_to_proc.get(name.lower())
+    _return_value = _name_to_proc.get(name.lower(), False)
+    return _return_value
 
 
 def _get_analysis_funcs():
-    return _get_analysis_mapping().values()
+    _return_value = _get_analysis_mapping().values()
+    return _return_value
 
 
 def _analyze_graph(
-    context: mgp.ProcCtx, g: nx.MultiDiGraph, analyses: List[str]
+    context: mgp_ProcCtx, g: nx_MultiDiGraph, analyses: List[str]
 ) -> List[Tuple[str, str]]:
     functions = (
         _get_analysis_funcs()
@@ -164,17 +191,19 @@ def _analyze_graph(
     return records
 
 
-def _number_of_nodes(g: nx.MultiDiGraph) -> Tuple[str, int]:
+def _number_of_nodes(g: nx_MultiDiGraph) -> Tuple[str, int]:
     """Returns number of nodes."""
-    return "Number of nodes", nx.number_of_nodes(g)
+    _return_value = "Number of nodes", nx_number_of_nodes(g)
+    return _return_value
 
 
-def _number_of_edges(g: nx.MultiDiGraph) -> Tuple[str, int]:
+def _number_of_edges(g: nx_MultiDiGraph) -> Tuple[str, int]:
     """Returns number of edges."""
-    return "Number of edges", nx.number_of_edges(g)
+    _return_value = "Number of edges", nx_number_of_edges(g)
+    return _return_value
 
 
-def _avg_degree(g: nx.MultiDiGraph) -> Tuple[str, float]:
+def _avg_degree(g: nx_MultiDiGraph) -> Tuple[str, float]:
     """Returns average degree."""
     _, number_of_nodes = _number_of_nodes(g)
     _, number_of_edges = _number_of_edges(g)
@@ -182,115 +211,118 @@ def _avg_degree(g: nx.MultiDiGraph) -> Tuple[str, float]:
     return "Average degree", avg_degree
 
 
-def _sorted_nodes_degree(g: nx.MultiDiGraph) -> Tuple[str, List[int]]:
+def _sorted_nodes_degree(g: nx_MultiDiGraph) -> Tuple[str, List[int]]:
     """Returns list of sorted nodes degree. [(node_id, degree), ...]"""
     nodes_degree = [(n, g.degree(n)) for n in g.nodes()]
     nodes_degree.sort(key=lambda x: x[1], reverse=True)
     return "Sorted nodes degree", nodes_degree
 
 
-def _self_loops(g: nx.MultiDiGraph) -> Tuple[str, int]:
+def _self_loops(g: nx_MultiDiGraph) -> Tuple[str, int]:
     """Returns number of self loops."""
-    return "Self loops", sum((1 if e[0] == e[1] else 0 for e in g.edges()))
+    _return_value = "Self loops", sum(1 if e[0] == e[1] else 0 for e in g.edges())
+    return _return_value
 
 
-def _is_bipartite(g: nx.MultiDiGraph) -> Tuple[str, bool]:
+def _is_bipartite(g: nx_MultiDiGraph) -> Tuple[str, bool]:
     """Checks if graph is bipartite."""
     _, number_of_nodes = _number_of_nodes(g)
     ret = (
-        False if number_of_nodes == 0 else nx.algorithms.bipartite.basic.is_bipartite(g)
+        False if number_of_nodes == 0 else nx_algorithms.bipartite.basic.is_bipartite(g)
     )
     return "Is bipartite", ret
 
 
-def _is_planar(g: nx.MultiDiGraph) -> Tuple[str, bool]:
+def _is_planar(g: nx_MultiDiGraph) -> Tuple[str, bool]:
     """Checks if graph is planar."""
     _, number_of_nodes = _number_of_nodes(g)
     ret = (
-        False if number_of_nodes == 0 else nx.algorithms.planarity.check_planarity(g)[0]
+        False if number_of_nodes == 0 else nx_algorithms.planarity.check_planarity(g)[0]
     )
     return "Is planar", ret
 
 
-def _is_biconnected(g: nx.MultiDiGraph) -> Tuple[str, bool]:
+def _is_biconnected(g: nx_MultiDiGraph) -> Tuple[str, bool]:
     """Check if graph is biconnected."""
     _, number_of_nodes = _number_of_nodes(g)
     ret = (
         False
         if number_of_nodes == 0
-        else nx.is_biconnected(nx.MultiDiGraph.to_undirected(g))
+        else nx_is_biconnected(nx_MultiDiGraph.to_undirected(g))
     )
     return "Is biconnected", ret
 
 
-def _is_weakly_connected(g: nx.MultiDiGraph) -> Tuple[str, bool]:
+def _is_weakly_connected(g: nx_MultiDiGraph) -> Tuple[str, bool]:
     """Check if graph is weakly connected."""
     _, number_of_nodes = _number_of_nodes(g)
-    ret = False if number_of_nodes == 0 else nx.is_weakly_connected(g)
+    ret = False if number_of_nodes == 0 else nx_is_weakly_connected(g)
     return "Is weakly connected", ret
 
 
-def _is_strongly_connected(g: nx.MultiDiGraph) -> Tuple[str, bool]:
+def _is_strongly_connected(g: nx_MultiDiGraph) -> Tuple[str, bool]:
     """Checks if graph is strongly connected."""
     _, number_of_nodes = _number_of_nodes(g)
-    ret = False if number_of_nodes == 0 else nx.is_strongly_connected(g)
+    ret = False if number_of_nodes == 0 else nx_is_strongly_connected(g)
     return "Is strongly connected", ret
 
 
-def _is_dag(g: nx.MultiDiGraph) -> Tuple[str, bool]:
+def _is_dag(g: nx_MultiDiGraph) -> Tuple[str, bool]:
     """Check if graph is directed acyclic graph (DAG)"""
     _, number_of_nodes = _number_of_nodes(g)
     ret = (
         False
         if number_of_nodes == 0
-        else nx.algorithms.dag.is_directed_acyclic_graph(g)
+        else nx_algorithms.dag.is_directed_acyclic_graph(g)
     )
     return "Is DAG", ret
 
 
-def _is_eulerian(g: nx.MultiDiGraph) -> Tuple[str, bool]:
+def _is_eulerian(g: nx_MultiDiGraph) -> Tuple[str, bool]:
     """Checks if graph is Eulerian."""
     _, number_of_nodes = _number_of_nodes(g)
-    ret = False if number_of_nodes == 0 else nx.algorithms.euler.is_eulerian(g)
+    ret = False if number_of_nodes == 0 else nx_algorithms.euler.is_eulerian(g)
     return "Is eulerian", ret
 
 
-def _is_forest(g: nx.MultiDiGraph) -> Tuple[str, bool]:
+def _is_forest(g: nx_MultiDiGraph) -> Tuple[str, bool]:
     """Checks if graph is forest, all components must be trees."""
     _, number_of_nodes = _number_of_nodes(g)
-    ret = False if number_of_nodes == 0 else nx.algorithms.tree.recognition.is_forest(g)
+    ret = False if number_of_nodes == 0 else nx_algorithms.tree.recognition.is_forest(g)
     return "Is forest", ret
 
 
-def _is_tree(g: nx.MultiDiGraph) -> Tuple[str, bool]:
+def _is_tree(g: nx_MultiDiGraph) -> Tuple[str, bool]:
     """Checks if graph is tree."""
     _, number_of_nodes = _number_of_nodes(g)
-    ret = False if number_of_nodes == 0 else nx.algorithms.tree.recognition.is_tree(g)
+    ret = False if number_of_nodes == 0 else nx_algorithms.tree.recognition.is_tree(g)
     return "Is tree", ret
 
 
-def _bridges(g: nx.MultiDiGraph) -> Tuple[str, int]:
+def _bridges(g: nx_MultiDiGraph) -> Tuple[str, int]:
     """Returns number of bridges, multiple edges between same nodes are
     mapped to one edge."""
-    return "Number of bridges", sum(1 for _ in nx.bridges(nx.Graph(g)))
+    _return_value = "Number of bridges", sum(1 for _ in nx_bridges(nx_Graph(g)))
+    return _return_value
 
 
-def _articulation_points(g: nx.MultiDiGraph):
+def _articulation_points(g: nx_MultiDiGraph):
     """Returns number of articulation points."""
-    undirected = nx.MultiDiGraph.to_undirected(g)
-    return (
+    undirected = nx_MultiDiGraph.to_undirected(g)
+    _return_value = (
         "Number of articulation points",
-        sum(1 for _ in nx.articulation_points(undirected)),
+        sum(1 for _ in nx_articulation_points(undirected)),
     )
+    return _return_value
 
 
-def _weakly_components(g: nx.MultiDiGraph):
+def _weakly_components(g: nx_MultiDiGraph):
     """Returns number of weakly components."""
-    comps = nx.algorithms.components.number_weakly_connected_components(g)
+    comps = nx_algorithms.components.number_weakly_connected_components(g)
     return "Number of weakly connected components", comps
 
 
-def _strongly_components(g: nx.MultiDiGraph):
+def _strongly_components(g: nx_MultiDiGraph):
     """Returns number of strongly connected components."""
-    comps = nx.algorithms.components.number_strongly_connected_components(g)
+    comps = nx_algorithms.components.number_strongly_connected_components(g)
     return "Number of strongly connected components", comps

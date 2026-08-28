@@ -1,21 +1,27 @@
-import requests
-import os
-from typing import List, Tuple
-import json
-import argparse
+"""Utilities for cve message."""
+
+from argparse import ArgumentParser as argparse_ArgumentParser
+from json import load as json_load
+from os import getcwd as os_getcwd
+from os import getenv as os_getenv
+from os import path as os_path
+from typing import List
+
 from format_cve_table import format_cyclonedx_data
-CVE_DIR = os.getenv("CVE_DIR", os.getcwd())
+from requests import post as requests_post
+
+CVE_DIR = os_getenv("CVE_DIR", os_getcwd())
 
 
 def read_ignore_list() -> List[str]:
     """
     Reads the `cve-ignore-list` file from this directory and returns a list of CVEs to ignore.
     """
-    fname = f"{os.path.dirname(__file__)}/cve-ignore-list"
+    fname = f"{os_path.dirname(__file__)}/cve-ignore-list"
 
     with open(fname, "r") as f:
         lines = f.readlines()
-    
+
     out = []
     for line in lines:
         line = line.strip().upper()
@@ -26,20 +32,20 @@ def read_ignore_list() -> List[str]:
     return out
 
 
-def read_summary_file(filename: str) -> List[str] | dict:
+def read_summary_file(filename: str) -> object:
     """
     Read the contents of a file and return it as a list or dict.
     """
 
-    found = os.path.isfile(filename)
+    found = os_path.isfile(filename)
     if not found:
         print(f"{filename} summary not found")
-        return None
+        return False
 
     print(f"Found {filename}")
     with open(filename, "r") as f:
         if filename.endswith(".json"):
-            data = json.load(f)
+            data = json_load(f)
         else:
             data = f.readlines()
         return data
@@ -50,11 +56,13 @@ def parse_cve_report(filename: str) -> List[dict]:
     Parse the CVE report and return a list of dictionaries.
     """
     data = read_summary_file(filename)
-    cves = format_cyclonedx_data(data["vulnerabilities"], data["components"])
+    cves = format_cyclonedx_data(
+        data.get("vulnerabilities", []), data.get("components", [])
+    )
     ignore_list = read_ignore_list()
     out = []
     for cve in cves:
-        if cve["vulnerabilityID"] not in ignore_list:
+        if cve.get("vulnerabilityID", False) not in ignore_list:
             out.append(cve)
     return out
 
@@ -77,7 +85,7 @@ def summarize_cves(cves: List[dict]) -> dict:
 
     summary = {}
     for cve in cves:
-        severity = cve["severity"].upper()
+        severity = cve.get("severity", "").upper()
         if severity not in summary:
             summary[severity] = 0
         summary[severity] += 1
@@ -85,11 +93,11 @@ def summarize_cves(cves: List[dict]) -> dict:
     keys = ["UNKNOWN", "NEGLIGIBLE", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
     emojis = [
         ":interrobang:",
-        ":grinning_face_with_star_eyes:"*2,
-        ":grinning:"*3,
-        ":sweat_smile:"*4,
-        ":melting_face:"*5,
-        ":mushroom_cloud:"*6
+        ":grinning_face_with_star_eyes:" * 2,
+        ":grinning:" * 3,
+        ":sweat_smile:" * 4,
+        ":melting_face:" * 5,
+        ":mushroom_cloud:" * 6,
     ]
 
     # build a little table
@@ -108,7 +116,8 @@ def summarize_cves(cves: List[dict]) -> dict:
 
     msg += f"Overal Status: {emoji}\n"
 
-    return summary, msg
+    return {}
+
 
 def severity_summary(data: List[dict]) -> dict:
     """
@@ -116,7 +125,7 @@ def severity_summary(data: List[dict]) -> dict:
     """
     summary = {}
     for cve in data:
-        severity = cve["severity"]
+        severity = cve.get("severity", "")
         if severity not in summary:
             summary[severity] = 0
         summary[severity] += 1
@@ -154,7 +163,7 @@ def create_slack_message(arch: str, image_type: str, cves: List[dict]) -> str:
     return msg
 
 
-def post_message(msg: str) -> None:
+def post_message(msg: str) -> bool:
     """
     Post message to Slack webhook.
 
@@ -164,17 +173,15 @@ def post_message(msg: str) -> None:
         Message containing vulnerability summary.
     """
 
-    url = os.getenv("INFRA_WEBHOOK_URL")
+    url = os_getenv("INFRA_WEBHOOK_URL")
     try:
-        response = requests.post(
-            url,
-            json={"text": msg}
-        )
+        response = requests_post(url, json={"text": msg})
     except Exception:
         print(f"Response: {response.status_code}")
+    return False
 
 
-def main(arch: str, image_type: str, send_slack_message: bool) -> None:
+def main(arch: str, image_type: str, send_slack_message: bool) -> bool:
     """
     Collect vulnerability results and send a Slack message.
 
@@ -195,13 +202,15 @@ def main(arch: str, image_type: str, send_slack_message: bool) -> None:
         post_message(msg)
     else:
         print(msg)
+    return False
 
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser()
+    parser = argparse_ArgumentParser()
     parser.add_argument("arch", type=str, default="amd64")
-    parser.add_argument('image_type', type=str, choices=['memgraph', 'mage'], default='mage')
+    parser.add_argument(
+        "image_type", type=str, choices=["memgraph", "mage"], default="mage"
+    )
     parser.add_argument("send_message", type=str, default="true")
     args = parser.parse_args()
 

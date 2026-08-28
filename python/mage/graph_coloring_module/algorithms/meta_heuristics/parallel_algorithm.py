@@ -1,16 +1,21 @@
-import logging
-from typing import Dict, Any
-from mage.graph_coloring_module.graph import Graph
+"""Utilities for parallel algorithm."""
+
+from abc import ABC, abstractmethod
+from logging import getLogger as logging_getLogger
+from multiprocessing import Manager as mp_Manager
+from multiprocessing import Process as mp_Process
+from multiprocessing import Value as mp_Value
+from typing import Any, Dict
+
+from mage.graph_coloring_module.algorithms.algorithm import Algorithm
 from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.components.population import Population
-from mage.graph_coloring_module.algorithms.algorithm import Algorithm
+from mage.graph_coloring_module.graph import Graph
+from mage.graph_coloring_module.parameters import Parameter
 from mage.graph_coloring_module.utils.parameters_utils import param_value
 from mage.graph_coloring_module.utils.validation import validate
-import multiprocessing as mp
-from abc import ABC, abstractmethod
-from mage.graph_coloring_module.parameters import Parameter
 
-logger = logging.getLogger("graph_coloring")
+logger = logging_getLogger("graph_coloring")
 
 
 class ParallelAlgorithm(Algorithm, ABC):
@@ -36,8 +41,8 @@ class ParallelAlgorithm(Algorithm, ABC):
 
         populations = population_factory.create(graph, parameters)
 
-        with mp.Manager() as manager:
-            running_flag = mp.Value("i", 1)
+        with mp_Manager() as manager:
+            running_flag = mp_Value("i", 1)
             best_solutions = manager.dict()
             last_individuals = manager.dict()
             first_individuals = manager.dict()
@@ -46,13 +51,18 @@ class ParallelAlgorithm(Algorithm, ABC):
                 best_solutions[pid] = populations[pid].best_individual(
                     error.individual_err
                 )
-                if error.individual_err(graph, best_solutions[pid], parameters) < 1e-5:
+                if (
+                    error.individual_err(
+                        graph, best_solutions.get(pid, False), parameters
+                    )
+                    < 1e-5
+                ):
                     running_flag = 0
                 last_individuals[pid] = populations[pid][-1]
                 first_individuals[pid] = populations[pid][0]
 
             processes = [
-                mp.Process(
+                mp_Process(
                     target=self.algorithm,
                     args=(
                         pid,
@@ -92,11 +102,11 @@ class ParallelAlgorithm(Algorithm, ABC):
         best_solutions: Dict[int, Individual],
         first_individuals: Dict[int, Individual],
         last_individuals: Dict[int, Individual],
-        running_flag: mp.Value,
+        running_flag: mp_Value,
         parameters: Dict[str, Any],
-    ) -> None:
+    ) -> bool:
         """A function that executes an algorithm."""
-        pass
+        ...
 
     def _previous_pid(self, pid: int, no_of_processes: int):
         prev_pid = pid - 1 if pid - 1 > 0 else no_of_processes - 1

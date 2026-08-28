@@ -1,13 +1,18 @@
-import random
-from mage.graph_coloring_module.utils.parameters_utils import param_value
-from mage.graph_coloring_module.utils.validation import validate
-from mage.graph_coloring_module.graph import Graph
+"""Utilities for simple tunneling."""
+
+from random import random as random_random
+from typing import Any, Dict
+
 from mage.graph_coloring_module.components.population import Population
+from mage.graph_coloring_module.graph import Graph
 from mage.graph_coloring_module.iteration_callbacks.callback_actions.action import (
     Action,
 )
 from mage.graph_coloring_module.parameters import Parameter
-from typing import Dict, Any
+from mage.graph_coloring_module.utils.parameters_utils import param_value
+from mage.graph_coloring_module.utils.validation import validate
+
+_DEFAULT_ARGUMENT_DICT = {}
 
 
 class SimpleTunneling(Action):
@@ -33,8 +38,10 @@ class SimpleTunneling(Action):
         self,
         graph: Graph,
         population: Population,
-        parameters: Dict[str, Any] = None,
-    ) -> None:
+        parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT,
+    ) -> bool:
+        if parameters is _DEFAULT_ARGUMENT_DICT:
+            parameters = _DEFAULT_ARGUMENT_DICT.copy()
         simple_tunneling_max_attempts = param_value(
             graph, parameters, Parameter.SIMPLE_TUNNELING_MAX_ATTEMPTS
         )
@@ -49,7 +56,7 @@ class SimpleTunneling(Action):
         )
 
         for i, old_individual in enumerate(population.individuals):
-            if random.random() < simple_tunneling_probability:
+            if random_random() < simple_tunneling_probability:
                 old_individual_error = old_individual.conflicts_weight
                 for _ in range(simple_tunneling_max_attempts):
                     new_individual, diff_nodes = simple_tunneling_mutation.mutate(
@@ -61,3 +68,4 @@ class SimpleTunneling(Action):
                     ):
                         population.set_individual(i, new_individual, diff_nodes)
                         break
+        return False

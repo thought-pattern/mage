@@ -1,3 +1,5 @@
+"""Utilities for update cve db."""
+
 from cve_bin_tool.cvedb import CVEDB
 
 
@@ -15,6 +17,7 @@ def main():
         del cve_db
     except Exception:
         pass
+    return False
 
 
 if __name__ == "__main__":

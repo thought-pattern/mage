@@ -1,39 +1,41 @@
-from typing import Dict, Any
+"""Tests for test elastic search."""
 
-import pytest
+from typing import Any, Dict
+
+from pytest import fixture as pytest_fixture
 
 from mage.elastic_search_serialization.elastic_search_util import (
-    ElasticSearchClientTest,
-    CLUSTER_NAME,
-    CLUSTER_UUID,
-    NAME,
-    TAGLINE,
-    VERSION,
+    ACKNOWLEDGED,
     BUILD_DATE,
     BUILD_FLAVOR,
     BUILD_HASH,
     BUILD_SNAPSHOT,
     BUILD_TYPE,
+    CA_CERTS,
+    CLUSTER_NAME,
+    CLUSTER_UUID,
+    ELASTIC_PASSWORD,
+    ELASTIC_URL,
+    ELASTIC_USER,
+    IGNORE_MALFORMED,
+    INDEX,
     LUCENE_VERSION,
+    MAPPINGS,
     MINIMUM_INDEX_COMPATIBILITY_VERSION,
     MINIMUM_WIRE_COMPATIBILITY_VERSION,
+    NAME,
     NUMBER,
-    ACKNOWLEDGED,
-    INDEX,
-    SHARDS_ACKNOWLEDGED,
-    NUMBER_OF_SHARDS,
     NUMBER_OF_REPLICAS,
-    MAPPINGS,
-    IGNORE_MALFORMED,
-    ELASTIC_URL,
-    CA_CERTS,
-    ELASTIC_USER,
-    ELASTIC_PASSWORD,
+    NUMBER_OF_SHARDS,
     SETTINGS,
+    SHARDS_ACKNOWLEDGED,
+    TAGLINE,
+    VERSION,
+    ElasticSearchClientTest,
 )
 
 
-@pytest.fixture
+@pytest_fixture
 def connection_config() -> Dict[str, str]:
     return {
         ELASTIC_URL: "localhost",
@@ -43,7 +45,7 @@ def connection_config() -> Dict[str, str]:
     }
 
 
-@pytest.fixture
+@pytest_fixture
 def schema_config() -> Dict[str, Any]:
     return {
         SETTINGS: {
@@ -56,21 +58,21 @@ def schema_config() -> Dict[str, Any]:
     }
 
 
-@pytest.fixture
+@pytest_fixture
 def index_config() -> str:
     return "test-index"
 
 
-def test_connect(connection_config: Dict[str, str]) -> None:
+def test_connect(connection_config: Dict[str, str]) -> bool:
     """Tests connection to the mock Elasticsearch system.
     Args:
         config (Dict[str, str]): Configuration info for connecting to the client.
     """
     client = ElasticSearchClientTest(
-        connection_config[ELASTIC_URL],
-        connection_config[CA_CERTS],
-        connection_config[ELASTIC_USER],
-        connection_config[ELASTIC_PASSWORD],
+        connection_config.get(ELASTIC_URL, False),
+        connection_config.get(CA_CERTS, False),
+        connection_config.get(ELASTIC_USER, False),
+        connection_config.get(ELASTIC_PASSWORD, False),
     )
     client_info = client.info()
     assert client_info[CLUSTER_NAME] == "elasticsearch"
@@ -88,22 +90,24 @@ def test_connect(connection_config: Dict[str, str]) -> None:
     assert client_info[VERSION][MINIMUM_INDEX_COMPATIBILITY_VERSION] == "7.0.0"
     assert client_info[VERSION][MINIMUM_WIRE_COMPATIBILITY_VERSION] == "7.17.0"
     assert client_info[VERSION][NUMBER] == "8.4.3"
+    return False
 
 
 def test_create_index(
     connection_config: Dict[str, Any], schema_config: Dict[str, Any], index_config: str
-) -> None:
+) -> bool:
     """Tests creation of the index for the mocked Elasticsearch system.
     Args:
         config (Dict[str, str]): Configuration info for connecting to the client.
     """
     client = ElasticSearchClientTest(
-        connection_config[ELASTIC_URL],
-        connection_config[CA_CERTS],
-        connection_config[ELASTIC_USER],
-        connection_config[ELASTIC_PASSWORD],
+        connection_config.get(ELASTIC_URL, False),
+        connection_config.get(CA_CERTS, False),
+        connection_config.get(ELASTIC_USER, False),
+        connection_config.get(ELASTIC_PASSWORD, False),
     )
     response = client.indices.create(index=index_config, body=schema_config)
     assert response[ACKNOWLEDGED] is True
     assert response[INDEX] == "elasticsearch-memgraph-test"
     assert response[SHARDS_ACKNOWLEDGED] is True
+    return False

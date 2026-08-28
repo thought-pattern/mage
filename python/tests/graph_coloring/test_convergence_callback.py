@@ -1,15 +1,20 @@
-import pytest
-from mage.graph_coloring_module import Graph
-from mage.graph_coloring_module import ConvergenceCallback
-from mage.graph_coloring_module import ConflictError
-from mage.graph_coloring_module import ChainPopulation
-from mage.graph_coloring_module import Individual
-from mage.graph_coloring_module import Parameter
+"""Tests for test convergence callback."""
+
+from pytest import fixture as pytest_fixture
+
+from mage.graph_coloring_module import (
+    ChainPopulation,
+    ConflictError,
+    ConvergenceCallback,
+    Graph,
+    Individual,
+    Parameter,
+)
 
 
-@pytest.fixture
+@pytest_fixture
 def graph():
-    return Graph(
+    _return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -19,9 +24,10 @@ def graph():
             4: [(1, 5)],
         },
     )
+    return _return_value
 
 
-@pytest.fixture
+@pytest_fixture
 def chain_population(graph):
     indv_1 = Individual(
         no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1}
@@ -58,3 +64,4 @@ def test_convergence_callback(graph, chain_population):
     conv_callback.update(graph, chain_population, params)
     assert conv_callback._iteration == 0
     assert conv_callback._best_solution_error == 0
+    return False

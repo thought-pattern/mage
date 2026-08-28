@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 
-import os
-import subprocess
-import argparse
-import sys
+"""Utilities for test e2e correctness."""
 
-WORK_DIRECTORY = os.getcwd()
+from argparse import ArgumentParser as argparse_ArgumentParser
+from os import chdir as os_chdir
+from os import environ as os_environ
+from os import getcwd as os_getcwd
+from subprocess import CalledProcessError as subprocess_CalledProcessError
+from subprocess import run as subprocess_run
+from sys import exit as sys_exit
+
+WORK_DIRECTORY = os_getcwd()
 E2E_CORRECTNESS_DIRECTORY = f"{WORK_DIRECTORY}/e2e_correctness"
 
 
@@ -16,7 +21,7 @@ class ConfigConstants:
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Test MAGE E2E correctness.")
+    parser = argparse_ArgumentParser(description="Test MAGE E2E correctness.")
     parser.add_argument(
         "-k",
         help="Filter what tests you want to run",
@@ -51,13 +56,13 @@ def parse_arguments():
 
 
 def main(
-    test_filter: str = None,
+    test_filter: str = "",
     memgraph_port: str = str(ConfigConstants.MEMGRAPH_PORT),
     neo4j_port: str = str(ConfigConstants.NEO4J_PORT),
     neo4j_container: str = ConfigConstants.NEO4J_CONTAINER_NAME,
 ):
-    os.environ["PYTHONPATH"] = E2E_CORRECTNESS_DIRECTORY
-    os.chdir(E2E_CORRECTNESS_DIRECTORY)
+    os_environ["PYTHONPATH"] = E2E_CORRECTNESS_DIRECTORY
+    os_chdir(E2E_CORRECTNESS_DIRECTORY)
     command = ["python3", "-m", "pytest", ".", "-vv"]
     if test_filter:
         command.extend(["-k", test_filter])
@@ -67,10 +72,11 @@ def main(
     command.extend(["--neo4j-container", neo4j_container])
 
     try:
-        subprocess.run(command, check=True)
-    except subprocess.CalledProcessError as e:
+        subprocess_run(command, check=True)
+    except subprocess_CalledProcessError as e:
         print(f"Error: {e}")
-        sys.exit(e.returncode)
+        sys_exit(e.returncode)
+    return False
 
 
 if __name__ == "__main__":

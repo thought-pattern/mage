@@ -1,3 +1,5 @@
+"""Utilities for subquery."""
+
 QUERY_PATTERNS = [
     "CREATE INDEX ON",
     "DROP INDEX ON",
@@ -10,4 +12,7 @@ QUERY_PATTERNS = [
 
 
 def is_global_operation(subquery: str) -> bool:
-    return any(subquery.upper().startswith(pattern) for pattern in QUERY_PATTERNS)
+    _return_value = any(
+        subquery.upper().startswith(pattern) for pattern in QUERY_PATTERNS
+    )
+    return _return_value

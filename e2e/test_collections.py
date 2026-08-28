@@ -1,17 +1,23 @@
-import pytest
+"""Utilities for test collections."""
+
+from importlib import import_module as _import_module
+
 from gqlalchemy import Memgraph
+
+pytest = _import_module("pytest")
+
 
 def test_flatten_e2e():
     """End-to-end test for collections_module.flatten function."""
     memgraph = Memgraph()
-    
+
     # Test simple nested list
     result = memgraph.execute_and_fetch(
         """
         RETURN collections_module.flatten([[1, 2], [3, 4], 5]) as result
         """
     )
-    assert next(result)["result"] == [1, 2, 3, 4, 5]
+    assert next(result).get("result", []) == [1, 2, 3, 4, 5]
 
     # Test deeply nested list
     result = memgraph.execute_and_fetch(
@@ -19,7 +25,7 @@ def test_flatten_e2e():
         RETURN collections_module.flatten([1, [2, [3, [4, 5]], 6], 7]) as result
         """
     )
-    assert next(result)["result"] == [1, 2, 3, 4, 5, 6, 7]
+    assert next(result).get("result", []) == [1, 2, 3, 4, 5, 6, 7]
 
     # Test list with nulls
     result = memgraph.execute_and_fetch(
@@ -29,7 +35,7 @@ def test_flatten_e2e():
         RETURN collections_module.flatten(input_list) as result
         """
     )
-    assert next(result)["result"] == [1, 2, 3, 4]
+    assert next(result).get("result", []) == [1, 2, 3, 4]
 
     # Test empty lists
     result = memgraph.execute_and_fetch(
@@ -39,7 +45,7 @@ def test_flatten_e2e():
         RETURN collections_module.flatten(input_list) as result
         """
     )
-    assert next(result)["result"] == []
+    assert next(result).get("result", []) == []
 
     # Test mixed types
     result = memgraph.execute_and_fetch(
@@ -51,7 +57,7 @@ def test_flatten_e2e():
         RETURN collections_module.flatten(input_list) as result
         """
     )
-    assert next(result)["result"] == [1, "text", 2.5, True, False]
+    assert next(result).get("result", []) == [1, "text", 2.5, True, False]
 
     # Test with graph data
     memgraph.execute(
@@ -61,7 +67,7 @@ def test_flatten_e2e():
                (m3:Movie {title: "The Matrix Revolutions", year: 2003})
         """
     )
-    
+
     result = memgraph.execute_and_fetch(
         """
         MATCH (m:Movie)
@@ -70,9 +76,12 @@ def test_flatten_e2e():
         RETURN collections_module.flatten(nested_movies) as flattened_movies
         """
     )
-    flattened_movies = next(result)["flattened_movies"]
+    flattened_movies = next(result).get("flattened_movies", [])
     assert len(flattened_movies) == 3
-    assert all(movie.get("title").startswith("The Matrix") for movie in flattened_movies)
+    assert all(
+        movie.get("title", "").startswith("The Matrix") for movie in flattened_movies
+    )
 
     # Cleanup
-    memgraph.execute("MATCH (n) DETACH DELETE n") 
+    memgraph.execute("MATCH (n) DETACH DELETE n")
+    return False

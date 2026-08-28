@@ -1,14 +1,17 @@
-import torch
-import torch.nn.functional as F
+"""Utilities for gatjk."""
+
+from mgp import List as mgp_List
+from torch import nn as torch_nn
+from torch import tensor as torch_tensor
+from torch.nn import functional as F
 from torch_geometric.nn import GATConv, JumpingKnowledge, Linear
-import mgp
 
 
-class GATJK(torch.nn.Module):
+class GATJK(torch_nn.Module):
     def __init__(
         self,
         in_channels: int,
-        hidden_features_size: mgp.List[int],
+        hidden_features_size: mgp_List[int],
         out_channels: int,
         heads: int = 3,
         dropout: float = 0.6,
@@ -28,7 +31,7 @@ class GATJK(torch.nn.Module):
 
         super(GATJK, self).__init__()
 
-        self.convs = torch.nn.ModuleList()
+        self.convs = torch_nn.ModuleList()
         self.convs.append(
             GATConv(
                 in_channels,
@@ -39,8 +42,8 @@ class GATJK(torch.nn.Module):
             )
         )
 
-        self.bns = torch.nn.ModuleList()
-        self.bns.append(torch.nn.BatchNorm1d(hidden_features_size[0] * heads))
+        self.bns = torch_nn.ModuleList()
+        self.bns.append(torch_nn.BatchNorm1d(hidden_features_size[0] * heads))
         for i in range(len(hidden_features_size) - 2):
             self.convs.append(
                 GATConv(
@@ -51,7 +54,7 @@ class GATJK(torch.nn.Module):
                     add_self_loops=False,
                 )
             )
-            self.bns.append(torch.nn.BatchNorm1d(hidden_features_size[i + 1] * heads))
+            self.bns.append(torch_nn.BatchNorm1d(hidden_features_size[i + 1] * heads))
 
         self.convs.append(
             GATConv(
@@ -84,8 +87,9 @@ class GATJK(torch.nn.Module):
             bn.reset_parameters()
         self.jump.reset_parameters()
         self.final_project.reset_parameters()
+        return False
 
-    def forward(self, x: torch.tensor, edge_index: torch.tensor) -> torch.tensor:
+    def forward(self, x: torch_tensor, edge_index: torch_tensor) -> torch_tensor:
         """Forward passing of GATJK model.
 
         Args:

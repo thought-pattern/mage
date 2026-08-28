@@ -1,13 +1,17 @@
+"""Utilities for union find."""
+
 from enum import Enum
 from itertools import product
 from typing import Any, Tuple
 
+from mgp import ProcCtx as mgp_ProcCtx
+from mgp import Record as mgp_Record
+from mgp import Vertex as mgp_Vertex
+from mgp import read_proc as mgp_read_proc
+
 from mage.union_find import DisjointSet
 
-import mgp
-
-
-disjoint_set = DisjointSet(node_ids=None)
+disjoint_set = DisjointSet(node_ids=[])
 
 
 class Mode(Enum):
@@ -19,14 +23,14 @@ class Mode(Enum):
     PAIRWISE = "pairwise"
 
 
-@mgp.read_proc
+@mgp_read_proc
 def connected(
-    ctx: mgp.ProcCtx,
+    ctx: mgp_ProcCtx,
     nodes1: Any,
     nodes2: Any,
     mode: str = "pairwise",
     update: bool = True,
-) -> mgp.Record(node1=mgp.Vertex, node2=mgp.Vertex, connected=bool):
+) -> mgp_Record(node1=mgp_Vertex, node2=mgp_Vertex, connected=bool):
     """
     Returns whether two nodes (or each pair in the product of two node lists) belong to the same connected component
     of the graph.
@@ -54,14 +58,14 @@ def connected(
                     node1_id=edge.from_vertex.id, node2_id=edge.to_vertex.id
                 )
 
-    if isinstance(nodes1, mgp.Vertex):
+    if isinstance(nodes1, mgp_Vertex):
         nodes1 = tuple([nodes1])
     elif isinstance(nodes1, Tuple):
         pass
     else:
         raise TypeError("Invalid type of first argument.")
 
-    if isinstance(nodes2, mgp.Vertex):
+    if isinstance(nodes2, mgp_Vertex):
         nodes2 = tuple([nodes2])
     elif isinstance(nodes2, Tuple):
         pass
@@ -72,24 +76,29 @@ def connected(
         if len(nodes1) != len(nodes2):
             raise ValueError("Incompatible lengths of given arguments.")
 
-        return [
-            mgp.Record(
+        _return_value = [
+            mgp_Record(
                 node1=node1,
                 node2=node2,
                 connected=disjoint_set.connected(node1_id=node1.id, node2_id=node2.id),
             )
-            for node1, node2 in zip(nodes1, nodes2)
+            for node1, node2 in zip(nodes1, nodes2, strict=False)
         ]
+        return _return_value
 
     elif mode.lower() == Mode.CARTESIAN.value:
-        return [
-            mgp.Record(
+        _return_value = [
+            mgp_Record(
                 node1=node1,
                 node2=node2,
                 connected=disjoint_set.connected(node1_id=node1.id, node2_id=node2.id),
             )
             for node1, node2 in product(nodes1, nodes2)
         ]
+        return _return_value
 
-    error_message = f'Mode {mode} is invalid, please specify one of the following: "{Mode.PAIRWISE.value}", "{Mode.CARTESIAN.value}".'
+    error_message = (
+        f'Mode {mode} is invalid, please specify one of the following: "{Mode.PAIRWISE.value}", "'
+        f'{Mode.CARTESIAN.value}".'
+    )
     raise ValueError(error_message)

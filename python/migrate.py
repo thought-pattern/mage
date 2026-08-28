@@ -1,27 +1,38 @@
-import base64
-import csv
-import datetime
-import hashlib
-import io
-import json
-import os
-import re
+"""Utilities for migrate."""
+
+from base64 import b64encode as base64_b64encode
+from csv import reader as csv_reader_2
+from datetime import date as datetime_date
+from datetime import datetime as datetime_datetime
+from datetime import time as datetime_time
+from datetime import timedelta as datetime_timedelta
 from decimal import Decimal
+from hashlib import sha256 as hashlib_sha256
+from io import BytesIO as io_BytesIO
+from io import TextIOWrapper as io_TextIOWrapper
+from json import dumps as json_dumps
+from json import load as json_load
+from os import getenv as os_getenv
+from re import match as re_match
 from typing import Any, Dict, List
 
-import boto3
-import duckdb as duckDB
-import mgp
-import mysql.connector as mysql_connector
-import oracledb
-import psycopg2
-import pyarrow.flight as flight
-import pyodbc
-import requests
+from boto3 import client as boto3_client
+from duckdb import connect as duckDB_connect
 from gqlalchemy import Memgraph
+from mgp import Any as mgp_Any
+from mgp import Map as mgp_Map
+from mgp import Nullable as mgp_Nullable
+from mgp import Record as mgp_Record
+from mgp import add_batch_read_proc as mgp_add_batch_read_proc
+from mysql import connector as mysql_connector
 from neo4j import GraphDatabase
-from neo4j.time import DateTime as Neo4jDateTime
 from neo4j.time import Date as Neo4jDate
+from neo4j.time import DateTime as Neo4jDateTime
+from oracledb import connect as oracledb_connect
+from psycopg2 import connect as psycopg2_connect
+from pyarrow import flight
+from pyodbc import connect as pyodbc_connect
+from requests import get as requests_get
 
 
 class Constants:
@@ -41,8 +52,32 @@ class Constants:
     USERNAME = "username"
 
 
+class _NullConnection:
+    """Stable no-op database connection used for missing cache entries."""
+
+    def commit(self):
+        return False
+
+    def close(self):
+        return False
+
+
+class _NullCursor:
+    """Stable empty cursor used for missing cache entries."""
+
+    description: tuple = ()
+
+    def fetchmany(self, size):
+        del size
+        return []
+
+
+_NULL_CONNECTION = _NullConnection()
+_NULL_CURSOR = _NullCursor()
+
+
 def _get_query_hash(
-    query: str, config: mgp.Map, params: mgp.Nullable[mgp.Any] = None
+    query: str, config: mgp_Map, params: mgp_Nullable[mgp_Any] = False
 ) -> str:
     """
     Create a hash from query, config, and params to use as a cache key.
@@ -51,20 +86,23 @@ def _get_query_hash(
     :param config: Configuration map
     :param params: Optional query parameters
     """
+    if params is None:
+        params = False
     config_dict = dict(config)
-    config_str = json.dumps(config_dict, sort_keys=True, default=str)
+    config_str = json_dumps(config_dict, sort_keys=True, default=str)
 
     params_str = ""
-    if params is not None:
+    if params is not False:
         if isinstance(params, dict):
-            params_str = json.dumps(params, sort_keys=True, default=str)
+            params_str = json_dumps(params, sort_keys=True, default=str)
         elif isinstance(params, (list, tuple)):
-            params_str = json.dumps(list(params), sort_keys=False, default=str)
+            params_str = json_dumps(list(params), sort_keys=False, default=str)
         else:
             params_str = str(params)
 
     hash_input = f"{query}|{config_str}|{params_str}"
-    return hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+    _return_value = hashlib_sha256(hash_input.encode("utf-8")).hexdigest()
+    return _return_value
 
 
 # MYSQL
@@ -74,9 +112,9 @@ mysql_dict = {}
 
 def init_migrate_mysql(
     table_or_sql: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
+    params: mgp_Nullable[mgp_Any] = False,
 ):
     global mysql_dict
 
@@ -93,7 +131,7 @@ def init_migrate_mysql(
     # check if query is already running
     if query_hash in mysql_dict:
         raise RuntimeError(
-            f"Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
+            "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
     mysql_dict[query_hash] = {}
@@ -102,19 +140,20 @@ def init_migrate_mysql(
     cursor = connection.cursor()
     cursor.execute(table_or_sql, params=params)
 
-    mysql_dict[query_hash][Constants.CONNECTION] = connection
-    mysql_dict[query_hash][Constants.CURSOR] = cursor
-    mysql_dict[query_hash][Constants.COLUMN_NAMES] = [
+    mysql_dict.get(query_hash, {})[Constants.CONNECTION] = connection
+    mysql_dict.get(query_hash, {})[Constants.CURSOR] = cursor
+    mysql_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [
         column[Constants.I_COLUMN_NAME] for column in cursor.description
     ]
+    return False
 
 
 def mysql(
     table_or_sql: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
-) -> mgp.Record(row=mgp.Map):
+    params: mgp_Nullable[mgp_Any] = False,
+) -> mgp_Record(row=mgp_Map):
     """
     With migrate.mysql you can access MySQL and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -140,12 +179,12 @@ def mysql(
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
     query_hash = _get_query_hash(table_or_sql, config, params)
-    cursor = mysql_dict[query_hash][Constants.CURSOR]
-    column_names = mysql_dict[query_hash][Constants.COLUMN_NAMES]
+    cursor = mysql_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    column_names = mysql_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
 
     rows = cursor.fetchmany(Constants.BATCH_SIZE)
 
-    result = [mgp.Record(row=_name_row_cells_mysql(row, column_names)) for row in rows]
+    result = [mgp_Record(row=_name_row_cells_mysql(row, column_names)) for row in rows]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
@@ -159,20 +198,22 @@ def _cleanup_mysql_by_hash(query_hash: str):
     global mysql_dict
 
     if query_hash in mysql_dict:
-        mysql_dict[query_hash][Constants.CURSOR] = None
-        mysql_dict[query_hash][Constants.CONNECTION].commit()
-        mysql_dict[query_hash][Constants.CONNECTION].close()
-        mysql_dict[query_hash][Constants.CONNECTION] = None
-        mysql_dict[query_hash][Constants.COLUMN_NAMES] = None
-        mysql_dict.pop(query_hash, None)
+        mysql_dict.get(query_hash, {}).get(
+            Constants.CONNECTION, _NULL_CONNECTION
+        ).commit()
+        mysql_dict.get(query_hash, {}).get(
+            Constants.CONNECTION, _NULL_CONNECTION
+        ).close()
+        mysql_dict.pop(query_hash, {})
+    return False
 
 
 def cleanup_migrate_mysql():
     """Cleanup function called by mgp framework (no parameters)."""
-    pass
+    return False
 
 
-mgp.add_batch_read_proc(mysql, init_migrate_mysql, cleanup_migrate_mysql)
+mgp_add_batch_read_proc(mysql, init_migrate_mysql, cleanup_migrate_mysql)
 
 # SQL SERVER
 
@@ -181,9 +222,9 @@ sql_server_dict = {}
 
 def init_migrate_sql_server(
     table_or_sql: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
+    params: mgp_Nullable[mgp_Any] = False,
 ):
     global sql_server_dict
 
@@ -203,28 +244,29 @@ def init_migrate_sql_server(
     # check if query is already running
     if query_hash in sql_server_dict:
         raise RuntimeError(
-            f"Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
+            "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
     sql_server_dict[query_hash] = {}
 
-    connection = pyodbc.connect(**config)
+    connection = pyodbc_connect(**config)
     cursor = connection.cursor()
     cursor.execute(table_or_sql, *params)
 
-    sql_server_dict[query_hash][Constants.CONNECTION] = connection
-    sql_server_dict[query_hash][Constants.CURSOR] = cursor
-    sql_server_dict[query_hash][Constants.COLUMN_NAMES] = [
+    sql_server_dict.get(query_hash, {})[Constants.CONNECTION] = connection
+    sql_server_dict.get(query_hash, {})[Constants.CURSOR] = cursor
+    sql_server_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [
         column[Constants.I_COLUMN_NAME] for column in cursor.description
     ]
+    return False
 
 
 def sql_server(
     table_or_sql: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
-) -> mgp.Record(row=mgp.Map):
+    params: mgp_Nullable[mgp_Any] = False,
+) -> mgp_Record(row=mgp_Map):
     """
     With migrate.sql_server you can access SQL Server and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -252,11 +294,11 @@ def sql_server(
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
     query_hash = _get_query_hash(table_or_sql, config, params)
-    cursor = sql_server_dict[query_hash][Constants.CURSOR]
-    column_names = sql_server_dict[query_hash][Constants.COLUMN_NAMES]
+    cursor = sql_server_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    column_names = sql_server_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
     rows = cursor.fetchmany(Constants.BATCH_SIZE)
 
-    result = [mgp.Record(row=_name_row_cells(row, column_names)) for row in rows]
+    result = [mgp_Record(row=_name_row_cells(row, column_names)) for row in rows]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
@@ -270,20 +312,22 @@ def _cleanup_sql_server_by_hash(query_hash: str):
     global sql_server_dict
 
     if query_hash in sql_server_dict:
-        sql_server_dict[query_hash][Constants.CURSOR] = None
-        sql_server_dict[query_hash][Constants.CONNECTION].commit()
-        sql_server_dict[query_hash][Constants.CONNECTION].close()
-        sql_server_dict[query_hash][Constants.CONNECTION] = None
-        sql_server_dict[query_hash][Constants.COLUMN_NAMES] = None
-        sql_server_dict.pop(query_hash, None)
+        sql_server_dict.get(query_hash, {}).get(
+            Constants.CONNECTION, _NULL_CONNECTION
+        ).commit()
+        sql_server_dict.get(query_hash, {}).get(
+            Constants.CONNECTION, _NULL_CONNECTION
+        ).close()
+        sql_server_dict.pop(query_hash, {})
+    return False
 
 
 def cleanup_migrate_sql_server():
     """Cleanup function called by mgp framework (no parameters)."""
-    pass
+    return False
 
 
-mgp.add_batch_read_proc(sql_server, init_migrate_sql_server, cleanup_migrate_sql_server)
+mgp_add_batch_read_proc(sql_server, init_migrate_sql_server, cleanup_migrate_sql_server)
 
 # Oracle DB
 
@@ -292,9 +336,9 @@ oracle_db_dict = {}
 
 def init_migrate_oracle_db(
     table_or_sql: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
+    params: mgp_Nullable[mgp_Any] = False,
 ):
     global oracle_db_dict
 
@@ -318,12 +362,12 @@ def init_migrate_oracle_db(
     # check if query is already running
     if query_hash in oracle_db_dict:
         raise RuntimeError(
-            f"Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
+            "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
     oracle_db_dict[query_hash] = {}
 
-    connection = oracledb.connect(**config)
+    connection = oracledb_connect(**config)
     cursor = connection.cursor()
 
     if not params:
@@ -333,19 +377,20 @@ def init_migrate_oracle_db(
     else:
         cursor.execute(table_or_sql, **params)
 
-    oracle_db_dict[query_hash][Constants.CONNECTION] = connection
-    oracle_db_dict[query_hash][Constants.CURSOR] = cursor
-    oracle_db_dict[query_hash][Constants.COLUMN_NAMES] = [
+    oracle_db_dict.get(query_hash, {})[Constants.CONNECTION] = connection
+    oracle_db_dict.get(query_hash, {})[Constants.CURSOR] = cursor
+    oracle_db_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [
         column[Constants.I_COLUMN_NAME] for column in cursor.description
     ]
+    return False
 
 
 def oracle_db(
     table_or_sql: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
-) -> mgp.Record(row=mgp.Map):
+    params: mgp_Nullable[mgp_Any] = False,
+) -> mgp_Record(row=mgp_Map):
     """
     With migrate.oracle_db you can access Oracle DB and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -375,11 +420,11 @@ def oracle_db(
     config["disable_oob"] = True
 
     query_hash = _get_query_hash(table_or_sql, config, params)
-    cursor = oracle_db_dict[query_hash][Constants.CURSOR]
-    column_names = oracle_db_dict[query_hash][Constants.COLUMN_NAMES]
+    cursor = oracle_db_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    column_names = oracle_db_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
     rows = cursor.fetchmany(Constants.BATCH_SIZE)
 
-    result = [mgp.Record(row=_name_row_cells(row, column_names)) for row in rows]
+    result = [mgp_Record(row=_name_row_cells(row, column_names)) for row in rows]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
@@ -393,20 +438,22 @@ def _cleanup_oracle_db_by_hash(query_hash: str):
     global oracle_db_dict
 
     if query_hash in oracle_db_dict:
-        oracle_db_dict[query_hash][Constants.CURSOR] = None
-        oracle_db_dict[query_hash][Constants.CONNECTION].commit()
-        oracle_db_dict[query_hash][Constants.CONNECTION].close()
-        oracle_db_dict[query_hash][Constants.CONNECTION] = None
-        oracle_db_dict[query_hash][Constants.COLUMN_NAMES] = None
-        oracle_db_dict.pop(query_hash, None)
+        oracle_db_dict.get(query_hash, {}).get(
+            Constants.CONNECTION, _NULL_CONNECTION
+        ).commit()
+        oracle_db_dict.get(query_hash, {}).get(
+            Constants.CONNECTION, _NULL_CONNECTION
+        ).close()
+        oracle_db_dict.pop(query_hash, {})
+    return False
 
 
 def cleanup_migrate_oracle_db():
     """Cleanup function called by mgp framework (no parameters)."""
-    pass
+    return False
 
 
-mgp.add_batch_read_proc(oracle_db, init_migrate_oracle_db, cleanup_migrate_oracle_db)
+mgp_add_batch_read_proc(oracle_db, init_migrate_oracle_db, cleanup_migrate_oracle_db)
 
 
 # PostgreSQL dictionary to store connections and cursors by thread
@@ -415,9 +462,9 @@ postgres_dict = {}
 
 def init_migrate_postgresql(
     table_or_sql: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
+    params: mgp_Nullable[mgp_Any] = False,
 ):
     global postgres_dict
 
@@ -437,28 +484,29 @@ def init_migrate_postgresql(
     # check if query is already running
     if query_hash in postgres_dict:
         raise RuntimeError(
-            f"Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
+            "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
     postgres_dict[query_hash] = {}
 
-    connection = psycopg2.connect(**config)
+    connection = psycopg2_connect(**config)
     cursor = connection.cursor()
     cursor.execute(table_or_sql, params)
 
-    postgres_dict[query_hash][Constants.CONNECTION] = connection
-    postgres_dict[query_hash][Constants.CURSOR] = cursor
-    postgres_dict[query_hash][Constants.COLUMN_NAMES] = [
+    postgres_dict.get(query_hash, {})[Constants.CONNECTION] = connection
+    postgres_dict.get(query_hash, {})[Constants.CURSOR] = cursor
+    postgres_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [
         column.name for column in cursor.description
     ]
+    return False
 
 
 def postgresql(
     table_or_sql: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
-) -> mgp.Record(row=mgp.Map):
+    params: mgp_Nullable[mgp_Any] = False,
+) -> mgp_Record(row=mgp_Map):
     """
     With migrate.postgresql you can access PostgreSQL and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -486,12 +534,12 @@ def postgresql(
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
     query_hash = _get_query_hash(table_or_sql, config, params)
-    cursor = postgres_dict[query_hash][Constants.CURSOR]
-    column_names = postgres_dict[query_hash][Constants.COLUMN_NAMES]
+    cursor = postgres_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    column_names = postgres_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
 
     rows = cursor.fetchmany(Constants.BATCH_SIZE)
 
-    result = [mgp.Record(row=_name_row_cells(row, column_names)) for row in rows]
+    result = [mgp_Record(row=_name_row_cells(row, column_names)) for row in rows]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
@@ -505,20 +553,22 @@ def _cleanup_postgresql_by_hash(query_hash: str):
     global postgres_dict
 
     if query_hash in postgres_dict:
-        postgres_dict[query_hash][Constants.CURSOR] = None
-        postgres_dict[query_hash][Constants.CONNECTION].commit()
-        postgres_dict[query_hash][Constants.CONNECTION].close()
-        postgres_dict[query_hash][Constants.CONNECTION] = None
-        postgres_dict[query_hash][Constants.COLUMN_NAMES] = None
-        postgres_dict.pop(query_hash, None)
+        postgres_dict.get(query_hash, {}).get(
+            Constants.CONNECTION, _NULL_CONNECTION
+        ).commit()
+        postgres_dict.get(query_hash, {}).get(
+            Constants.CONNECTION, _NULL_CONNECTION
+        ).close()
+        postgres_dict.pop(query_hash, {})
+    return False
 
 
 def cleanup_migrate_postgresql():
     """Cleanup function called by mgp framework (no parameters)."""
-    pass
+    return False
 
 
-mgp.add_batch_read_proc(postgresql, init_migrate_postgresql, cleanup_migrate_postgresql)
+mgp_add_batch_read_proc(postgresql, init_migrate_postgresql, cleanup_migrate_postgresql)
 
 
 # S3
@@ -527,7 +577,7 @@ s3_dict = {}
 
 def init_migrate_s3(
     file_path: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
 ):
     """
@@ -546,7 +596,7 @@ def init_migrate_s3(
 
     # Extract S3 bucket and key
     if not file_path.startswith("s3://"):
-        raise ValueError("Invalid S3 path format. " "Expected 's3://bucket-name/path'.")
+        raise ValueError("Invalid S3 path format. Expected 's3://bucket-name/path'.")
 
     file_path_no_protocol = file_path[5:]
     bucket_name, *key_parts = file_path_no_protocol.split("/")
@@ -557,43 +607,44 @@ def init_migrate_s3(
     # check if query is already running
     if query_hash in s3_dict:
         raise RuntimeError(
-            f"Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
+            "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
     # Initialize S3 client
-    s3_client = boto3.client(
+    s3_client = boto3_client(
         "s3",
         aws_access_key_id=config.get(
-            "aws_access_key_id", os.getenv("AWS_ACCESS_KEY_ID", None)
+            "aws_access_key_id", os_getenv("AWS_ACCESS_KEY_ID", False)
         ),
         aws_secret_access_key=config.get(
-            "aws_secret_access_key", os.getenv("AWS_SECRET_ACCESS_KEY", None)
+            "aws_secret_access_key", os_getenv("AWS_SECRET_ACCESS_KEY", False)
         ),
         aws_session_token=config.get(
-            "aws_session_token", os.getenv("AWS_SESSION_TOKEN", None)
+            "aws_session_token", os_getenv("AWS_SESSION_TOKEN", False)
         ),
-        region_name=config.get("region_name", os.getenv("AWS_REGION", None)),
+        region_name=config.get("region_name", os_getenv("AWS_REGION", False)),
     )
 
     # Fetch and read file as a streaming object
     response = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
     # Convert binary stream to text stream
-    text_stream = io.TextIOWrapper(response["Body"], encoding="utf-8")
+    text_stream = io_TextIOWrapper(response.get("Body", io_BytesIO()), encoding="utf-8")
 
     # Read CSV headers
-    csv_reader = csv.reader(text_stream)
+    csv_reader = csv_reader_2(text_stream)
     column_names = next(csv_reader)  # First row contains column names
 
     s3_dict[query_hash] = {}
-    s3_dict[query_hash][Constants.CURSOR] = csv_reader
-    s3_dict[query_hash][Constants.COLUMN_NAMES] = column_names
+    s3_dict.get(query_hash, {})[Constants.CURSOR] = csv_reader
+    s3_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = column_names
+    return False
 
 
 def s3(
     file_path: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-) -> mgp.Record(row=mgp.Map):
+) -> mgp_Record(row=mgp_Map):
     """
     Fetch rows from an S3 CSV file in batches.
 
@@ -609,14 +660,14 @@ def s3(
         config = _combine_config(config=config, config_path=config_path)
 
     query_hash = _get_query_hash(file_path, config)
-    csv_reader = s3_dict[query_hash][Constants.CURSOR]
-    column_names = s3_dict[query_hash][Constants.COLUMN_NAMES]
+    csv_reader = s3_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    column_names = s3_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
 
     batch_rows = []
     for _ in range(Constants.BATCH_SIZE):
         try:
             row = next(csv_reader)
-            batch_rows.append(mgp.Record(row=_name_row_cells(row, column_names)))
+            batch_rows.append(mgp_Record(row=_name_row_cells(row, column_names)))
         except StopIteration:
             break
 
@@ -632,15 +683,16 @@ def _cleanup_s3_by_hash(query_hash: str):
     global s3_dict
 
     if query_hash in s3_dict:
-        s3_dict.pop(query_hash, None)
+        s3_dict.pop(query_hash, False)
+    return False
 
 
 def cleanup_migrate_s3():
     """Cleanup function called by mgp framework (no parameters)."""
-    pass
+    return False
 
 
-mgp.add_batch_read_proc(s3, init_migrate_s3, cleanup_migrate_s3)
+mgp_add_batch_read_proc(s3, init_migrate_s3, cleanup_migrate_s3)
 
 
 neo4j_dict = {}
@@ -648,10 +700,12 @@ neo4j_dict = {}
 
 def init_migrate_neo4j(
     label_or_rel_or_query: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
+    params: mgp_Nullable[mgp_Any] = False,
 ):
+    if params is None:
+        params = False
     global neo4j_dict
 
     if len(config_path) > 0:
@@ -663,13 +717,13 @@ def init_migrate_neo4j(
     # check if query is already running
     if query_hash in neo4j_dict:
         raise RuntimeError(
-            f"Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
+            "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
     uri = _build_neo4j_uri(config)
     username = config.get(Constants.USERNAME, "neo4j")
     password = config.get(Constants.PASSWORD, "password")
-    database = config.get(Constants.DATABASE, None)  # None means default database
+    database = config.get(Constants.DATABASE, False)  # None means default database
 
     driver = GraphDatabase.driver(uri, auth=(username, password))
 
@@ -680,21 +734,22 @@ def init_migrate_neo4j(
         session = driver.session()
 
     # Neo4j expects params to be a dict or None
-    cypher_params = params if params is not None else {}
+    cypher_params = params if params is not False else {}
     result = session.run(query, parameters=cypher_params)
 
     neo4j_dict[query_hash] = {}
-    neo4j_dict[query_hash][Constants.DRIVER] = driver
-    neo4j_dict[query_hash][Constants.SESSION] = session
-    neo4j_dict[query_hash][Constants.RESULT] = result
+    neo4j_dict.get(query_hash, {})[Constants.DRIVER] = driver
+    neo4j_dict.get(query_hash, {})[Constants.SESSION] = session
+    neo4j_dict.get(query_hash, {})[Constants.RESULT] = result
+    return False
 
 
 def neo4j(
     label_or_rel_or_query: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
-) -> mgp.Record(row=mgp.Map):
+    params: mgp_Nullable[mgp_Any] = False,
+) -> mgp_Record(row=mgp_Map):
     """
     Migrate data from Neo4j to Memgraph. Can migrate a specific node label, relationship type, or execute a custom Cypher query.
 
@@ -711,13 +766,13 @@ def neo4j(
 
     query = _formulate_cypher_query(label_or_rel_or_query)
     query_hash = _get_query_hash(query, config, params)
-    result = neo4j_dict[query_hash][Constants.RESULT]
+    result = neo4j_dict.get(query_hash, {}).get(Constants.RESULT, {})
 
     # Fetch up to BATCH_SIZE records
     batch = []
     for record in result:
         # Convert neo4j.Record to dict with proper type conversion
-        batch.append(mgp.Record(row=_convert_neo4j_record(record)))
+        batch.append(mgp_Record(row=_convert_neo4j_record(record)))
 
         # Check if we've reached the batch size limit
         if len(batch) >= Constants.BATCH_SIZE:
@@ -735,21 +790,22 @@ def _cleanup_neo4j_by_hash(query_hash: str):
     global neo4j_dict
 
     if query_hash in neo4j_dict:
-        session = neo4j_dict[query_hash].get(Constants.SESSION)
-        driver = neo4j_dict[query_hash].get(Constants.DRIVER)
+        session = neo4j_dict.get(query_hash, {}).get(Constants.SESSION, False)
+        driver = neo4j_dict.get(query_hash, {}).get(Constants.DRIVER, False)
         if session:
             session.close()
         if driver:
             driver.close()
-        neo4j_dict.pop(query_hash, None)
+        neo4j_dict.pop(query_hash, False)
+    return False
 
 
 def cleanup_migrate_neo4j():
     """Cleanup function called by mgp framework (no parameters)."""
-    pass
+    return False
 
 
-mgp.add_batch_read_proc(neo4j, init_migrate_neo4j, cleanup_migrate_neo4j)
+mgp_add_batch_read_proc(neo4j, init_migrate_neo4j, cleanup_migrate_neo4j)
 
 
 # Dictionary to store Flight connections per thread
@@ -758,7 +814,7 @@ flight_dict = {}
 
 def init_migrate_arrow_flight(
     query: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
 ):
     global flight_dict
@@ -771,17 +827,17 @@ def init_migrate_arrow_flight(
     # check if query is already running
     if query_hash in flight_dict:
         raise RuntimeError(
-            f"Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
+            "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
-    host = config.get(Constants.HOST, None)
-    port = config.get(Constants.PORT, None)
+    host = config.get(Constants.HOST, False)
+    port = config.get(Constants.PORT, False)
     username = config.get(Constants.USERNAME, "")
     password = config.get(Constants.PASSWORD, "")
 
     # Encode credentials
     auth_string = f"{username}:{password}".encode("utf-8")
-    encoded_auth = base64.b64encode(auth_string).decode("utf-8")
+    encoded_auth = base64_b64encode(auth_string).decode("utf-8")
 
     # Establish Flight connection
     client = flight.connect(f"grpc://{host}:{port}")
@@ -796,10 +852,11 @@ def init_migrate_arrow_flight(
     )
 
     flight_dict[query_hash] = {}
-    flight_dict[query_hash][Constants.CONNECTION] = client
-    flight_dict[query_hash][Constants.CURSOR] = iter(
+    flight_dict.get(query_hash, {})[Constants.CONNECTION] = client
+    flight_dict.get(query_hash, {})[Constants.CURSOR] = iter(
         _fetch_flight_data(client, flight_info, options)
     )
+    return False
 
 
 def _fetch_flight_data(client, flight_info, options):
@@ -816,9 +873,9 @@ def _fetch_flight_data(client, flight_info, options):
 
 def arrow_flight(
     query: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-) -> mgp.Record(row=mgp.Map):
+) -> mgp_Record(row=mgp_Map):
     """
     Execute a SQL query on Arrow Flight and stream results into Memgraph.
 
@@ -833,12 +890,12 @@ def arrow_flight(
         config = _combine_config(config=config, config_path=config_path)
 
     query_hash = _get_query_hash(query, config)
-    cursor = flight_dict[query_hash][Constants.CURSOR]
+    cursor = flight_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
     batch = []
     for _ in range(Constants.BATCH_SIZE):
         try:
             row = _convert_row_types(next(cursor))
-            batch.append(mgp.Record(row=row))
+            batch.append(mgp_Record(row=row))
         except StopIteration:
             break
 
@@ -854,15 +911,16 @@ def _cleanup_arrow_flight_by_hash(query_hash: str):
     global flight_dict
 
     if query_hash in flight_dict:
-        flight_dict.pop(query_hash, None)
+        flight_dict.pop(query_hash, False)
+    return False
 
 
 def cleanup_migrate_arrow_flight():
     """Cleanup function called by mgp framework (no parameters)."""
-    pass
+    return False
 
 
-mgp.add_batch_read_proc(
+mgp_add_batch_read_proc(
     arrow_flight, init_migrate_arrow_flight, cleanup_migrate_arrow_flight
 )
 
@@ -871,49 +929,52 @@ mgp.add_batch_read_proc(
 duckdb_dict = {}
 
 
-def init_migrate_duckdb(query: str, setup_queries: mgp.Nullable[List[str]] = None):
+def init_migrate_duckdb(query: str, setup_queries: mgp_Nullable[List[str]] = False):
     """
     Initialize an in-memory DuckDB connection and execute the query.
 
     :param query: SQL query to execute
     :param setup_queries: Optional list of setup queries to execute before the main query
     """
+    if setup_queries is None:
+        setup_queries = False
     global duckdb_dict
 
     # Create hash from query and setup_queries
     setup_queries_str = (
-        json.dumps(setup_queries, sort_keys=False) if setup_queries else ""
+        json_dumps(setup_queries, sort_keys=False) if setup_queries else ""
     )
-    query_hash = hashlib.sha256(
+    query_hash = hashlib_sha256(
         f"{query}|{setup_queries_str}".encode("utf-8")
     ).hexdigest()
 
     # check if query is already running
     if query_hash in duckdb_dict:
         raise RuntimeError(
-            f"Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
+            "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
     # Ensure a fresh in-memory DuckDB instance for each query
-    connection = duckDB.connect()
+    connection = duckDB_connect()
     cursor = connection.cursor()
-    if setup_queries is not None:
+    if setup_queries is not False:
         for setup_query in setup_queries:
             cursor.execute(setup_query)
 
     cursor.execute(query)
 
     duckdb_dict[query_hash] = {}
-    duckdb_dict[query_hash][Constants.CONNECTION] = connection
-    duckdb_dict[query_hash][Constants.CURSOR] = cursor
-    duckdb_dict[query_hash][Constants.COLUMN_NAMES] = [
+    duckdb_dict.get(query_hash, {})[Constants.CONNECTION] = connection
+    duckdb_dict.get(query_hash, {})[Constants.CURSOR] = cursor
+    duckdb_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [
         desc[0] for desc in cursor.description
     ]
+    return False
 
 
-def duckdb(
-    query: str, setup_queries: mgp.Nullable[List[str]] = None
-) -> mgp.Record(row=mgp.Map):
+def duckdb(query: str, setup_queries: mgp_Nullable[List[str]] = False) -> mgp_Record(
+    row=mgp_Map
+):
     """
     Fetch rows from DuckDB in batches.
 
@@ -924,16 +985,16 @@ def duckdb(
     global duckdb_dict
 
     setup_queries_str = (
-        json.dumps(setup_queries, sort_keys=False) if setup_queries else ""
+        json_dumps(setup_queries, sort_keys=False) if setup_queries else ""
     )
-    query_hash = hashlib.sha256(
+    query_hash = hashlib_sha256(
         f"{query}|{setup_queries_str}".encode("utf-8")
     ).hexdigest()
-    cursor = duckdb_dict[query_hash][Constants.CURSOR]
-    column_names = duckdb_dict[query_hash][Constants.COLUMN_NAMES]
+    cursor = duckdb_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    column_names = duckdb_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
 
     rows = cursor.fetchmany(Constants.BATCH_SIZE)
-    result = [mgp.Record(row=_name_row_cells(row, column_names)) for row in rows]
+    result = [mgp_Record(row=_name_row_cells(row, column_names)) for row in rows]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
@@ -947,17 +1008,20 @@ def _cleanup_duckdb_by_hash(query_hash: str):
     global duckdb_dict
 
     if query_hash in duckdb_dict:
-        if Constants.CONNECTION in duckdb_dict[query_hash]:
-            duckdb_dict[query_hash][Constants.CONNECTION].close()
-        duckdb_dict.pop(query_hash, None)
+        if Constants.CONNECTION in duckdb_dict.get(query_hash, {}):
+            duckdb_dict.get(query_hash, {}).get(
+                Constants.CONNECTION, _NULL_CONNECTION
+            ).close()
+        duckdb_dict.pop(query_hash, False)
+    return False
 
 
 def cleanup_migrate_duckdb():
     """Cleanup function called by mgp framework (no parameters)."""
-    pass
+    return False
 
 
-mgp.add_batch_read_proc(duckdb, init_migrate_duckdb, cleanup_migrate_duckdb)
+mgp_add_batch_read_proc(duckdb, init_migrate_duckdb, cleanup_migrate_duckdb)
 
 
 memgraph_dict = {}
@@ -965,9 +1029,9 @@ memgraph_dict = {}
 
 def init_migrate_memgraph(
     label_or_rel_or_query: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
+    params: mgp_Nullable[mgp_Any] = False,
 ):
     global memgraph_dict
 
@@ -980,32 +1044,31 @@ def init_migrate_memgraph(
     # check if query is already running
     if query_hash in memgraph_dict:
         raise RuntimeError(
-            f"Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
+            "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
     memgraph_db = Memgraph(**config)
     cursor = memgraph_db.execute_and_fetch(query, params)
 
     memgraph_dict[query_hash] = {}
-    memgraph_dict[query_hash][Constants.CONNECTION] = memgraph_db
-    memgraph_dict[query_hash][Constants.CURSOR] = cursor
+    memgraph_dict.get(query_hash, {})[Constants.CONNECTION] = memgraph_db
+    memgraph_dict.get(query_hash, {})[Constants.CURSOR] = cursor
+    return False
 
 
 def memgraph(
     label_or_rel_or_query: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
-) -> mgp.Record(row=mgp.Map):
-    """
-    Migrate data from Memgraph to another Memgraph instance. Can migrate a specific node label, relationship type, or execute a custom Cypher query.
-
-    :param label_or_rel_or_query: Node label, relationship type, or a Cypher query
-    :param config: Connection configuration for Memgraph
-    :param config_path: Path to a JSON file containing connection parameters
-    :param params: Optional query parameters
-    :return: Stream of rows from Memgraph
-    """
+    params: mgp_Nullable[mgp_Any] = False,
+) -> mgp_Record(row=mgp_Map):
+    (
+        "\n    Migrate data from Memgraph to another Memgraph instance. Can migrate a specific node la"  # Continue literal.
+        "bel, relationship type, or execute a custom Cypher query.\n\n    :param label_or_rel_or_query:"  # Continue literal.
+        " Node label, relationship type, or a Cypher query\n    :param config: Connection configuratio"  # Continue literal.
+        "n for Memgraph\n    :param config_path: Path to a JSON file containing connection parameters\n"  # Continue literal.
+        "    :param params: Optional query parameters\n    :return: Stream of rows from Memgraph\n"
+    )
     global memgraph_dict
 
     if len(config_path) > 0:
@@ -1013,11 +1076,11 @@ def memgraph(
 
     query = _formulate_cypher_query(label_or_rel_or_query)
     query_hash = _get_query_hash(query, config, params)
-    cursor = memgraph_dict[query_hash][Constants.CURSOR]
+    cursor = memgraph_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
 
     result = [
-        mgp.Record(row=row)
-        for row in (next(cursor, None) for _ in range(Constants.BATCH_SIZE))
+        mgp_Record(row=row)
+        for row in (next(cursor, False) for _ in range(Constants.BATCH_SIZE))
         if row is not None
     ]
 
@@ -1033,17 +1096,20 @@ def _cleanup_memgraph_by_hash(query_hash: str):
     global memgraph_dict
 
     if query_hash in memgraph_dict:
-        if Constants.CONNECTION in memgraph_dict[query_hash]:
-            memgraph_dict[query_hash][Constants.CONNECTION].close()
-        memgraph_dict.pop(query_hash, None)
+        if Constants.CONNECTION in memgraph_dict.get(query_hash, {}):
+            memgraph_dict.get(query_hash, {}).get(
+                Constants.CONNECTION, _NULL_CONNECTION
+            ).close()
+        memgraph_dict.pop(query_hash, False)
+    return False
 
 
 def cleanup_migrate_memgraph():
     """Cleanup function called by mgp framework (no parameters)."""
-    pass
+    return False
 
 
-mgp.add_batch_read_proc(memgraph, init_migrate_memgraph, cleanup_migrate_memgraph)
+mgp_add_batch_read_proc(memgraph, init_migrate_memgraph, cleanup_migrate_memgraph)
 
 
 servicenow_dict = {}
@@ -1051,9 +1117,9 @@ servicenow_dict = {}
 
 def init_migrate_servicenow(
     endpoint: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
+    params: mgp_Nullable[mgp_Any] = False,
 ):
     """
     Initialize the connection to the ServiceNow REST API and fetch the JSON data.
@@ -1073,13 +1139,16 @@ def init_migrate_servicenow(
     # check if query is already running
     if query_hash in servicenow_dict:
         raise RuntimeError(
-            f"Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
+            "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
-    auth = (config.get(Constants.USERNAME), config.get(Constants.PASSWORD))
+    auth = (
+        config.get(Constants.USERNAME, False),
+        config.get(Constants.PASSWORD, False),
+    )
     headers = {"Accept": "application/json"}
 
-    response = requests.get(endpoint, auth=auth, headers=headers, params=params)
+    response = requests_get(endpoint, auth=auth, headers=headers, params=params)
     response.raise_for_status()
 
     data = response.json().get(Constants.RESULT, [])
@@ -1087,15 +1156,16 @@ def init_migrate_servicenow(
         raise ValueError("No data found in ServiceNow response")
 
     servicenow_dict[query_hash] = {}
-    servicenow_dict[query_hash][Constants.CURSOR] = iter(data)
+    servicenow_dict.get(query_hash, {})[Constants.CURSOR] = iter(data)
+    return False
 
 
 def servicenow(
     endpoint: str,
-    config: mgp.Map,
+    config: mgp_Map,
     config_path: str = "",
-    params: mgp.Nullable[mgp.Any] = None,
-) -> mgp.Record(row=mgp.Map):
+    params: mgp_Nullable[mgp_Any] = False,
+) -> mgp_Record(row=mgp_Map):
     """
     Fetch rows from the ServiceNow REST API in batches.
 
@@ -1111,13 +1181,13 @@ def servicenow(
         config = _combine_config(config=config, config_path=config_path)
 
     query_hash = _get_query_hash(endpoint, config, params)
-    data_iter = servicenow_dict[query_hash][Constants.CURSOR]
+    data_iter = servicenow_dict.get(query_hash, {}).get(Constants.CURSOR, {})
 
     batch_rows = []
     for _ in range(Constants.BATCH_SIZE):
         try:
             row = next(data_iter)
-            batch_rows.append(mgp.Record(row=row))
+            batch_rows.append(mgp_Record(row=row))
         except StopIteration:
             break
 
@@ -1133,15 +1203,16 @@ def _cleanup_servicenow_by_hash(query_hash: str):
     global servicenow_dict
 
     if query_hash in servicenow_dict:
-        servicenow_dict.pop(query_hash, None)
+        servicenow_dict.pop(query_hash, False)
+    return False
 
 
 def cleanup_migrate_servicenow():
     """Cleanup function called by mgp framework (no parameters)."""
-    pass
+    return False
 
 
-mgp.add_batch_read_proc(servicenow, init_migrate_servicenow, cleanup_migrate_servicenow)
+mgp_add_batch_read_proc(servicenow, init_migrate_servicenow, cleanup_migrate_servicenow)
 
 
 def _formulate_cypher_query(label_or_rel_or_query: str) -> str:
@@ -1152,20 +1223,21 @@ def _formulate_cypher_query(label_or_rel_or_query: str) -> str:
         )
 
     # Try to see if the syntax matches similar to (:Label) to migrate only nodes
-    node_match = re.match(r"^\(\s*:(\w+)\s*\)$", label_or_rel_or_query)
+    node_match = re_match(r"^\(\s*:(\w+)\s*\)$", label_or_rel_or_query)
 
     # Try to see if the syntax matches similar to [:REL_TYPE] to migrate only relationships
-    rel_match = re.match(r"^\[\s*:(\w+)\s*\]$", label_or_rel_or_query)
+    rel_match = re_match(r"^\[\s*:(\w+)\s*\]$", label_or_rel_or_query)
 
     if node_match:
         label = node_match.group(1)
-        return (
+        _return_value = (
             f"MATCH (n:{label}) RETURN labels(n) as labels, properties(n) as properties"
         )
+        return _return_value
 
     if rel_match:
         rel_type = rel_match.group(1)
-        return f"""
+        _return_value = f"""
     MATCH (n)-[r:{rel_type}]->(m)
     RETURN
         labels(n) as from_labels,
@@ -1174,32 +1246,35 @@ def _formulate_cypher_query(label_or_rel_or_query: str) -> str:
         properties(r) as edge_properties,
         properties(m) as to_properties
     """
+        return _return_value
     return label_or_rel_or_query  # Assume it's a valid query
 
 
 def _query_is_table(table_or_sql: str) -> bool:
-    return len(table_or_sql.split()) == 1
+    _return_value = len(table_or_sql.split()) == 1
+    return _return_value
 
 
-def _combine_config(config: mgp.Map, config_path: str) -> Dict[str, Any]:
+def _combine_config(config: mgp_Map, config_path: str) -> Dict[str, Any]:
     assert len(config_path), "Path must not be empty"
 
-    file_config = None
+    file_config = {}
     try:
         with open(config_path, "r") as file:
-            file_config = json.load(file)
-    except Exception:
-        raise OSError("Could not open/read file.")
+            file_config = json_load(file)
+    except Exception as _caught_error_1202:
+        raise OSError("Could not open/read file.") from _caught_error_1202
 
     config.update(file_config)
     return config
 
 
 def _name_row_cells(row_cells, column_names) -> Dict[str, Any]:
-    return {
+    _return_value = {
         column: (value if not isinstance(value, Decimal) else float(value))
-        for column, value in zip(column_names, row_cells)
+        for column, value in zip(column_names, row_cells, strict=False)
     }
+    return _return_value
 
 
 def _name_row_cells_mysql(row_cells, column_names) -> Dict[str, Any]:
@@ -1207,46 +1282,54 @@ def _name_row_cells_mysql(row_cells, column_names) -> Dict[str, Any]:
     Convert MySQL row cells to Memgraph-compatible types.
     Handles MySQL-specific types that might cause PyObject conversion errors.
     """
-    return {
+    _return_value = {
         column: _convert_mysql_value(value)
-        for column, value in zip(column_names, row_cells)
+        for column, value in zip(column_names, row_cells, strict=False)
     }
+    return _return_value
 
 
 def _convert_mysql_value(value: Any) -> Any:
     """
     Convert a MySQL value to a Memgraph-compatible type.
-    Returns None for unsupported types and logs a warning.
+    Returns ``False`` for unsupported types and logs a warning.
     """
     if value is None:
-        return None
+        return False
 
     # Handle Decimal types
     if isinstance(value, Decimal):
-        return float(value)
+        _return_value = float(value)
+        return _return_value
     # Handle datetime types
-    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+    if isinstance(value, (datetime_datetime, datetime_date, datetime_time)):
         # Use ISO 8601 format for consistency
         try:
-            return value.isoformat()
+            _return_value = value.isoformat()
+            return _return_value
         except Exception:
-            return str(value)
+            _return_value = str(value)
+            return _return_value
     # Handle timedelta
-    if isinstance(value, datetime.timedelta):
-        return str(value)
+    if isinstance(value, datetime_timedelta):
+        _return_value = str(value)
+        return _return_value
 
     # Handle binary data (BLOB, BINARY, VARBINARY)
     if isinstance(value, (bytes, bytearray)):
         try:
             # Try to decode as UTF-8 string first
-            return value.decode("utf-8")
+            _return_value = value.decode("utf-8")
+            return _return_value
         except UnicodeDecodeError:
             # If not valid UTF-8, convert to base64 string
-            return base64.b64encode(value).decode("ascii")
+            _return_value = base64_b64encode(value).decode("ascii")
+            return _return_value
 
     # Handle geometry types (convert to string representation)
     if hasattr(value, "__class__") and "geometry" in str(value.__class__).lower():
-        return str(value) if value else None
+        _return_value = str(value) if value else ""
+        return _return_value
 
     # Handle MySQL-specific numeric types
     if isinstance(value, (int, float, bool)):
@@ -1258,11 +1341,13 @@ def _convert_mysql_value(value: Any) -> Any:
 
     # Handle list/array types
     if isinstance(value, (list, tuple)):
-        return [_convert_mysql_value(item) for item in value]
+        _return_value = [_convert_mysql_value(item) for item in value]
+        return _return_value
 
     # Handle dictionary/map types
     if isinstance(value, dict):
-        return {k: _convert_mysql_value(v) for k, v in value.items()}
+        _return_value = {k: _convert_mysql_value(v) for k, v in value.items()}
+        return _return_value
 
     # For any other unsupported types, convert to string or return None
     try:
@@ -1271,41 +1356,47 @@ def _convert_mysql_value(value: Any) -> Any:
         return str_value
     except (ValueError, TypeError):
         # If string conversion fails, return None
-        return None
+        return False
 
 
 def _convert_row_types(row_cells) -> Dict[str, Any]:
-    return {
+    _return_value = {
         column: (value if not isinstance(value, Decimal) else float(value))
         for column, value in row_cells.items()
     }
+    return _return_value
 
 
-def _check_params_type(params: Any, types=(dict, list, tuple)) -> None:
+def _check_params_type(params: Any, types=(dict, list, tuple)) -> bool:
     if not isinstance(params, types):
         raise TypeError(
-            "Database query parameter values must be passed in a container of type List[Any] (or Map, if migrating from MySQL or Oracle DB)"
+            "Database query parameter values must be passed in a container of type List[Any] (or Map, if "
+            "migrating from MySQL or Oracle DB)"
         )
+    return False
 
 
 def _convert_neo4j_value(value):
     """Convert Neo4j values to Python-compatible formats."""
     if value is None:
-        return None
+        return False
 
     # Handle Neo4j DateTime objects
     try:
         if isinstance(value, Neo4jDateTime) or isinstance(value, Neo4jDate):
-            return value.to_native()
+            _return_value = value.to_native()
+            return _return_value
     except ImportError:
         pass
 
     # Handle lists and dicts recursively
     if isinstance(value, list):
-        return [_convert_neo4j_value(item) for item in value]
+        _return_value = [_convert_neo4j_value(item) for item in value]
+        return _return_value
 
     if isinstance(value, dict):
-        return {key: _convert_neo4j_value(val) for key, val in value.items()}
+        _return_value = {key: _convert_neo4j_value(val) for key, val in value.items()}
+        return _return_value
 
     # For other types, return as is
     return value
@@ -1313,11 +1404,13 @@ def _convert_neo4j_value(value):
 
 def _convert_neo4j_record(record):
     """Convert a Neo4j record to a Python dict with proper type conversion."""
-    return {key: _convert_neo4j_value(value) for key, value in record.items()}
+    _return_value = {key: _convert_neo4j_value(value) for key, value in record.items()}
+    return _return_value
 
 
-def _build_neo4j_uri(config: mgp.Map) -> str:
+def _build_neo4j_uri(config: mgp_Map) -> str:
     host = config.get(Constants.HOST, "localhost")
     port = config.get(Constants.PORT, 7687)
     uri_scheme = config.get(Constants.URI_SCHEME, "bolt")
-    return f"{uri_scheme}://{host}:{port}"
+    _return_value = f"{uri_scheme}://{host}:{port}"
+    return _return_value

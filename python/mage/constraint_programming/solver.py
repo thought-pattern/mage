@@ -1,20 +1,21 @@
-import abc
-import random
-import sys
+"""Utilities for solver."""
+
+from abc import ABC as abc_ABC
+from abc import abstractmethod as abc_abstractmethod
+from random import shuffle as random_shuffle
+from sys import stderr as sys_stderr
+from sys import version as sys_version
 
 try:
     from gekko import GEKKO
 except ImportError as import_error:
-    sys.stderr.write(
-        (
-            f"NOTE: Please install gekko in order to be "
-            f"able to use set-cover solver. Using Python: {sys.version}"
-        )
+    sys_stderr.write(
+        f"NOTE: Please install gekko in order to be able to use set-cover solver. Using Python: {sys_version}"
     )
-    raise import_error
+    raise import_error from import_error
 
 
-class MatchingProblem(abc.ABC):
+class MatchingProblem:
     """
     Definition for matching problem of set cover
     """
@@ -41,19 +42,19 @@ class GekkoMatchingProblem(MatchingProblem):
         self.sets_by_elements = sets_by_elements
 
 
-class MatchingProblemSolver(abc.ABC):
+class MatchingProblemSolver(abc_ABC):
     """
     Solver of set cover matching problem
     """
 
-    @abc.abstractmethod
+    @abc_abstractmethod
     def solve(self, matching_problem: MatchingProblem):
         """
         Solves the matching problem and returns the set indices
         :param matching_problem: matching problem
         :return: set indices
         """
-        pass
+        ...
 
 
 class GekkoMPSolver(MatchingProblemSolver):
@@ -85,7 +86,7 @@ class GekkoMPSolver(MatchingProblemSolver):
             contained_sets_eq = 0
 
             for contained_set in containing_sets:
-                ordinal_number = set_ordinal_map[contained_set]
+                ordinal_number = set_ordinal_map.get(contained_set, False)
                 contained_sets_eq = contained_sets_eq + vars[ordinal_number]
 
             m.Equation(equation=contained_sets_eq >= containing_const)
@@ -108,7 +109,8 @@ class GekkoMPSolver(MatchingProblemSolver):
         :return: set variable name
         """
 
-        return f"containing_set_{set_no}"
+        _return_value = f"containing_set_{set_no}"
+        return _return_value
 
 
 class GreedyMPSolver(MatchingProblemSolver):
@@ -126,7 +128,7 @@ class GreedyMPSolver(MatchingProblemSolver):
         universe = matching_problem.elements
 
         possible_sets = list(matching_problem.containing_sets)
-        random.shuffle(possible_sets)
+        random_shuffle(possible_sets)
 
         picked_sets = list()
         covered_universe = set()

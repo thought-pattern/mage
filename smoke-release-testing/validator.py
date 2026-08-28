@@ -1,39 +1,46 @@
-import sys
-import csv
-import argparse
+"""Utilities for validator."""
+
+from argparse import ArgumentParser as argparse_ArgumentParser
+from csv import DictReader as csv_DictReader
+from sys import stdin as sys_stdin
 
 
 def read_all_csv_from_stdin():
-    return list(csv.DictReader(sys.stdin))
+    _return_value = list(csv_DictReader(sys_stdin))
+    return _return_value
 
 
 def validate_first_as_int(data, field, expected_value):
     assert len(data) == 1
-    assert int(data[0][field]) == int(
-        expected_value
-    ), f"Got {data[0][field]}, expected {expected_value}."
+    assert int(data[0][field]) == int(expected_value), (
+        f"Got {data[0][field]}, expected {expected_value}."
+    )
     print(f"Validation of the first {field} is OK.")
+    return False
 
 
 def get_main_parser(data):
-    main_addr = None
+    main_addr = False
     for instance in data:
-        if instance["role"] == '"main"':
-            main_addr = instance["management_server"][1:-1].split(".")[0]
+        if instance.get("role", "") == '"main"':
+            main_addr = instance.get("management_server", "")[1:-1].split(".")[0]
     print(main_addr)
+    return False
 
 
 def validate_is_main(data):
     assert len(data) == 1
-    assert data[0]["replication role"] == '"main"'
+    assert data[0].get("replication role", "") == '"main"'
+    return False
 
 
 def validate_number_of_results(data, expected):
     assert len(data) == int(expected)
+    return False
 
 
 def get_arguments():
-    parser = argparse.ArgumentParser(
+    parser = argparse_ArgumentParser(
         description="Smoke Tests Validator",
     )
     subparsers = parser.add_subparsers(
@@ -60,7 +67,8 @@ def get_arguments():
         "-e", "--expected", help="Expected value", required=True
     )
 
-    return parser.parse_args()
+    _return_value = parser.parse_args()
+    return _return_value
 
 
 if __name__ == "__main__":

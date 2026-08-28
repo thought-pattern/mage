@@ -1,18 +1,21 @@
-import random
-import pytest
-from mage.graph_coloring_module import LDO
-from mage.graph_coloring_module import Graph
-from mage.graph_coloring_module import Parameter
+"""Tests for test LDO."""
+
+from random import seed as random_seed
+
+from pytest import fixture as pytest_fixture
+
+from mage.graph_coloring_module import LDO, Graph, Parameter
 
 
-@pytest.fixture
+@pytest_fixture
 def set_seed():
-    random.seed(42)
+    random_seed(42)
+    return False
 
 
-@pytest.fixture
+@pytest_fixture
 def graph_1():
-    return Graph(
+    _return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -22,11 +25,12 @@ def graph_1():
             4: [(1, 5)],
         },
     )
+    return _return_value
 
 
-@pytest.fixture
+@pytest_fixture
 def graph_not_connected():
-    return Graph(
+    _return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -36,6 +40,7 @@ def graph_not_connected():
             4: [(3, 3)],
         },
     )
+    return _return_value
 
 
 def test_LDO(set_seed, graph_1):
@@ -44,6 +49,7 @@ def test_LDO(set_seed, graph_1):
 
     expected_result = [0, 2, 1, 2, 0]
     assert individual.chromosome == expected_result
+    return False
 
 
 def test_not_connected_graph(set_seed, graph_not_connected):
@@ -52,6 +58,7 @@ def test_not_connected_graph(set_seed, graph_not_connected):
 
     expected_result = [0, 2, 1, 2, 0]
     assert individual.chromosome == expected_result
+    return False
 
 
 def test_empty_graph(set_seed):
@@ -61,3 +68,4 @@ def test_empty_graph(set_seed):
 
     expected_result = []
     assert individual.chromosome == expected_result
+    return False

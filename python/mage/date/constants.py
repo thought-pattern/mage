@@ -1,4 +1,7 @@
-import datetime
+"""Utilities for constants."""
+
+from datetime import datetime as datetime_datetime
+from typing import ClassVar as typing_ClassVar
 
 
 class Conversion(int):
@@ -8,13 +11,13 @@ class Conversion(int):
     HOURS_IN_DAY = 24
 
 
-class Epoch(datetime.datetime):
-    UNIX_EPOCH = datetime.datetime(1970, 1, 1, 0, 0, 0)
+class Epoch(datetime_datetime):
+    UNIX_EPOCH = datetime_datetime(1970, 1, 1, 0, 0, 0)
 
 
 class Units:
-    MILLISECOND = {"ms", "milli", "millis", "milliseconds"}
-    SECOND = {"s", "second", "seconds"}
-    MINUTE = {"m", "minute", "minutes"}
-    HOUR = {"h", "hour", "hours"}
-    DAY = {"d", "day", "days"}
+    MILLISECOND: typing_ClassVar = {"ms", "milli", "millis", "milliseconds"}
+    SECOND: typing_ClassVar = {"s", "second", "seconds"}
+    MINUTE: typing_ClassVar = {"m", "minute", "minutes"}
+    HOUR: typing_ClassVar = {"h", "hour", "hours"}
+    DAY: typing_ClassVar = {"d", "day", "days"}

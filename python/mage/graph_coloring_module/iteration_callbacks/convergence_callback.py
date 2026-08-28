@@ -1,12 +1,15 @@
-from typing import Dict, Any
-from mage.graph_coloring_module.graph import Graph
+"""Utilities for convergence callback."""
+
+from typing import Any, Dict
+
 from mage.graph_coloring_module.components.population import Population
-from mage.graph_coloring_module.utils.parameters_utils import param_value
-from mage.graph_coloring_module.utils.validation import validate
+from mage.graph_coloring_module.graph import Graph
 from mage.graph_coloring_module.iteration_callbacks.iteration_callback import (
     IterationCallback,
 )
 from mage.graph_coloring_module.parameters import Parameter
+from mage.graph_coloring_module.utils.parameters_utils import param_value
+from mage.graph_coloring_module.utils.validation import validate
 
 
 class ConvergenceCallback(IterationCallback):
@@ -43,9 +46,10 @@ class ConvergenceCallback(IterationCallback):
 
         if self._iteration == convergence_callback_tolerance:
             self._convergence_detected(graph, population, parameters)
+        return False
 
     def end(self, graph: Graph, population: Population, parameters: Dict[str, Any]):
-        pass
+        return False
 
     @validate(Parameter.ERROR, Parameter.CONVERGENCE_CALLBACK_ACTIONS)
     def _convergence_detected(
@@ -61,3 +65,4 @@ class ConvergenceCallback(IterationCallback):
 
         self._iteration = 0
         self._best_solution_error = population.min_error(error.individual_err)
+        return False

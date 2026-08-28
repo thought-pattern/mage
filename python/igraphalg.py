@@ -1,41 +1,49 @@
+"""Utilities for igraphalg."""
+
 from collections import defaultdict
 from typing import Dict, List
 
-import mgp
-
+from mgp import List as mgp_List
+from mgp import Nullable as mgp_Nullable
+from mgp import Number as mgp_Number
+from mgp import ProcCtx as mgp_ProcCtx
+from mgp import Record as mgp_Record
+from mgp import Vertex as mgp_Vertex
+from mgp import read_proc as mgp_read_proc
 from mgp_igraph import (
-    InvalidTopologicalSortingModeException,
+    CommunityDetectionObjectiveFunctionOptions,
+    InvalidCommunityDetectionObjectiveFunctionException,
     InvalidPageRankImplementationOption,
+    InvalidTopologicalSortingModeException,
     MemgraphIgraph,
     PageRankImplementationOptions,
     TopologicalSortException,
     TopologicalSortingModes,
-    CommunityDetectionObjectiveFunctionOptions,
-    InvalidCommunityDetectionObjectiveFunctionException,
 )
 
 
-@mgp.read_proc
+@mgp_read_proc
 def maxflow(
-    ctx: mgp.ProcCtx,
-    source: mgp.Vertex,
-    target: mgp.Vertex,
+    ctx: mgp_ProcCtx,
+    source: mgp_Vertex,
+    target: mgp_Vertex,
     capacity: str = "weight",
-) -> mgp.Record(max_flow=mgp.Number):
+) -> mgp_Record(max_flow=mgp_Number):
     graph = MemgraphIgraph(ctx=ctx, directed=True)
     max_flow_value = graph.maxflow(source=source, target=target, capacity=capacity)
 
-    return mgp.Record(max_flow=max_flow_value)
+    _return_value = mgp_Record(max_flow=max_flow_value)
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def pagerank(
-    ctx: mgp.ProcCtx,
-    damping: mgp.Number = 0.85,
-    weights: mgp.Nullable[str] = None,
+    ctx: mgp_ProcCtx,
+    damping: mgp_Number = 0.85,
+    weights: mgp_Nullable[str] = False,
     directed: bool = True,
     implementation: str = "prpack",
-) -> mgp.Record(node=mgp.Vertex, rank=float):
+) -> mgp_Record(node=mgp_Vertex, rank=float):
     if implementation not in [
         PageRankImplementationOptions.PRPACK.value,
         PageRankImplementationOptions.ARPACK.value,
@@ -51,49 +59,52 @@ def pagerank(
         implementation=implementation,
     )
 
-    return [mgp.Record(node=node, rank=rank) for node, rank in pagerank_values]
+    _return_value = [mgp_Record(node=node, rank=rank) for node, rank in pagerank_values]
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def get_all_simple_paths(
-    ctx: mgp.ProcCtx,
-    v: mgp.Vertex,
-    to: mgp.Vertex,
+    ctx: mgp_ProcCtx,
+    v: mgp_Vertex,
+    to: mgp_Vertex,
     cutoff: int = -1,
-) -> mgp.Record(path=mgp.List[mgp.Vertex]):
+) -> mgp_Record(path=mgp_List[mgp_Vertex]):
     graph = MemgraphIgraph(ctx=ctx, directed=True)
 
-    return [
-        mgp.Record(path=path)
+    _return_value = [
+        mgp_Record(path=path)
         for path in graph.get_all_simple_paths(v=v, to=to, cutoff=cutoff)
     ]
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def mincut(
-    ctx: mgp.ProcCtx,
-    source: mgp.Vertex,
-    target: mgp.Vertex,
-    capacity: mgp.Nullable[str] = None,
+    ctx: mgp_ProcCtx,
+    source: mgp_Vertex,
+    target: mgp_Vertex,
+    capacity: mgp_Nullable[str] = False,
     directed: bool = True,
-) -> mgp.Record(node=mgp.Vertex, partition_id=int):
+) -> mgp_Record(node=mgp_Vertex, partition_id=int):
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
 
     partition_vertices, _ = graph.mincut(
         source=source, target=target, capacity=capacity
     )
 
-    return [
-        mgp.Record(node=node, partition_id=i)
+    _return_value = [
+        mgp_Record(node=node, partition_id=i)
         for i, partition_nodes in enumerate(partition_vertices)
         for node in partition_nodes
     ]
+    return _return_value
 
 
-@mgp.read_proc
-def topological_sort(
-    ctx: mgp.ProcCtx, mode: str = "out"
-) -> mgp.Record(nodes=mgp.List[mgp.Vertex]):
+@mgp_read_proc
+def topological_sort(ctx: mgp_ProcCtx, mode: str = "out") -> mgp_Record(
+    nodes=mgp_List[mgp_Vertex]
+):
     if mode not in [
         TopologicalSortingModes.IN.value,
         TopologicalSortingModes.OUT.value,
@@ -109,22 +120,23 @@ def topological_sort(
     graph = MemgraphIgraph(ctx=ctx, directed=True)
     sorted_nodes = graph.topological_sort(mode=mode)
 
-    return mgp.Record(
+    _return_value = mgp_Record(
         nodes=sorted_nodes,
     )
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def community_leiden(
-    ctx: mgp.ProcCtx,
+    ctx: mgp_ProcCtx,
     objective_function: str = "CPM",
-    weights: mgp.Nullable[str] = None,
+    weights: mgp_Nullable[str] = False,
     resolution_parameter: float = 1.0,
     beta: float = 0.01,
-    initial_membership: mgp.Nullable[mgp.Nullable[List[mgp.Nullable[int]]]] = None,
+    initial_membership: mgp_Nullable[mgp_Nullable[List[mgp_Nullable[int]]]] = False,
     n_iterations: int = 2,
-    node_weights: mgp.Nullable[List[mgp.Nullable[float]]] = None,
-) -> mgp.Record(node=mgp.Vertex, community_id=int):
+    node_weights: mgp_Nullable[List[mgp_Nullable[float]]] = False,
+) -> mgp_Record(node=mgp_Vertex, community_id=int):
     if objective_function not in [
         CommunityDetectionObjectiveFunctionOptions.CPM.value,
         CommunityDetectionObjectiveFunctionOptions.MODULARITY.value,
@@ -145,53 +157,56 @@ def community_leiden(
         node_weights=node_weights,
     )
 
-    return [
-        mgp.Record(
+    _return_value = [
+        mgp_Record(
             node=node,
             community_id=community_id,
         )
         for node, community_id in communities
     ]
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def spanning_tree(
-    ctx: mgp.ProcCtx, weights: mgp.Nullable[str] = None, directed: bool = False
-) -> mgp.Record(tree=List[List[mgp.Vertex]]):
+    ctx: mgp_ProcCtx, weights: mgp_Nullable[str] = False, directed: bool = False
+) -> mgp_Record(tree=List[List[mgp_Vertex]]):
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
 
-    return mgp.Record(tree=graph.spanning_tree(weights=weights))
+    _return_value = mgp_Record(tree=graph.spanning_tree(weights=weights))
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def shortest_path_length(
-    ctx: mgp.ProcCtx,
-    source: mgp.Vertex,
-    target: mgp.Vertex,
-    weights: mgp.Nullable[str] = None,
+    ctx: mgp_ProcCtx,
+    source: mgp_Vertex,
+    target: mgp_Vertex,
+    weights: mgp_Nullable[str] = False,
     directed: bool = True,
-) -> mgp.Record(length=float):
+) -> mgp_Record(length=float):
     graph = MemgraphIgraph(ctx, directed=directed)
-    return mgp.Record(
+    _return_value = mgp_Record(
         length=graph.shortest_path_length(
             source=source,
             target=target,
             weights=weights,
         )
     )
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def all_shortest_path_lengths(
-    ctx: mgp.ProcCtx,
-    weights: mgp.Nullable[str] = None,
+    ctx: mgp_ProcCtx,
+    weights: mgp_Nullable[str] = False,
     directed: bool = False,
-) -> mgp.Record(src_node=mgp.Vertex, dest_node=mgp.Vertex, length=float):
+) -> mgp_Record(src_node=mgp_Vertex, dest_node=mgp_Vertex, length=float):
     graph = MemgraphIgraph(ctx, directed=directed)
     lengths = graph.all_shortest_path_lengths(weights=weights)
 
-    return [
-        mgp.Record(
+    _return_value = [
+        mgp_Record(
             src_node=graph.get_vertex_by_id(i),
             dest_node=graph.get_vertex_by_id(j),
             length=float(lengths[i][j]),
@@ -199,24 +214,26 @@ def all_shortest_path_lengths(
         for i in range(len(lengths))
         for j in range(len(lengths[i]))
     ]
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def get_shortest_path(
-    ctx: mgp.ProcCtx,
-    source: mgp.Vertex,
-    target: mgp.Vertex,
-    weights: mgp.Nullable[str] = None,
+    ctx: mgp_ProcCtx,
+    source: mgp_Vertex,
+    target: mgp_Vertex,
+    weights: mgp_Nullable[str] = False,
     directed: bool = True,
-) -> mgp.Record(path=List[mgp.Vertex]):
+) -> mgp_Record(path=List[mgp_Vertex]):
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
 
-    return mgp.Record(
+    _return_value = mgp_Record(
         path=graph.get_shortest_path(source=source, target=target, weights=weights)
     )
+    return _return_value
 
 
-def dfs(node: mgp.Vertex, visited: Dict[int, bool], stack: Dict[int, bool]) -> bool:
+def dfs(node: mgp_Vertex, visited: Dict[int, bool], stack: Dict[int, bool]) -> bool:
     """Depth-first-search algorithm with modification.
 
     Args:
@@ -233,17 +250,17 @@ def dfs(node: mgp.Vertex, visited: Dict[int, bool], stack: Dict[int, bool]) -> b
 
     for edge in node.out_edges:
         neighbour = edge.to_vertex
-        if not visited[neighbour.id]:
+        if not visited.get(neighbour.id, False):
             if dfs(neighbour, visited, stack):
                 return True
-        elif stack[neighbour.id]:
+        elif stack.get(neighbour.id, False):
             return True
 
     stack[node.id] = False
     return False
 
 
-def contains_cycle(ctx: mgp.ProcCtx) -> bool:
+def contains_cycle(ctx: mgp_ProcCtx) -> bool:
     """Method for checking if graph contains a cycle.
 
     Args:
@@ -255,7 +272,7 @@ def contains_cycle(ctx: mgp.ProcCtx) -> bool:
 
     visited, stack = defaultdict(bool), defaultdict(bool)
     for node in ctx.graph.vertices:
-        if not visited[node.id]:
+        if not visited.get(node.id, False):
             if dfs(node, visited, stack):
                 return True
     return False

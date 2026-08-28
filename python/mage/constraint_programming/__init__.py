@@ -1,10 +1,11 @@
-from mage.constraint_programming.solver import (  # noqa: F401, F402, F403
-    GreedyMatchingProblem,
-    GekkoMatchingProblem,
-    GreedyMPSolver,
-    GekkoMPSolver,
-)
+"""Public API for the constraint programming package."""
 
-from mage.constraint_programming.vrp_cp_solver import (  # noqa: F401, F402, F403
-    VRPConstraintProgrammingSolver,
+from mage.constraint_programming.solver import (
+    GekkoMatchingProblem,  # noqa: F401
+    GekkoMPSolver,  # noqa: F401
+    GreedyMatchingProblem,  # noqa: F401
+    GreedyMPSolver,  # noqa: F401
+)
+from mage.constraint_programming.vrp_cp_solver import (
+    VRPConstraintProgrammingSolver,  # noqa: F401
 )

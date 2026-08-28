@@ -1,13 +1,19 @@
-import random
+"""Utilities for SDO."""
+
 from queue import PriorityQueue
-from typing import Dict, Any, List
-from mage.graph_coloring_module.graph import Graph
-from mage.graph_coloring_module.components.individual import Individual
+from random import choice as random_choice
+from random import randint as random_randint
+from typing import Any, Dict, List
+
 from mage.graph_coloring_module.algorithms.algorithm import Algorithm
-from mage.graph_coloring_module.utils.parameters_utils import param_value
-from mage.graph_coloring_module.utils.available_colors import available_colors
-from mage.graph_coloring_module.utils.validation import validate
+from mage.graph_coloring_module.components.individual import Individual
+from mage.graph_coloring_module.graph import Graph
 from mage.graph_coloring_module.parameters import Parameter
+from mage.graph_coloring_module.utils.available_colors import available_colors
+from mage.graph_coloring_module.utils.parameters_utils import param_value
+from mage.graph_coloring_module.utils.validation import validate
+
+_DEFAULT_ARGUMENT_DICT = {}
 
 
 class SDO(Algorithm):
@@ -21,16 +27,20 @@ class SDO(Algorithm):
         return "SDO"
 
     @validate(Parameter.NO_OF_COLORS)
-    def run(self, graph: Graph, parameters: Dict[str, Any] = None) -> Individual:
+    def run(
+        self, graph: Graph, parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT
+    ) -> Individual:
         """Returns the individual that represents the result of the SDO algorithm."""
 
+        if parameters is _DEFAULT_ARGUMENT_DICT:
+            parameters = _DEFAULT_ARGUMENT_DICT.copy()
         no_of_colors = param_value(graph, parameters, Parameter.NO_OF_COLORS)
 
         processed = [False for _ in graph.nodes]
         saturation_degrees = [0 for _ in graph.nodes]
         chromosome = [-1 for _ in graph.nodes]
 
-        while self._get_non_processed_node(processed) is not None:
+        while not all(processed):
             current_node = self._get_non_processed_node(processed)
             sorted_nodes = PriorityQueue()
             sorted_nodes.put((saturation_degrees[current_node], current_node))
@@ -42,9 +52,9 @@ class SDO(Algorithm):
 
                     colors = available_colors(graph, no_of_colors, chromosome, node)
                     if len(colors) > 0:
-                        color = random.choice(colors)
+                        color = random_choice(colors)
                     else:
-                        color = random.randint(0, no_of_colors - 1)
+                        color = random_randint(0, no_of_colors - 1)
                     chromosome[node] = color
 
                     for neigh in graph[node]:
@@ -52,10 +62,11 @@ class SDO(Algorithm):
                             saturation_degrees[neigh] += 1
                             sorted_nodes.put((-1 * saturation_degrees[neigh], neigh))
 
-        return Individual(no_of_colors, graph, chromosome)
+        _return_value = Individual(no_of_colors, graph, chromosome)
+        return _return_value
 
-    def _get_non_processed_node(self, processed: List[bool]) -> bool:
+    def _get_non_processed_node(self, processed: List[bool]) -> int:
         for i, flag in enumerate(processed):
             if not flag:
                 return i
-        return None
+        raise RuntimeError("No unprocessed graph node remains")

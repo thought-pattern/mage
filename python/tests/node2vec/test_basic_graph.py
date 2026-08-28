@@ -1,7 +1,8 @@
-import pytest
+"""Tests for test basic graph."""
+
+from pytest import fixture as pytest_fixture
 
 from mage.node2vec.graph import GraphHolder
-
 
 DIRECT_GRAPH_EDGES_WEIGHTS = {
     (0, 1): 0.5,
@@ -41,14 +42,15 @@ UNDIRECT_GRAPH_NODE_NEIGHBORS = {
 }
 
 
-@pytest.fixture(params=[True, False])
+@pytest_fixture(params=[True, False])
 def is_directed(request):
     return request.param
 
 
-@pytest.fixture
+@pytest_fixture
 def basic_graph_from_dict(is_directed) -> GraphHolder:
-    return GraphHolder(DIRECT_GRAPH_EDGES_WEIGHTS, is_directed)
+    _return_value = GraphHolder(DIRECT_GRAPH_EDGES_WEIGHTS, is_directed)
+    return _return_value
 
 
 def test_graph_edges_from_dict(basic_graph_from_dict):
@@ -68,11 +70,12 @@ def test_graph_edges_from_dict(basic_graph_from_dict):
     for node in basic_graph_from_dict.nodes:
         assert (
             basic_graph_from_dict.get_neighbors(node)
-            == DIRECT_GRAPH_NODE_NEIGHBORS.get(node)
+            == DIRECT_GRAPH_NODE_NEIGHBORS.get(node, False)
             if basic_graph_from_dict.is_directed
-            else UNDIRECT_GRAPH_NODE_NEIGHBORS.get(node)
+            else UNDIRECT_GRAPH_NODE_NEIGHBORS.get(node, False)
         )
 
     if not basic_graph_from_dict.is_directed:
         assert basic_graph_from_dict.get_edge_weight(0, 1) == 0.5
         assert basic_graph_from_dict.get_edge_weight(1, 0) == 0.5
+    return False

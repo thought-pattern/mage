@@ -1,19 +1,22 @@
-import math
-import random
-import logging
-from typing import Dict, Any
-from mage.graph_coloring_module.parameters import Parameter
-from mage.graph_coloring_module.graph import Graph
-from mage.graph_coloring_module.components.population import Population
-from mage.graph_coloring_module.utils.parameters_utils import param_value
-from mage.graph_coloring_module.utils.validation import validate
-from mage.graph_coloring_module.components.individual import Individual
+"""Utilities for quantum annealing."""
+
+from logging import getLogger as logging_getLogger
+from math import exp as math_exp
+from math import fabs as math_fabs
+from random import random as random_random
+from typing import Any, Dict
+
 from mage.graph_coloring_module.algorithms.meta_heuristics.parallel_algorithm import (
     ParallelAlgorithm,
 )
+from mage.graph_coloring_module.components.individual import Individual
+from mage.graph_coloring_module.components.population import Population
+from mage.graph_coloring_module.graph import Graph
+from mage.graph_coloring_module.parameters import Parameter
+from mage.graph_coloring_module.utils.parameters_utils import param_value
+from mage.graph_coloring_module.utils.validation import validate
 
-
-logger = logging.getLogger("graph_coloring")
+logger = logging_getLogger("graph_coloring")
 
 
 class QA(ParallelAlgorithm):
@@ -40,7 +43,7 @@ class QA(ParallelAlgorithm):
         last_individuals: Dict[int, Individual],
         running_flag,
         parameters: Dict[str, Any],
-    ) -> None:
+    ) -> bool:
         """Function that executes the QA algorithm. The resulting population
         is written to the queue named results."""
 
@@ -57,7 +60,7 @@ class QA(ParallelAlgorithm):
 
         for iteration in range(max_iterations):
             if running_flag == 0:
-                return
+                return False
 
             for i in range(len(population)):
                 self._markow_chain(graph, population, i, parameters)
@@ -65,26 +68,28 @@ class QA(ParallelAlgorithm):
             best_individual = population.best_individual(error.individual_err)
             if error.individual_err(
                 graph, best_individual, parameters
-            ) < error.individual_err(graph, best_solutions[pid], parameters):
+            ) < error.individual_err(graph, best_solutions.get(pid, False), parameters):
                 best_solutions[pid] = best_individual
 
             if (
-                math.fabs(error.individual_err(graph, best_individual, parameters))
+                math_fabs(error.individual_err(graph, best_individual, parameters))
                 < 1e-5
             ):
                 with running_flag.get_lock():
                     running_flag = 0
-                return
+                return False
 
             if iteration % communication_delay == 0:
                 first_individuals[pid] = population[0]
                 last_individuals[pid] = population[-1]
 
                 population.set_next_individual(
-                    first_individuals[self._next_pid(pid, no_of_processes)]
+                    first_individuals.get(self._next_pid(pid, no_of_processes), False)
                 )
                 population.set_prev_individual(
-                    last_individuals[self._previous_pid(pid, no_of_processes)]
+                    last_individuals.get(
+                        self._previous_pid(pid, no_of_processes), False
+                    )
                 )
 
             for callback in iteration_callbacks:
@@ -106,7 +111,7 @@ class QA(ParallelAlgorithm):
         for callback in iteration_callbacks:
             callback.end(graph, population, parameters)
 
-        return
+        return False
 
     @validate(
         Parameter.QA_TEMPERATURE,
@@ -120,7 +125,7 @@ class QA(ParallelAlgorithm):
         population: Population,
         index: int,
         parameters: Dict[str, Any],
-    ) -> None:
+    ) -> bool:
         temperature = param_value(graph, parameters, Parameter.QA_TEMPERATURE)
         max_steps = param_value(graph, parameters, Parameter.QA_MAX_STEPS)
         mutation = param_value(graph, parameters, Parameter.MUTATION)
@@ -139,10 +144,11 @@ class QA(ParallelAlgorithm):
 
             if delta_individual_error > 0 or delta_population_error > 0:
                 try:
-                    probability = 1 - math.exp(
+                    probability = 1 - math_exp(
                         (-1 * delta_population_error) / temperature
                     )
                 except OverflowError:
                     probability = 1
-                if random.random() <= probability:
+                if random_random() <= probability:
                     population.set_individual(index, individual, diff_nodes)
+        return False

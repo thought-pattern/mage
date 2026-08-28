@@ -1,5 +1,7 @@
-from typing import Tuple, List, Any, Dict, Iterator
+"""Utilities for graph."""
+
 from itertools import islice
+from typing import Any, Dict, Iterator, List, Tuple
 
 
 class Graph:
@@ -30,12 +32,15 @@ class Graph:
         for i in range(self._nodes_count):
             self._neighbors.extend(
                 [
-                    self._labels_to_indices[node[0]]
-                    for node in adjacency_list[self._indices_to_labels[i]]
+                    self._labels_to_indices.get(node[0], False)
+                    for node in adjacency_list.get(self._indices_to_labels[i], False)
                 ]
             )
             self._weights.extend(
-                [node[1] for node in adjacency_list[self._indices_to_labels[i]]]
+                [
+                    node[1]
+                    for node in adjacency_list.get(self._indices_to_labels[i], False)
+                ]
             )
             self._neighbors_positions.append(len(self._neighbors))
 
@@ -52,7 +57,8 @@ class Graph:
         """Returns an iterator over neighbors of the given node."""
         start = self._neighbors_positions[node - 1] if node != 0 else 0
         end = self._neighbors_positions[node]
-        return islice(self._neighbors, start, end)
+        _return_value = islice(self._neighbors, start, end)
+        return _return_value
 
     @property
     def nodes(self) -> Iterator[int]:
@@ -66,17 +72,20 @@ class Graph:
 
     def number_of_edges(self) -> int:
         """Returns the number of edges in the graph."""
-        return len(self._neighbors) // 2
+        _return_value = len(self._neighbors) // 2
+        return _return_value
 
     def neighbors(self, node: int) -> Iterator[int]:
         """Returns an iterator over neighbors of node n."""
-        return self.__getitem__(node)
+        _return_value = self.__getitem__(node)
+        return _return_value
 
     def weighted_neighbors(self, node: int) -> Iterator[Tuple[int, float]]:
         """Returns an iterator over neighbor and weight tuples of the node."""
         start = self._neighbors_positions[node - 1] if node != 0 else 0
         end = self._neighbors_positions[node]
-        return self._neighbor_weight_tuples(start, end)
+        _return_value = self._neighbor_weight_tuples(start, end)
+        return _return_value
 
     def weight(self, node_1: int, node_2: int) -> float:
         """Returns the weight between the two given nodes."""
@@ -84,22 +93,26 @@ class Graph:
         for node, weight in weighted_neighs:
             if node == node_2:
                 return weight
-        return 0
+        return 0.0
 
     def degree(self, node: int) -> int:
         """Returns the degree of the given node."""
         start = self._neighbors_positions[node - 1] if node != 0 else 0
         end = self._neighbors_positions[node]
-        return start - end
+        _return_value = start - end
+        return _return_value
 
     def label(self, node: int) -> Any:
         """Returns the node label."""
-        return self._indices_to_labels[node]
+        _return_value = self._indices_to_labels[node]
+        return _return_value
 
     def _neighbor_weight_tuples(
         self, start: int, end: int
     ) -> Iterator[Tuple[int, Any]]:
-        return zip(
+        _return_value = zip(
             (self._neighbors[i] for i in range(start, end)),
             (self._weights[i] for i in range(start, end)),
+            strict=False,
         )
+        return _return_value

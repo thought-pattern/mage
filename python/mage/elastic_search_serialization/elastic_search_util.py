@@ -1,7 +1,9 @@
-from typing import Dict, Any
+"""Utilities for elastic search util."""
 
-import elasticsearch
+from typing import Any, Dict
+from typing import ClassVar as typing_ClassVar
 
+from elasticsearch import Elasticsearch as elasticsearch_Elasticsearch
 
 # Unit tests constants
 CLUSTER_NAME = "cluster_name"
@@ -35,19 +37,23 @@ IGNORE_MALFORMED = "ignore_malformed"
 
 
 class SingletonMeta(type):
-    """
-    A metaclass approach to create a singleton design pattern. It is a class of class, or in other words a class is an instance of its metaclass. It gives us more control in the case we would need to customize the singleton class definitions in other ways. In this way, we avoid having a multiple inheritance.
-    """
+    (
+        "\n    A metaclass approach to create a singleton design pattern. It is a class of class, or i"  # Continue literal.
+        "n other words a class is an instance of its metaclass. It gives us more control in the case "  # Continue literal.
+        "we would need to customize the singleton class definitions in other ways. In this way, we av"  # Continue literal.
+        "oid having a multiple inheritance.\n"
+    )
 
-    _instances = {}
+    _instances: typing_ClassVar = {}
 
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
             cls._instances[cls] = super(SingletonMeta, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
+        _return_value = cls._instances.get(cls, "")
+        return _return_value
 
 
-class ElasticSearchClientTest(elasticsearch.Elasticsearch, metaclass=SingletonMeta):
+class ElasticSearchClientTest(elasticsearch_Elasticsearch, metaclass=SingletonMeta):
     """Singleton wrapper around elastic search client. Uses inheritance for implementing delegation."""
 
     def __init__(

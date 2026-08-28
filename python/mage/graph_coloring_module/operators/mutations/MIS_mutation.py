@@ -1,8 +1,13 @@
-import random
-from mage.graph_coloring_module.operators.mutations.mutation import Mutation
-from typing import Dict, Any, Tuple, List
-from mage.graph_coloring_module.graph import Graph
+"""Utilities for MIS mutation."""
+
+from random import shuffle as random_shuffle
+from typing import Any, Dict, List, Tuple
+
 from mage.graph_coloring_module.components.individual import Individual
+from mage.graph_coloring_module.graph import Graph
+from mage.graph_coloring_module.operators.mutations.mutation import Mutation
+
+_DEFAULT_ARGUMENT_DICT = {}
 
 
 class MISMutation(Mutation):
@@ -14,11 +19,16 @@ class MISMutation(Mutation):
         return "MISMutation"
 
     def mutate(
-        self, graph: Graph, individual: Individual, parameters: Dict[str, Any] = None
+        self,
+        graph: Graph,
+        individual: Individual,
+        parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT,
     ) -> Tuple[Individual, List[int]]:
         """A function that mutates the given individual and
         returns the new individual and nodes that were changed."""
 
+        if parameters is _DEFAULT_ARGUMENT_DICT:
+            parameters = _DEFAULT_ARGUMENT_DICT.copy()
         maximal_independent_set = self._MIS(graph)
         if len(maximal_independent_set) > 0:
             color = individual[maximal_independent_set[0]]
@@ -36,7 +46,7 @@ class MISMutation(Mutation):
         sequentially added to the MIS. ."""
 
         nodes = list(graph.nodes)
-        random.shuffle(nodes)
+        random_shuffle(nodes)
         MIS_flags = [False for _ in range(len(graph))]
         MIS = []
 

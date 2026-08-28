@@ -1,15 +1,26 @@
-import json as js
+"""Utilities for import util."""
 
-import gqlalchemy
-import mgp
-import ast
-
+from ast import literal_eval as ast_literal_eval
 from dataclasses import dataclass
-from datetime import datetime, date, time, timedelta
-from typing import Union, List, Dict, Any
+from datetime import date, datetime, time, timedelta
+from json import load as js_load
+from typing import Any, Dict, List
+
+from defusedxml import ElementTree as ET
+from gqlalchemy import Memgraph as gqlalchemy_Memgraph
+from mgp import EdgeType as mgp_EdgeType
+from mgp import Map as mgp_Map
+from mgp import ProcCtx as mgp_ProcCtx
+from mgp import Record as mgp_Record
+from mgp import write_proc as mgp_write_proc
 
 from mage.export_import_util.parameters import Parameter
-import defusedxml.ElementTree as ET
+
+_DEFAULT_ARGUMENT_DICT = {
+    "graphML": False,
+    "leaveOutLabels": False,
+    "leaveOutProperties": False,
+}
 
 
 @dataclass
@@ -54,14 +65,14 @@ class KeyObjectGraphML:
     type: str
     type_is_list: bool
     default_value: str
-    id: str = None
+    id: str = ""
 
     def __init__(
         self,
         name: str,
         is_for: str,
         type: str = "",
-        type_is_list: str = False,
+        type_is_list: str = "",
         default_value: str = "",
     ):
         self.name = name
@@ -71,7 +82,7 @@ class KeyObjectGraphML:
         self.default_value = default_value
 
     def __hash__(self):
-        return hash(
+        _return_value = hash(
             (
                 self.name,
                 self.is_for,
@@ -80,45 +91,37 @@ class KeyObjectGraphML:
                 self.default_value,
             )
         )
+        return _return_value
 
     def __eq__(self, other):
         if not isinstance(other, type(self)):
             return NotImplemented
-        return (
+        _return_value = (
             self.name == other.name
             and self.is_for == other.is_for
             and self.type == other.type
             and self.type_is_list == other.type_is_list
             and self.default_value == other.default_value
         )
+        return _return_value
 
 
-def convert_to_isoformat(
-    property: Union[
-        None,
-        str,
-        bool,
-        int,
-        float,
-        List[Any],
-        Dict[str, Any],
-        timedelta,
-        time,
-        datetime,
-        date,
-    ]
-):
+def convert_to_isoformat(property: object):
     if isinstance(property, timedelta):
-        return Parameter.DURATION.value + str(property) + ")"
+        _return_value = Parameter.DURATION.value + str(property) + ")"
+        return _return_value
 
     elif isinstance(property, time):
-        return Parameter.LOCALTIME.value + property.isoformat() + ")"
+        _return_value = Parameter.LOCALTIME.value + property.isoformat() + ")"
+        return _return_value
 
     elif isinstance(property, datetime):
-        return Parameter.LOCALDATETIME.value + property.isoformat() + ")"
+        _return_value = Parameter.LOCALDATETIME.value + property.isoformat() + ")"
+        return _return_value
 
     elif isinstance(property, date):
-        return Parameter.DATE.value + property.isoformat() + ")"
+        _return_value = Parameter.DATE.value + property.isoformat() + ")"
+        return _return_value
 
     else:
         return property
@@ -149,44 +152,29 @@ def to_duration_isoformat(value: timedelta) -> str:
             time_parts.append(f"{seconds}{microseconds_part}S")
 
     date_duration_str = "".join(date_parts)
-    time_duration_str = f'T{"".join(time_parts)}' if time_parts else ""
+    time_duration_str = f"T{''.join(time_parts)}" if time_parts else ""
 
-    return f"P{date_duration_str}{time_duration_str}"
+    _return_value = f"P{date_duration_str}{time_duration_str}"
+    return _return_value
 
 
-def convert_to_isoformat_graphML(
-    property: Union[
-        None,
-        str,
-        bool,
-        int,
-        float,
-        List[Any],
-        Dict[str, Any],
-        timedelta,
-        time,
-        datetime,
-        date,
-    ]
-):
+def convert_to_isoformat_graphML(property: object):
     if isinstance(property, timedelta):
-        return to_duration_isoformat(property)
+        _return_value = to_duration_isoformat(property)
+        return _return_value
 
     if isinstance(property, (time, date, datetime)):
-        return property.isoformat()
+        _return_value = property.isoformat()
+        return _return_value
 
     else:
         return property
 
 
 def get_graph(
-    ctx: mgp.ProcCtx,
-    config: Union[mgp.Map, None] = {
-        "graphML": False,
-        "leaveOutLabels": False,
-        "leaveOutProperties": False,
-    },
-) -> List[Union[Node, Relationship]]:
+    ctx: mgp_ProcCtx,
+    config: mgp_Map = _DEFAULT_ARGUMENT_DICT,
+) -> List[object]:
     """
     config : Map
         - graphML: bool
@@ -194,31 +182,33 @@ def get_graph(
         - leaveOutProperties: bool
 
     """
+    if config is _DEFAULT_ARGUMENT_DICT:
+        config = _DEFAULT_ARGUMENT_DICT.copy()
     nodes = list()
     relationships = list()
 
     for vertex in ctx.graph.vertices:
         labels = []
         properties = dict()
-        if not config.get("leaveOutLabels"):
+        if not config.get("leaveOutLabels", []):
             labels = [label.name for label in vertex.labels]
-        if config.get("graphML") and not config.get("leaveOutProperties"):
+        if config.get("graphML", False) and not config.get("leaveOutProperties", []):
             properties = {
-                key: convert_to_isoformat_graphML(vertex.properties.get(key))
+                key: convert_to_isoformat_graphML(vertex.properties.get(key, False))
                 for key in vertex.properties.keys()
             }
-        elif not config.get("leaveOutProperties"):
+        elif not config.get("leaveOutProperties", []):
             properties = {
-                key: convert_to_isoformat(vertex.properties.get(key))
+                key: convert_to_isoformat(vertex.properties.get(key, False))
                 for key in vertex.properties.keys()
             }
 
         nodes.append(Node(vertex.id, labels, properties).get_dict())
 
         for edge in vertex.out_edges:
-            if not config.get("leaveOutProperties"):
+            if not config.get("leaveOutProperties", []):
                 properties = {
-                    key: convert_to_isoformat(edge.properties.get(key))
+                    key: convert_to_isoformat(edge.properties.get(key, False))
                     for key in edge.properties.keys()
                 }
 
@@ -232,38 +222,41 @@ def get_graph(
                 ).get_dict()
             )
 
-    return nodes + relationships
+    _return_value = nodes + relationships
+    return _return_value
 
 
-def convert_from_isoformat(
-    property: Union[None, str, bool, int, float, List[Any], Dict[str, Any]]
-):
+def convert_from_isoformat(property: object):
     if not isinstance(property, str):
         return property
 
     if str.startswith(property, Parameter.DURATION.value):
         duration_iso = property.split("(")[-1].split(")")[0]
         parsed_time = datetime.strptime(duration_iso, "%H:%M:%S.%f")
-        return timedelta(
+        _return_value = timedelta(
             hours=parsed_time.hour,
             minutes=parsed_time.minute,
             seconds=parsed_time.second,
             microseconds=parsed_time.microsecond,
         )
+        return _return_value
     elif str.startswith(property, Parameter.LOCALTIME.value):
         local_time_iso = property.split("(")[-1].split(")")[0]
-        return time.fromisoformat(local_time_iso)
+        _return_value = time.fromisoformat(local_time_iso)
+        return _return_value
     elif str.startswith(property, Parameter.LOCALDATETIME.value):
         local_datetime_iso = property.split("(")[-1].split(")")[0]
-        return datetime.fromisoformat(local_datetime_iso)
+        _return_value = datetime.fromisoformat(local_datetime_iso)
+        return _return_value
     elif str.startswith(property, Parameter.DATE.value):
         date_iso = property.split("(")[-1].split(")")[0]
-        return date.fromisoformat(date_iso)
+        _return_value = date.fromisoformat(date_iso)
+        return _return_value
     else:
         return property
 
 
-def create_vertex(ctx: mgp.ProcCtx, properties: Dict[str, Any], labels: List[str]):
+def create_vertex(ctx: mgp_ProcCtx, properties: Dict[str, Any], labels: List[str]):
     vertex = ctx.graph.create_vertex()
     vertex_properties = vertex.properties
 
@@ -277,24 +270,25 @@ def create_vertex(ctx: mgp.ProcCtx, properties: Dict[str, Any], labels: List[str
 
 
 def create_edge(
-    ctx: mgp.ProcCtx,
+    ctx: mgp_ProcCtx,
     properties: Dict[str, Any],
-    start_node_id: Union[int, str],
-    end_node_id: Union[int, str],
+    start_node_id: object,
+    end_node_id: object,
     type: str,
-    vertex_ids: Dict[Union[int, str], int],
+    vertex_ids: Dict[object, int],
 ):
-    vertex_from = ctx.graph.get_vertex_by_id(vertex_ids[start_node_id])
-    vertex_to = ctx.graph.get_vertex_by_id(vertex_ids[end_node_id])
-    edge = ctx.graph.create_edge(vertex_from, vertex_to, mgp.EdgeType(type))
+    vertex_from = ctx.graph.get_vertex_by_id(vertex_ids.get(start_node_id, False))
+    vertex_to = ctx.graph.get_vertex_by_id(vertex_ids.get(end_node_id, False))
+    edge = ctx.graph.create_edge(vertex_from, vertex_to, mgp_EdgeType(type))
     edge_properties = edge.properties
 
     for key, value in properties.items():
         edge_properties[key] = convert_from_isoformat(value)
+    return False
 
 
-@mgp.write_proc
-def cypher(ctx: mgp.ProcCtx, path: str) -> mgp.Record():
+@mgp_write_proc
+def cypher(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
     """
     Procedure to import the Cypher created by the export_util.json procedure.
     The lab import feature should be prefered.
@@ -305,23 +299,24 @@ def cypher(ctx: mgp.ProcCtx, path: str) -> mgp.Record():
         Path to the JSON file that is being imported.
     """
 
-    memgraph = gqlalchemy.Memgraph()
+    memgraph = gqlalchemy_Memgraph()
     try:
         with open(path, "r") as file:
             for query in file.readlines():
                 stripped_query = query.strip()
                 if stripped_query:
                     memgraph.execute(stripped_query)
-    except OSError:
-        raise OSError("Could not open/read file.")
-    except Exception:
-        raise Exception("Unable to execute the given queries")
+    except OSError as _caught_error_296:
+        raise OSError("Could not open/read file.") from _caught_error_296
+    except Exception as _caught_error_298:
+        raise Exception("Unable to execute the given queries") from _caught_error_298
 
-    return mgp.Record()
+    _return_value = mgp_Record()
+    return _return_value
 
 
-@mgp.write_proc
-def json(ctx: mgp.ProcCtx, path: str) -> mgp.Record():
+@mgp_write_proc
+def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
     """
     Procedure to import the JSON created by the export_util.json procedure.
 
@@ -332,9 +327,9 @@ def json(ctx: mgp.ProcCtx, path: str) -> mgp.Record():
     """
     try:
         with open(path, "r") as file:
-            graph_objects = js.load(file)
-    except Exception:
-        raise OSError("Could not open/read file.")
+            graph_objects = js_load(file)
+    except Exception as _caught_error_318:
+        raise OSError("Could not open/read file.") from _caught_error_318
 
     vertex_ids = dict()
 
@@ -393,47 +388,52 @@ def json(ctx: mgp.ProcCtx, path: str) -> mgp.Record():
         else:
             raise KeyError("The provided file does not match the correct JSON format.")
 
-    return mgp.Record()
+    _return_value = mgp_Record()
+    return _return_value
 
 
-def find_node(
-    ctx: mgp.ProcCtx, label: str, prop_key: str, prop_value: str
-) -> Union[int, None]:
+def find_node(ctx: mgp_ProcCtx, label: str, prop_key: str, prop_value: str) -> int:
     for vertex in ctx.graph.vertices:
         if (
             label in [label.name for label in vertex.labels]
             and prop_key in vertex.properties.keys()
-            and str(convert_to_isoformat_graphML(vertex.properties.get(prop_key)))
+            and str(
+                convert_to_isoformat_graphML(vertex.properties.get(prop_key, False))
+            )
             == prop_value
         ):
             return vertex.id
-    return None
+    return 0
 
 
-def cast_element(text: str, type: str) -> Union[List[Any], str, int, bool, float]:
+def cast_element(text: str, type: str) -> object:
     if text == "":
         return ""
     if type == "string":
-        return str(text)
+        _return_value = str(text)
+        return _return_value
     if type == "int" or type == "long":
-        return int(text)
+        _return_value = int(text)
+        return _return_value
     if type == "boolean":
-        return bool(text)
+        _return_value = bool(text)
+        return _return_value
     if type == "float" or type == "double":
-        return float(text)
+        _return_value = float(text)
+        return _return_value
     if type == "":
         return text
+    return False
 
 
-def cast(
-    text: str, type: str, is_list: bool
-) -> Union[List[Any], str, int, bool, float]:
+def cast(text: str, type: str, is_list: bool) -> object:
     if is_list:
         casted_list = list()
-        for element in ast.literal_eval(text):
+        for element in ast_literal_eval(text):
             casted_list.append(cast_element(element, type))
         return casted_list
-    return cast_element(text, type)
+    _return_value = cast_element(text, type)
+    return _return_value
 
 
 def set_default_keys(key_dict: Dict[str, Any], properties: Dict[str, Any], is_for: str):
@@ -448,29 +448,33 @@ def set_default_keys(key_dict: Dict[str, Any], properties: Dict[str, Any], is_fo
                     )
                 }
             )
+    return False
 
 
-def set_default_config(config: mgp.Map) -> mgp.Map:
+def set_default_config(config: mgp_Map) -> mgp_Map:
     if config is None:
         config = dict()
-    if not config.get("readLabels"):
+    if not config.get("readLabels", []):
         config.update({"readLabels": False})
-    if not config.get("defaultRelationshipType"):
+    if not config.get("defaultRelationshipType", False):
         config.update({"defaultRelationshipType": "RELATED"})
-    if not config.get("storeNodeIds"):
+    if not config.get("storeNodeIds", []):
         config.update({"storeNodeIds": False})
-    if not config.get("source"):
+    if not config.get("source", ""):
         config.update({"source": {}})
-    if not config.get("target"):
+    if not config.get("target", False):
         config.update({"target": {}})
     if (
-        not isinstance(config.get("readLabels"), bool)
-        or not isinstance(config.get("defaultRelationshipType"), str)
-        or not isinstance(config.get("storeNodeIds"), bool)
-        or not isinstance(config.get("source"), dict)
-        or not isinstance(config.get("target"), dict)
-        or (config.get("source") and "label" not in config.get("source").keys())
-        or (config.get("target") and "label" not in config.get("target").keys())
+        not isinstance(config.get("readLabels", []), bool)
+        or not isinstance(config.get("defaultRelationshipType", False), str)
+        or not isinstance(config.get("storeNodeIds", []), bool)
+        or not isinstance(config.get("source", ""), dict)
+        or not isinstance(config.get("target", False), dict)
+        or (config.get("source", "") and "label" not in config.get("source", {}).keys())
+        or (
+            config.get("target", False)
+            and "label" not in config.get("target", {}).keys()
+        )
     ):
         raise TypeError(
             "Config parameter must be a map with specific \
@@ -479,12 +483,12 @@ def set_default_config(config: mgp.Map) -> mgp.Map:
     return config
 
 
-@mgp.write_proc
-def graphml(  # noqa: C901
-    ctx: mgp.ProcCtx,
+@mgp_write_proc
+def graphml(
+    ctx: mgp_ProcCtx,
     path: str = "",
-    config: Union[mgp.Map, None] = None,
-) -> mgp.Record(status=str):
+    config: mgp_Map = False,
+) -> mgp_Record(status=str):
     """
     Procedure to export the whole database to a graphML file.
 
@@ -500,8 +504,8 @@ def graphml(  # noqa: C901
 
     try:
         tree = ET.parse(path)
-    except Exception:
-        raise OSError("Could not open/read file.")
+    except Exception as _caught_error_488:
+        raise OSError("Could not open/read file.") from _caught_error_488
 
     root = tree.getroot()
     graphml_ns = root.tag.split("}")[0].strip("{")
@@ -510,36 +514,40 @@ def graphml(  # noqa: C901
     keys = dict()
 
     for key in root.findall(".//graphml:key", namespace):
-        working_key = KeyObjectGraphML(key.attrib["attr.name"], key.attrib["for"])
+        working_key = KeyObjectGraphML(
+            key.attrib.get("attr.name", False), key.attrib.get("for", False)
+        )
         if "attr.list" in key.attrib.keys():
             working_key.type_is_list = True
-            working_key.type = key.attrib["attr.list"]
+            working_key.type = key.attrib.get("attr.list", "")
         elif "attr.type" in key.attrib.keys():
-            working_key.type = key.attrib["attr.type"]
+            working_key.type = key.attrib.get("attr.type", "")
         child = key.findall(".//graphml:default", namespace)
         if child:
             working_key.default_value = child[0].text
-        working_key.id = key.attrib["id"]
-        keys.update({key.attrib["id"]: working_key})
+        working_key.id = key.attrib.get("id", "")
+        keys.update({key.attrib.get("id", ""): working_key})
 
     real_ids = dict()
 
     for node in root.findall(".//graphml:node", namespace):
         labels = []
         properties = dict()
-        if config.get("readLabels"):
-            labels = node.attrib["labels"].split(":")
+        if config.get("readLabels", []):
+            labels = node.attrib.get("labels", "").split(":")
             labels.pop(0)
-        if config.get("storeNodeIds"):
-            properties.update({"id": node.attrib["id"]})
+        if config.get("storeNodeIds", []):
+            properties.update({"id": node.attrib.get("id", "")})
 
         set_default_keys(keys, properties, "node")
 
         for data in node.findall("graphml:data", namespace):
-            working_key = keys.get(data.attrib["key"])
-            if key is None:
-                working_key = KeyObjectGraphML(data.attrib["key"], "node", "string")
-            if config.get("readLabels") and working_key.name == "labels":
+            working_key = keys.get(data.attrib.get("key", ""), False)
+            if working_key is False:
+                working_key = KeyObjectGraphML(
+                    data.attrib.get("key", ""), "node", "string"
+                )
+            if config.get("readLabels", False) and working_key.name == "labels":
                 new_labels = data.text.split(":")
                 new_labels.pop(0)
                 if new_labels != labels:
@@ -555,21 +563,25 @@ def graphml(  # noqa: C901
                     }
                 )
 
-        real_ids.update({node.attrib["id"]: create_vertex(ctx, properties, labels)})
+        real_ids.update(
+            {node.attrib.get("id", ""): create_vertex(ctx, properties, labels)}
+        )
 
     for rel in root.findall(".//graphml:edge", namespace):
         if "label" in rel.attrib.keys():
-            rel_type = rel.attrib["label"]
+            rel_type = rel.attrib.get("label", "")
         else:
-            rel_type = config.get("defaultRelationshipType")
+            rel_type = config.get("defaultRelationshipType", False)
 
         properties = dict()
         set_default_keys(keys, properties, "edge")
 
         for data in rel.findall("graphml:data", namespace):
-            working_key = keys.get(data.attrib["key"])
-            if working_key is None:
-                working_key = KeyObjectGraphML(data.attrib["key"], "edge", "string")
+            working_key = keys.get(data.attrib.get("key", ""), False)
+            if working_key is False:
+                working_key = KeyObjectGraphML(
+                    data.attrib.get("key", ""), "edge", "string"
+                )
             if not working_key.name == "label":  # Tinkerpop???
                 properties.update(
                     {
@@ -581,45 +593,50 @@ def graphml(  # noqa: C901
                     }
                 )
 
-        if rel.attrib["source"] not in real_ids.keys():
-            if not config.get("source"):
+        if rel.attrib.get("source", "") not in real_ids:
+            if not config.get("source", ""):
                 # without source/target config, we try with the internal id
-                real_ids.update({rel.attrib["source"]: int(rel.attrib["source"])})
+                real_ids.update(
+                    {rel.attrib.get("source", ""): int(rel.attrib.get("source", 0))}
+                )
             else:
-                source_config = config.get("source")
+                source_config = config.get("source", "")
                 if "id" not in source_config.keys():
                     source_config.update({"id": "id"})
                 node_id = find_node(
                     ctx,
-                    source_config["label"],
-                    source_config["id"],
-                    rel.attrib["source"],
+                    source_config.get("label", ""),
+                    source_config.get("id", ""),
+                    rel.attrib.get("source", ""),
                 )
-                real_ids.update({rel.attrib["source"]: node_id})
+                real_ids.update({rel.attrib.get("source", ""): node_id})
 
-        if rel.attrib["target"] not in real_ids.keys():
-            if not config.get("target"):
+        if rel.attrib.get("target", False) not in real_ids:
+            if not config.get("target", False):
                 # without source/target config, we look for the internal id
-                real_ids.update({rel.attrib["target"]: int(rel.attrib["target"])})
+                real_ids.update(
+                    {rel.attrib.get("target", False): int(rel.attrib.get("target", 0))}
+                )
             else:
-                target_config = config.get("target")
+                target_config = config.get("target", False)
                 if "id" not in target_config.keys():
                     target_config.update({"id": "id"})
                 node_id = find_node(
                     ctx,
-                    target_config["label"],
-                    target_config["id"],
-                    rel.attrib["target"],
+                    target_config.get("label", ""),
+                    target_config.get("id", ""),
+                    rel.attrib.get("target", False),
                 )
-                real_ids.update({rel.attrib["target"]: node_id})
+                real_ids.update({rel.attrib.get("target", False): node_id})
 
         create_edge(
             ctx,
             properties,
-            rel.attrib["source"],
-            rel.attrib["target"],
+            rel.attrib.get("source", ""),
+            rel.attrib.get("target", False),
             rel_type,
             real_ids,
         )
 
-    return mgp.Record(status="success")
+    _return_value = mgp_Record(status="success")
+    return _return_value

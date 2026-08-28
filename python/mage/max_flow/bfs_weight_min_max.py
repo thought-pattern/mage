@@ -1,8 +1,12 @@
+"""Utilities for bfs weight min max."""
+
 from collections import deque
-import mgp
+
+from mgp import Number as mgp_Number
+from mgp import Vertex as mgp_Vertex
 
 
-def BFS_find_weight_min_max(start_v: mgp.Vertex, edge_property: str) -> mgp.Number:
+def BFS_find_weight_min_max(start_v: mgp_Vertex, edge_property: str) -> mgp_Number:
     """
     Breadth-first search for finding the largest and smallest edge weight,
     largest being used for capacity scaling, and smallest for lower bound
@@ -28,8 +32,8 @@ def BFS_find_weight_min_max(start_v: mgp.Vertex, edge_property: str) -> mgp.Numb
             if edge_property not in e.properties:
                 continue
 
-            max_weight = max(max_weight, e.properties[edge_property])
-            min_weight = min(min_weight, e.properties[edge_property])
+            max_weight = max(max_weight, e.properties.get(edge_property, False))
+            min_weight = min(min_weight, e.properties.get(edge_property, False))
 
             if e.to_vertex not in visited:
                 next_queue.append(e.to_vertex)

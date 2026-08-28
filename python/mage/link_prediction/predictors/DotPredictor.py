@@ -1,18 +1,23 @@
-import dgl
-import dgl.function as fn
-import torch
-import torch.nn as nn
+"""Utilities for DotPredictor."""
+
 from typing import Dict
+
+from dgl import function as fn
+from dgl import graph as dgl_graph
+from torch import Tensor as torch_Tensor
+from torch import dot as torch_dot
+from torch import nn
+
 from mage.link_prediction.constants import Predictors
 
 
 class DotPredictor(nn.Module):
     def forward(
         self,
-        g: dgl.graph,
-        node_embeddings: Dict[str, torch.Tensor],
-        target_relation: str = None,
-    ) -> torch.Tensor:
+        g: dgl_graph,
+        node_embeddings: Dict[str, torch_Tensor],
+        target_relation: str = "",
+    ) -> torch_Tensor:
         """Prediction method of DotPredictor. It sets edge scores by calculating dot product
         between node neighbors.
 
@@ -25,10 +30,10 @@ class DotPredictor(nn.Module):
             torch.Tensor: A tensor of edge scores.
         """
         with g.local_scope():
-            for node_type in node_embeddings.keys():  # Iterate over all node_types.
-                g.nodes[node_type].data[Predictors.NODE_EMBEDDINGS] = node_embeddings[
-                    node_type
-                ]
+            for node_type in node_embeddings:  # Iterate over all node_types.
+                g.nodes[node_type].data[Predictors.NODE_EMBEDDINGS] = (
+                    node_embeddings.get(node_type, False)
+                )
 
             # Compute a new edge feature named 'score' by a dot-product between the
             # embedding of source node and embedding of destination node.
@@ -42,16 +47,22 @@ class DotPredictor(nn.Module):
             )
             scores = g.edata[Predictors.EDGE_SCORE]
             if not isinstance(scores, dict):
-                return scores.view(-1)
-            if isinstance(target_relation, tuple):  # Tuple[str, str, str] identification
-                return scores[target_relation].view(-1)
+                _return_value = scores.view(-1)
+                return _return_value
+            if isinstance(
+                target_relation, tuple
+            ):  # Tuple[str, str, str] identification
+                _return_value = scores[target_relation].view(-1)
+                return _return_value
             if isinstance(target_relation, str):  # edge type identification
                 for key, val in scores.items():
                     if key[1] == target_relation:
-                        return val.view(-1)
+                        _return_value = val.view(-1)
+                        return _return_value
+        return False
 
     def forward_pred(
-        self, src_embedding: torch.Tensor, dest_embedding: torch.Tensor
+        self, src_embedding: torch_Tensor, dest_embedding: torch_Tensor
     ) -> float:
         """Efficient implementation for predict method of DotPredictor.
 
@@ -62,4 +73,5 @@ class DotPredictor(nn.Module):
         Returns:
             float: Edge score.
         """
-        return torch.dot(src_embedding, dest_embedding)
+        _return_value = torch_dot(src_embedding, dest_embedding)
+        return _return_value

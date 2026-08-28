@@ -1,12 +1,13 @@
-import pytest
+"""Tests for test avaliable colors."""
 
-from mage.graph_coloring_module import available_colors
-from mage.graph_coloring_module import Graph
+from pytest import fixture as pytest_fixture
+
+from mage.graph_coloring_module import Graph, available_colors
 
 
-@pytest.fixture
+@pytest_fixture
 def graph():
-    return Graph(
+    _return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -16,15 +17,18 @@ def graph():
             4: [(1, 5)],
         },
     )
+    return _return_value
 
 
 def test_no_available_colors(graph):
     colors = available_colors(graph, 3, [0, 1, 0, 2, 1], 2)
     expected_colors = []
     assert sorted(colors) == sorted(expected_colors)
+    return False
 
 
 def test_available_colors(graph):
     colors = available_colors(graph, 3, [2, 1, 0, 2, 1], 3)
     expected_colors = [1, 2]
     assert sorted(colors) == sorted(expected_colors)
+    return False

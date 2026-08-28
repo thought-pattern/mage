@@ -1,3 +1,5 @@
+"""Utilities for parameters."""
+
 from enum import Enum
 
 

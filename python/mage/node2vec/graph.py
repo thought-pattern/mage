@@ -1,5 +1,7 @@
+"""Utilities for graph."""
+
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Dict
+from typing import Dict, List, Tuple
 
 
 class Graph(ABC):
@@ -24,55 +26,55 @@ class Graph(ABC):
     @property
     @abstractmethod
     def nodes(self) -> List[int]:
-        pass
+        return []
 
     @nodes.setter
     def nodes(self, value):
         self._nodes = value
+        return False
 
     @preprocessed_transition_probs.setter
     def preprocessed_transition_probs(self, value):
         self._preprocessed_transition_probs = value
+        return False
 
     @first_pass_transition_probs.setter
     def first_pass_transition_probs(self, value):
         self._first_pass_transition_probs = value
+        return False
 
     @abstractmethod
-    def has_edge(self, src_node_id: int, dest_node_id: int) -> bool:
-        pass
+    def has_edge(self, src_node_id: int, dest_node_id: int) -> bool: ...
 
     @abstractmethod
     def get_edge_weight(self, src_node_id: int, dest_node_id: int) -> float:
-        pass
+        return 0.0
 
     @abstractmethod
     def get_neighbors(self, node_id: int) -> List[int]:
-        pass
+        return []
 
     @abstractmethod
     def get_edges(self) -> List[Tuple[int, int]]:
-        pass
+        return []
 
     @abstractmethod
     def set_edge_transition_probs(
         self, edge: Tuple[int, int], transition_probs: List[float]
-    ) -> None:
-        pass
+    ) -> bool: ...
 
     @abstractmethod
     def get_edge_transition_probs(self, edge: Tuple[int, int]) -> List[float]:
-        pass
+        return []
 
     @abstractmethod
     def set_node_first_pass_transition_probs(
         self, source_node_id: int, normalized_probs: List[float]
-    ) -> None:
-        pass
+    ) -> bool: ...
 
     @abstractmethod
     def get_node_first_pass_transition_probs(self, source_node_id: int) -> List[float]:
-        pass
+        return []
 
 
 class GraphHolder(Graph):
@@ -83,28 +85,34 @@ class GraphHolder(Graph):
         self.init_graph()
 
     def nodes(self) -> List[int]:
-        return list(self._graph.keys())
+        _return_value = list(self._graph.keys())
+        return _return_value
 
     def set_edge_transition_probs(
         self, edge: Tuple[int, int], transition_probs: List[float]
-    ) -> None:
+    ) -> bool:
         self._preprocessed_transition_probs[edge] = transition_probs
+        return False
 
     def get_edge_transition_probs(self, edge: Tuple[int, int]) -> List[float]:
-        return self._preprocessed_transition_probs[edge]
+        _return_value = self._preprocessed_transition_probs.get(edge, "")
+        return _return_value
 
     def set_node_first_pass_transition_probs(
         self, source_node_id: int, normalized_probs: List[float]
-    ) -> None:
+    ) -> bool:
         self._first_pass_transition_probs[source_node_id] = normalized_probs
+        return False
 
     def get_node_first_pass_transition_probs(self, source_node_id: int) -> List[float]:
-        return self._first_pass_transition_probs[source_node_id]
+        _return_value = self._first_pass_transition_probs.get(source_node_id, "")
+        return _return_value
 
     def has_edge(self, src_node_id: int, dest_node_id: int) -> bool:
-        return (src_node_id, dest_node_id) in self._edges_weights or (
+        _return_value = (src_node_id, dest_node_id) in self._edges_weights or (
             not self.is_directed and (dest_node_id, src_node_id) in self._edges_weights
         )
+        return _return_value
 
     def get_edges(self) -> List[Tuple[int, int]]:
         edges = list(self._edges_weights.keys())
@@ -117,24 +125,30 @@ class GraphHolder(Graph):
         if not self.has_edge(src_node_id, dest_node_id):
             raise ValueError
         if (src_node_id, dest_node_id) in self._edges_weights:
-            return self._edges_weights[(src_node_id, dest_node_id)]
-        return self._edges_weights[(dest_node_id, src_node_id)]
+            _return_value = self._edges_weights[(src_node_id, dest_node_id)]
+            return _return_value
+        _return_value = self._edges_weights[(dest_node_id, src_node_id)]
+        return _return_value
 
     # Always return nodes in same order
     def get_neighbors(self, node_id: int) -> List[int]:
-        return self._graph[node_id] if node_id in self._graph else []
+        _return_value = (
+            self._graph.get(node_id, False) if node_id in self._graph else []
+        )
+        return _return_value
 
-    def init_graph(self) -> None:
+    def init_graph(self) -> bool:
         for node_from, node_to in self._edges_weights:
             if node_from not in self._graph:
                 self._graph[node_from] = set()
-            self._graph[node_from].add(node_to)
+            self._graph.get(node_from, set()).add(node_to)
             if not self.is_directed:
                 if node_to not in self._graph:
                     self._graph[node_to] = set()
-                self._graph[node_to].add(node_from)
+                self._graph.get(node_to, set()).add(node_from)
 
         self.nodes = list(self._graph.keys())
 
         for node in self._graph:
-            self._graph[node] = sorted(list(self._graph[node]))
+            self._graph[node] = sorted(list(self._graph.get(node, [])))
+        return False

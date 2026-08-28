@@ -1,4 +1,7 @@
+"""Utilities for available colors."""
+
 from typing import List
+
 from mage.graph_coloring_module.graph import Graph
 
 

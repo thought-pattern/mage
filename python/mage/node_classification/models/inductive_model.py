@@ -1,15 +1,18 @@
-import mgp
-import torch
-import torch_geometric
-import torch.nn.functional as F
+"""Utilities for inductive model."""
+
+from mgp import List as mgp_List
+from torch import nn as torch_nn
+from torch import tensor as torch_tensor
+from torch.nn import functional as F
+from torch_geometric import nn as torch_geometric_nn
 
 
-class InductiveModel(torch.nn.Module):
+class InductiveModel(torch_nn.Module):
     def __init__(
         self,
         layer_type: str,
         in_channels: int,
-        hidden_features_size: mgp.List[int],
+        hidden_features_size: mgp_List[int],
         out_channels: int,
         aggr: str,
     ):
@@ -25,25 +28,25 @@ class InductiveModel(torch.nn.Module):
 
         super(InductiveModel, self).__init__()
 
-        self.convs = torch.nn.ModuleList()
-        self.bns = torch.nn.ModuleList()
+        self.convs = torch_nn.ModuleList()
+        self.bns = torch_nn.ModuleList()
 
-        conv = getattr(torch_geometric.nn, layer_type + "Conv")
+        conv = getattr(torch_geometric_nn, layer_type + "Conv")
         if len(hidden_features_size) > 0:
             self.convs.append(conv(in_channels, hidden_features_size[0], aggr=aggr))
-            self.bns.append(torch.nn.BatchNorm1d(hidden_features_size[0]))
-            for i in range(0, len(hidden_features_size) - 1):
+            self.bns.append(torch_nn.BatchNorm1d(hidden_features_size[0]))
+            for i in range(len(hidden_features_size) - 1):
                 self.convs.append(
                     conv(
                         hidden_features_size[i], hidden_features_size[i + 1], aggr=aggr
                     )
                 )
-                self.bns.append(torch.nn.BatchNorm1d(hidden_features_size[i + 1]))
+                self.bns.append(torch_nn.BatchNorm1d(hidden_features_size[i + 1]))
             self.convs.append(conv(hidden_features_size[-1], out_channels, aggr=aggr))
         else:
             self.convs.append(conv(in_channels, out_channels, aggr=aggr))
 
-    def forward(self, x: torch.tensor, edge_index: torch.tensor) -> torch.tensor:
+    def forward(self, x: torch_tensor, edge_index: torch_tensor) -> torch_tensor:
         """Forward propagation
 
         Args:

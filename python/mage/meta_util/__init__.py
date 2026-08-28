@@ -1,1 +1,3 @@
-from mage.meta_util.parameters import Parameter  # noqa: F401, F402, F403
+"""Public API for the meta util package."""
+
+from mage.meta_util.parameters import Parameter  # noqa: F401

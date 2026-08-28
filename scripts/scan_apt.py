@@ -1,10 +1,3 @@
-import subprocess
-import json
-from cve_bin_tool.cvedb import CVEDB
-import argparse
-from typing import List, Tuple
-import os
-
 """
 This script is used for scanning a Docker container's installed APT packages, as
 part of an effort to speed up the usage of `cve-bin-tool`.
@@ -25,7 +18,17 @@ version, rather than scanning the iamge itself. The output is a JSON file
 containing all CVEs for those installed packages.
 """
 
-CVE_DIR = os.getenv("CVE_DIR", os.getcwd())
+from argparse import ArgumentParser as argparse_ArgumentParser
+from json import loads as json_loads
+from os import getcwd as os_getcwd
+from os import getenv as os_getenv
+from subprocess import PIPE as subprocess_PIPE
+from subprocess import run as subprocess_run
+from typing import List, Tuple
+
+from cve_bin_tool.cvedb import CVEDB
+
+CVE_DIR = os_getenv("CVE_DIR", os_getcwd())
 
 
 def get_apt_packages(container: str = "memgraph") -> List[dict]:
@@ -43,17 +46,19 @@ def get_apt_packages(container: str = "memgraph") -> List[dict]:
     """
 
     cmd = [
-        "docker", "exec", container,
+        "docker",
+        "exec",
+        container,
         "dpkg-query",
         "--show",
-        "--showformat={\"name\": \"${binary:Package}\", \"version\": \"${Version}\"}, "
+        '--showformat={"name": "${binary:Package}", "version": "${Version}"}, ',
     ]
 
-    result = subprocess.run(
+    result = subprocess_run(
         cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,        # so that stdout/stderr come back as Python strings
+        stdout=subprocess_PIPE,
+        stderr=subprocess_PIPE,
+        text=True,  # so that stdout/stderr come back as Python strings
     )
     # do not try to do anything clever with the result.returncode here, because
     # it only ever returns 0 if there are 0 vulnerabilities!
@@ -63,8 +68,8 @@ def get_apt_packages(container: str = "memgraph") -> List[dict]:
         return []
 
     # Remove trailing comma and wrap in array brackets
-    output = output.rstrip(', ')
-    packages = json.loads(f"[{output}]")
+    output = output.rstrip(", ")
+    packages = json_loads(f"[{output}]")
 
     print(f"Found {len(packages)} installed DEB packages")
     return packages
@@ -86,10 +91,13 @@ def get_package_vendor_pairs(cve_db: CVEDB, packages: List[dict]) -> List[dict]:
     pairs: list of vendor/product/version dicts
     """
 
-    return cve_db.get_vendor_product_pairs(packages)
+    _return_value = cve_db.get_vendor_product_pairs(packages)
+    return _return_value
 
 
-def combine_vendor_product_version(packages: List[dict], pairs: List[dict]) -> List[Tuple[str]]:
+def combine_vendor_product_version(
+    packages: List[dict], pairs: List[dict]
+) -> List[Tuple[str]]:
     """
     create the full list of vendor, product and version for each package
 
@@ -107,19 +115,19 @@ def combine_vendor_product_version(packages: List[dict], pairs: List[dict]) -> L
     """
     prod_vends = {}
     for pair in pairs:
-        prod = pair["product"]
-        vend = pair["vendor"]
+        prod = pair.get("product", False)
+        vend = pair.get("vendor", False)
         if prod not in prod_vends:
             prod_vends[prod] = []
-        prod_vends[prod].append(vend)
+        prod_vends.get(prod, []).append(vend)
 
     out = []
     for package in packages:
-        prod = package["name"]
-        ver = package["version"]
+        prod = package.get("name", "")
+        ver = package.get("version", "")
 
         if prod in prod_vends:
-            vends = prod_vends[prod]
+            vends = prod_vends.get(prod, [])
             for vend in vends:
                 out.append((vend, prod, ver))
 
@@ -139,28 +147,33 @@ def save_apt_package_csv(packages):
         f.write("vendor,product,version\n")
         for package in packages:
             f.write(f"{','.join(package)}\n")
+    return False
 
 
-def run_scan() -> None:
+def run_scan() -> bool:
     """
     Run scan of apt packages and save results to JSON file.
     """
 
     cmd = [
         "cve-bin-tool",
-        "-u", "never",       # Never update the local CVE database
-        "-f", "json",        # Output format: JSON
-        "-o", f"{CVE_DIR}/cve-bin-tool-apt-summary.json",   # Write JSON results to this file
-        "-i", f"{CVE_DIR}/apt-packages.csv"
+        "-u",
+        "never",  # Never update the local CVE database
+        "-f",
+        "json",  # Output format: JSON
+        "-o",
+        f"{CVE_DIR}/cve-bin-tool-apt-summary.json",  # Write JSON results to this file
+        "-i",
+        f"{CVE_DIR}/apt-packages.csv",
     ]
-    result = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
+    result = subprocess_run(
+        cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True
     )
     if result.returncode != 0:
-        raise RuntimeError(f"cve-bin-tool failed with exit code {result.returncode}: {result.stderr}")
+        raise RuntimeError(
+            f"cve-bin-tool failed with exit code {result.returncode}: {result.stderr}"
+        )
+    return False
 
 
 def main(container):
@@ -186,11 +199,11 @@ def main(container):
         del cve_db
     except Exception:
         pass
+    return False
 
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser()
+    parser = argparse_ArgumentParser()
     parser.add_argument("container", type=str)
     args = parser.parse_args()
 

@@ -1,17 +1,25 @@
-import random
-from collections import defaultdict, Counter
-import typing
+"""Utilities for extract from database."""
 
-import numpy as np
+from collections import Counter, defaultdict
+from random import shuffle as random_shuffle
+from typing import Dict as typing_Dict
+from typing import Tuple as typing_Tuple
 
-import torch
+from numpy import add as np_add
+from numpy import array as np_array
+from numpy import shape as np_shape
+from numpy import zeros as np_zeros
+from torch import bool as torch_bool
+from torch import float32 as torch_float32
+from torch import long as torch_long
+from torch import tensor as torch_tensor
+from torch_geometric import transforms as T
 from torch_geometric.data import HeteroData
-import torch_geometric.transforms as T
 
 
 def nodes_fetching(
     nodes: list, features_name: str, class_name: str, data: HeteroData
-) -> typing.Tuple[HeteroData, typing.Dict, typing.Dict, str]:
+) -> typing_Tuple[HeteroData, typing_Dict, typing_Dict, str]:
     """
     This procedure fetches the nodes from the database and returns
     them in HeteroData object.
@@ -31,7 +39,7 @@ def nodes_fetching(
     # variable for storing embedding lengths
     embedding_lengths = defaultdict(int)
     # variable for storing observed attribute
-    observed_attribute = None
+    observed_attribute = ""
 
     label_cnt = 0
     label_reindexing = defaultdict()
@@ -51,13 +59,13 @@ def nodes_fetching(
 
         # add embedding length to dictionary of embedding lengths
         if node_type not in embedding_lengths:
-            embedding_lengths[node_type] = len(node.properties.get(features_name))
+            embedding_lengths[node_type] = len(node.properties.get(features_name, []))
 
         # if observed attribute is not set, set it to node type
-        if observed_attribute is None and class_name in node.properties:
+        if not observed_attribute and class_name in node.properties:
             observed_attribute = node_type
 
-        current_label = int(node.properties.get(class_name))
+        current_label = int(node.properties.get(class_name, 0))
         if current_label not in label_reindexing:
             label_reindexing[current_label] = label_cnt
             inv_label_reindexing[label_cnt] = current_label
@@ -79,23 +87,23 @@ def nodes_fetching(
     # since node_types is Counter, key is the node type and value is the number of nodes of that type
     for node_type, num_types_node in node_types.items():
         # for each node type, create a tensor of size num_types_node x embedding_lengths[node_type]
-        data[node_type].x = torch.tensor(
-            np.zeros((num_types_node, embedding_lengths[node_type])),
-            dtype=torch.float32,
+        data[node_type].x = torch_tensor(
+            np_zeros((num_types_node, embedding_lengths.get(node_type, 0))),
+            dtype=torch_float32,
         )
 
         # if node type is observed attribute, create other necessary tensors
         if node_type == observed_attribute:
-            data[node_type].y = torch.tensor(
-                np.zeros((num_types_node,), dtype=int), dtype=torch.long
+            data[node_type].y = torch_tensor(
+                np_zeros((num_types_node,), dtype=int), dtype=torch_long
             )
 
-            data[node_type].train_mask = torch.tensor(
-                np.zeros((num_types_node,), dtype=int), dtype=torch.bool
+            data[node_type].train_mask = torch_tensor(
+                np_zeros((num_types_node,), dtype=int), dtype=torch_bool
             )
 
-            data[node_type].val_mask = torch.tensor(
-                np.zeros((num_types_node,), dtype=int), dtype=torch.bool
+            data[node_type].val_mask = torch_tensor(
+                np_zeros((num_types_node,), dtype=int), dtype=torch_bool
             )
 
     # now fill the tensors with the nodes from the database
@@ -110,24 +118,24 @@ def nodes_fetching(
             node.labels[i].name for i in range(len(node.labels))
         )
 
-        node_type_counter = append_counter[node_type]
+        node_type_counter = append_counter.get(node_type, 0)
 
         # add feature vector from database to tensor
         # it is checked at the start of the loop if features are available
-        data[node_type].x[node_type_counter] = np.add(
+        data[node_type].x[node_type_counter] = np_add(
             data[node_type].x[node_type_counter],
-            np.array(node.properties.get(features_name)),
+            np_array(node.properties.get(features_name, [])),
         )
 
         # store reindexing and inverse reindexing
         reindexing[node_type][node_type_counter] = node.id
-        inv_reindexing[node_type][node.id] = node_type_counter
+        inv_reindexing.get(node_type, {})[node.id] = node_type_counter
 
         # if node type is observed attribute, add classification label to tensor
         if node_type == observed_attribute:
-            data[node_type].y[node_type_counter] = label_reindexing[
-                int(node.properties.get(class_name))
-            ]
+            data[node_type].y[node_type_counter] = label_reindexing.get(
+                int(node.properties.get(class_name, 0)), 0
+            )
 
         # increase append_counter by 1
         append_counter[node_type] += 1
@@ -187,8 +195,8 @@ def edges_fetching(
 
     # set edge_index variables to empty tensors of size 2 x no_edge_type_edges
     for edge_type, no_edge_type_edges in edge_types.items():
-        data[edge_type].edge_index = torch.tensor(
-            np.zeros((2, no_edge_type_edges)), dtype=torch.long
+        data[edge_type].edge_index = torch_tensor(
+            np_zeros((2, no_edge_type_edges)), dtype=torch_long
         )
 
     for edge in edges:
@@ -200,11 +208,11 @@ def edges_fetching(
         edge_type = tuple((from_vertex_type, edge_name, to_vertex_type))
 
         # add edge coordinates to edge_index tensors
-        data[edge_type].edge_index[0][append_counter[edge_type]] = int(
-            inv_reindexing[from_vertex_type][edge.from_vertex.id]
+        data[edge_type].edge_index[0][append_counter.get(edge_type, 0)] = int(
+            inv_reindexing.get(from_vertex_type, {})[edge.from_vertex.id]
         )
-        data[edge_type].edge_index[1][append_counter[edge_type]] = int(
-            inv_reindexing[to_vertex_type][edge.to_vertex.id]
+        data[edge_type].edge_index[1][append_counter.get(edge_type, 0)] = int(
+            inv_reindexing.get(to_vertex_type, {})[edge.to_vertex.id]
         )
 
         append_counter[edge_type] += 1
@@ -223,12 +231,12 @@ def generating_masks_for_X(
     Returns:
         HeteroData object with masks.
     """
-    no_observed = np.shape(data[observed_attribute].x)[0]
-    masks = np.zeros((no_observed))
+    no_observed = np_shape(data[observed_attribute].x)[0]
+    masks = np_zeros(no_observed)
 
-    masks = np.add(
+    masks = np_add(
         masks,
-        np.array(
+        np_array(
             list(
                 map(
                     lambda i: 1 if i < train_ratio * no_observed else 0,
@@ -238,11 +246,11 @@ def generating_masks_for_X(
         ),
     )
 
-    random.shuffle(masks)
+    random_shuffle(masks)
 
-    data[observed_attribute].train_mask = torch.tensor(masks, dtype=torch.bool)
+    data[observed_attribute].train_mask = torch_tensor(masks, dtype=torch_bool)
 
-    data[observed_attribute].val_mask = torch.tensor(1 - masks, dtype=torch.bool)
+    data[observed_attribute].val_mask = torch_tensor(1 - masks, dtype=torch_bool)
 
     data = T.AddSelfLoops()(data)
     data = T.ToUndirected()(data)
@@ -256,7 +264,7 @@ def extract_from_database(
     features_name: str,
     class_name: str,
     device: str,
-) -> typing.Tuple[HeteroData, str, typing.Dict, typing.Dict]:
+) -> typing_Tuple[HeteroData, str, typing_Dict, typing_Dict]:
     """This procedure extracts the data from the database and returns them in HeteroData object.
 
     Args:

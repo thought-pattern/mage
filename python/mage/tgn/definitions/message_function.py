@@ -1,5 +1,8 @@
-import torch.nn as nn
-import torch
+"""Utilities for message function."""
+
+from torch import concat as torch_concat
+from torch import device as torch_device
+from torch import nn
 
 
 class MessageFunction(nn.Module):
@@ -8,7 +11,7 @@ class MessageFunction(nn.Module):
     """
 
     def __init__(
-        self, raw_message_dimension: int, message_dimension: int, device: torch.device
+        self, raw_message_dimension: int, message_dimension: int, device: torch_device
     ):
         super().__init__()
         self.raw_message_dimension = raw_message_dimension
@@ -18,7 +21,7 @@ class MessageFunction(nn.Module):
 
 class MessageFunctionMLP(MessageFunction):
     def __init__(
-        self, raw_message_dimension: int, message_dimension: int, device: torch.device
+        self, raw_message_dimension: int, message_dimension: int, device: torch_device
     ):
         super().__init__(raw_message_dimension, message_dimension, device)
 
@@ -29,18 +32,20 @@ class MessageFunctionMLP(MessageFunction):
         ).to(self.device)
 
     def forward(self, data):
-        return self.message_function_net(data)
+        _return_value = self.message_function_net(data)
+        return _return_value
 
 
 class MessageFunctionIdentity(MessageFunction):
     def __init__(
-        self, raw_message_dimension: int, message_dimension: int, device: torch.device
+        self, raw_message_dimension: int, message_dimension: int, device: torch_device
     ):
         super().__init__(raw_message_dimension, message_dimension, device)
         assert raw_message_dimension == message_dimension, "Wrong!"
 
     def forward(self, data):
-        concat_message = torch.concat(data, dim=-1)
+        concat_message = torch_concat(data, dim=-1)
 
         # returns shape (1, message_dim) (1 row, message dim columns)
-        return concat_message.unsqueeze(0)
+        _return_value = concat_message.unsqueeze(0)
+        return _return_value

@@ -1,21 +1,28 @@
-import random
-import pytest
-import math
+"""Tests for test conflict error."""
 
-from mage.graph_coloring_module import Individual
-from mage.graph_coloring_module import ChainPopulation
-from mage.graph_coloring_module import ConflictError
-from mage.graph_coloring_module import Graph
-from mage.graph_coloring_module import Parameter
+from math import fabs as math_fabs
+from random import seed as random_seed
+
+from pytest import fixture as pytest_fixture
+from pytest import mark as pytest_mark
+
+from mage.graph_coloring_module import (
+    ChainPopulation,
+    ConflictError,
+    Graph,
+    Individual,
+    Parameter,
+)
 
 
-@pytest.fixture
+@pytest_fixture
 def set_seed():
-    random.seed(42)
+    random_seed(42)
+    return False
 
 
 def graph():
-    return Graph(
+    _return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -25,10 +32,11 @@ def graph():
             4: [(1, 5)],
         },
     )
+    return _return_value
 
 
 def graph_not_connected():
-    return Graph(
+    _return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -38,9 +46,10 @@ def graph_not_connected():
             4: [(3, 3)],
         },
     )
+    return _return_value
 
 
-@pytest.fixture
+@pytest_fixture
 def chain_population():
     g = graph()
     indv_1 = Individual(
@@ -54,7 +63,7 @@ def chain_population():
     return population
 
 
-@pytest.mark.parametrize(
+@pytest_mark.parametrize(
     "graph, no_of_colors, chromosome, expected_error",
     [
         (graph(), 3, [1, 1, 0, 2, 0], 2),
@@ -70,6 +79,7 @@ def test_individual_error_no_setting(
     )
     error = ConflictError().individual_err(graph, individual)
     assert error == expected_error
+    return False
 
 
 def test_population_error(set_seed, chain_population):
@@ -80,7 +90,8 @@ def test_population_error(set_seed, chain_population):
     )
 
     expected_error = 6.5
-    assert math.fabs(error - expected_error) < 1e-5
+    assert math_fabs(error - expected_error) < 1e-5
+    return False
 
 
 def test_delta_error_function():
@@ -94,4 +105,5 @@ def test_delta_error_function():
     )
 
     expected_error = -1.5
-    assert math.fabs(error - expected_error) < 1e-5
+    assert math_fabs(error - expected_error) < 1e-5
+    return False

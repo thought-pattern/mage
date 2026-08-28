@@ -1,7 +1,12 @@
+"""Utilities for action."""
+
 from abc import ABC, abstractmethod
-from mage.graph_coloring_module.graph import Graph
+from typing import Any, Dict
+
 from mage.graph_coloring_module.components.population import Population
-from typing import Dict, Any
+from mage.graph_coloring_module.graph import Graph
+
+_DEFAULT_ARGUMENT_DICT = {}
 
 
 class Action(ABC):
@@ -11,6 +16,11 @@ class Action(ABC):
 
     @abstractmethod
     def execute(
-        self, graph: Graph, population: Population, parameters: Dict[str, Any] = None
-    ) -> None:
-        pass
+        self,
+        graph: Graph,
+        population: Population,
+        parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT,
+    ) -> bool:
+        if parameters is _DEFAULT_ARGUMENT_DICT:
+            parameters = _DEFAULT_ARGUMENT_DICT.copy()
+        ...

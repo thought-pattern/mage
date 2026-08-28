@@ -1,6 +1,8 @@
+"""Utilities for simple mlp."""
+
 from typing import List
 
-import torch.nn as nn
+from torch import nn
 
 
 class MLP(nn.Module):
@@ -16,7 +18,8 @@ class MLP(nn.Module):
 
     def forward(self, data):
         h = self.act(self.fc1(data))
-        return self.fc2(h)
+        _return_value = self.fc2(h)
+        return _return_value
 
 
 class SimpleMLP(nn.Module):
@@ -31,4 +34,5 @@ class SimpleMLP(nn.Module):
 
     def forward(self, data):
         h = self.act(self.fc1(data))
-        return self.fc2(h).squeeze(dim=0)
+        _return_value = self.fc2(h).squeeze(dim=0)
+        return _return_value

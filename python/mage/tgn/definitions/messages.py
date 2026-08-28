@@ -1,5 +1,7 @@
-import numpy as np
-import torch
+"""Utilities for messages."""
+
+from numpy import array as np_array
+from torch import Tensor as torch_Tensor
 
 
 class RawMessage:
@@ -13,28 +15,29 @@ class RawMessage:
         self.source = source
         self.timestamp = timestamp
 
-    def detach_memory(self) -> None:
+    def detach_memory(self) -> bool:
         raise Exception("Not implemented")
 
     def __str__(self):
-        return "{source},{timestamp}".format(
+        _return_value = "{source},{timestamp}".format(
             source=self.source, timestamp=self.timestamp
         )
+        return _return_value
 
 
 class NodeRawMessage(RawMessage):
     def __init__(
         self,
-        source_memory: np.array,
+        source_memory: np_array,
         timestamp: int,
-        node_features: np.array,
+        node_features: np_array,
         source: int,
     ):
         super(NodeRawMessage, self).__init__(source, timestamp)
         self.source_memory = source_memory
         self.node_features = node_features
 
-    def detach_memory(self) -> None:
+    def detach_memory(self) -> bool:
         raise Exception("Not implemented")
 
 
@@ -49,10 +52,10 @@ class InteractionRawMessage(RawMessage):
 
     def __init__(
         self,
-        source_memory: torch.Tensor,
-        dest_memory: torch.Tensor,
-        delta_time: torch.Tensor,
-        edge_features: torch.Tensor,
+        source_memory: torch_Tensor,
+        dest_memory: torch_Tensor,
+        delta_time: torch_Tensor,
+        edge_features: torch_Tensor,
         source: int,
         timestamp: int,
     ):
@@ -62,7 +65,7 @@ class InteractionRawMessage(RawMessage):
         self.delta_time = delta_time
         self.edge_features = edge_features
 
-    def detach_memory(self) -> None:
+    def detach_memory(self) -> bool:
         if self.source_memory.grad is not None:
             self.source_memory.detach_()
             self.source_memory.zero_()
@@ -75,3 +78,4 @@ class InteractionRawMessage(RawMessage):
         if self.edge_features.grad is not None:
             self.edge_features.detach_()
             self.edge_features.zero_()
+        return False

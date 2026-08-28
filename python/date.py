@@ -1,49 +1,63 @@
-import datetime
-import re
+"""Utilities for date."""
+
+from datetime import datetime as datetime_datetime
+from datetime import timedelta as datetime_timedelta
 from enum import IntEnum
+from re import sub as re_sub
+from typing import ClassVar as typing_ClassVar
 from zoneinfo import ZoneInfo
 
-import mgp
-import pytz
+from mgp import List as mgp_List
+from mgp import Nullable as mgp_Nullable
+from mgp import ProcCtx as mgp_ProcCtx
+from mgp import Record as mgp_Record
+from mgp import function as mgp_function
+from mgp import read_proc as mgp_read_proc
+from pytz import all_timezones as pytz_all_timezones
+from pytz import timezone as pytz_timezone
+
 from mage.date.constants import Conversion, Epoch
 from mage.date.unit_conversion import to_int, to_timedelta
 
 
 def getOffset(timezone, date):
-    offset = pytz.timezone(timezone).utcoffset(date)
+    offset = pytz_timezone(timezone).utcoffset(date)
     if offset.days == 1:
-        return (
-            datetime.timedelta(
+        _return_value = (
+            datetime_timedelta(
                 minutes=offset.seconds // Conversion.SECONDS_IN_MINUTE
                 + Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR
             ),
             False,
         )
+        return _return_value
     elif offset.days == -1:
-        return (
-            datetime.timedelta(
+        _return_value = (
+            datetime_timedelta(
                 minutes=Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR
                 - offset.seconds // Conversion.SECONDS_IN_MINUTE
             ),
             True,
         )
-    return (
-        datetime.timedelta(minutes=offset.seconds // Conversion.SECONDS_IN_MINUTE),
+        return _return_value
+    _return_value = (
+        datetime_timedelta(minutes=offset.seconds // Conversion.SECONDS_IN_MINUTE),
         False,
     )
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def parse(
     time: str,
     unit: str = "ms",
     format: str = "%Y-%m-%d %H:%M:%S",
     timezone: str = "UTC",
-) -> mgp.Record(parsed=int):
+) -> mgp_Record(parsed=int):
     first_date = Epoch.UNIX_EPOCH
-    input_date = datetime.datetime.strptime(time, format)
+    input_date = datetime_datetime.strptime(time, format)
 
-    if timezone not in pytz.all_timezones:
+    if timezone not in pytz_all_timezones:
         raise Exception(
             "Timezone doesn't exist. Check documentation to see available timezones."
         )
@@ -89,57 +103,60 @@ def parse(
             "Unit doesn't exist. Check documentation to see available units."
         )
 
-    return mgp.Record(parsed=parsed)
+    _return_value = mgp_Record(parsed=parsed)
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def format(
     time: int,
     unit: str = "ms",
     format: str = "%Y-%m-%d %H:%M:%S %Z",
     timezone: str = "UTC",
-) -> mgp.Record(formatted=str):
+) -> mgp_Record(formatted=str):
     first_date = Epoch.UNIX_EPOCH
 
     if unit == "ms":
-        new_date = first_date + datetime.timedelta(milliseconds=time)
+        new_date = first_date + datetime_timedelta(milliseconds=time)
     elif unit == "s":
-        new_date = first_date + datetime.timedelta(seconds=time)
+        new_date = first_date + datetime_timedelta(seconds=time)
     elif unit == "m":
-        new_date = first_date + datetime.timedelta(minutes=time)
+        new_date = first_date + datetime_timedelta(minutes=time)
     elif unit == "h":
-        new_date = first_date + datetime.timedelta(hours=time)
+        new_date = first_date + datetime_timedelta(hours=time)
     elif unit == "d":
-        new_date = first_date + datetime.timedelta(days=time)
+        new_date = first_date + datetime_timedelta(days=time)
     else:
         raise Exception(
             "Unit doesn't exist. Check documentation to see available units."
         )
 
-    if timezone not in pytz.all_timezones:
+    if timezone not in pytz_all_timezones:
         raise Exception(
             "Timezone doesn't exist. Check documentation to see available timezones."
         )
     offset, subtract = getOffset(timezone, new_date)
     tz_new = new_date - offset if subtract else new_date + offset
 
-    return mgp.Record(
-        formatted=pytz.timezone(timezone).localize(tz_new).strftime(format)
+    _return_value = mgp_Record(
+        formatted=pytz_timezone(timezone).localize(tz_new).strftime(format)
     )
+    return _return_value
 
 
-@mgp.function
+@mgp_function
 def add(
     time: int,
     unit: str,
     add_value: int,
     add_unit: str,
 ) -> int:
-    return to_int(
+    _return_value = to_int(
         to_timedelta(time=time, unit=unit)
         + to_timedelta(time=add_value, unit=add_unit),
         unit=unit,
     )
+    return _return_value
 
 
 # TODO(colinbarry) Code below is a copy and paste from `date.py` in the Memgraph
@@ -165,7 +182,7 @@ class DateFormatUtil:
     Utility class for converting between predefined ISO date formats using Python strftime and strptime.
     """
 
-    ISO_DATE_FORMATS = {
+    ISO_DATE_FORMATS: typing_ClassVar = {
         "basic_iso_date": "%Y%m%d",  # BASIC_ISO_DATE: '20111203'
         "iso_local_date": "%Y-%m-%d",  # ISO_LOCAL_DATE: '2011-12-03'
         "iso_offset_date": "%Y-%m-%d%z",  # ISO_OFFSET_DATE: '2011-12-03+01:00'
@@ -186,11 +203,14 @@ class DateFormatUtil:
             return "iso_zoned_date_time"
         if format_lower not in DateFormatUtil.ISO_DATE_FORMATS:
             raise ValueError(f"Unsupported date format: {format_str}")
-        return DateFormatUtil.ISO_DATE_FORMATS[format_lower]
+        _return_value = DateFormatUtil.ISO_DATE_FORMATS.get(format_lower, "")
+        return _return_value
 
 
-@mgp.function
-def convert_format(temporal: mgp.Nullable[str], current_format: str, convert_to: str) -> mgp.Nullable[str]:  # noqa: C901
+@mgp_function
+def convert_format(
+    temporal: mgp_Nullable[str], current_format: str, convert_to: str
+) -> mgp_Nullable[str]:
     """
     Converts between specified ISO date formats using Python strftime and strptime.
     Supports zoned to offset conversion by removing zone part in '[]'.
@@ -203,10 +223,10 @@ def convert_format(temporal: mgp.Nullable[str], current_format: str, convert_to:
         convert_to: The target format to convert to
 
     Returns:
-        output: The converted datetime string or None if input is None or empty
+        output: The converted datetime string, or ``False`` if input is absent or empty
     """
     if temporal is None or temporal.strip() == "":
-        return None
+        return False
 
     try:
         current_formatter = DateFormatUtil.get_format(current_format)
@@ -218,29 +238,39 @@ def convert_format(temporal: mgp.Nullable[str], current_format: str, convert_to:
             temporal_without_zone = temporal.split("[")[0]
 
             if "." in temporal_without_zone:
-                temporal_without_zone = re.sub(r"(\.\d{6})\d*", r"\1", temporal_without_zone)
-                dt = datetime.datetime.strptime(temporal_without_zone, "%Y-%m-%dT%H:%M:%S.%f%z")
+                temporal_without_zone = re_sub(
+                    r"(\.\d{6})\d*", r"\1", temporal_without_zone
+                )
+                dt = datetime_datetime.strptime(
+                    temporal_without_zone, "%Y-%m-%dT%H:%M:%S.%f%z"
+                )
             else:
-                dt = datetime.datetime.strptime(temporal_without_zone, "%Y-%m-%dT%H:%M:%S%z")
+                dt = datetime_datetime.strptime(
+                    temporal_without_zone, "%Y-%m-%dT%H:%M:%S%z"
+                )
         elif current_format.lower() == "iso_date":
             # iso_date can have optional offset, try parsing with offset first
             try:
-                dt = datetime.datetime.strptime(temporal, "%Y-%m-%d%z")
+                dt = datetime_datetime.strptime(temporal, "%Y-%m-%d%z")
             except ValueError:
-                dt = datetime.datetime.strptime(temporal, "%Y-%m-%d")
+                dt = datetime_datetime.strptime(temporal, "%Y-%m-%d")
         elif current_format.lower() == "iso_time":
             # iso_time can have optional offset
             try:
-                dt = datetime.datetime.strptime(temporal, "%H:%M:%S%z")
+                dt = datetime_datetime.strptime(temporal, "%H:%M:%S%z")
             except ValueError:
-                dt = datetime.datetime.strptime(temporal, "%H:%M:%S")
+                dt = datetime_datetime.strptime(temporal, "%H:%M:%S")
         else:
             try:
-                dt = datetime.datetime.fromisoformat(temporal)
+                dt = datetime_datetime.fromisoformat(temporal)
             except Exception:
-                dt = datetime.datetime.strptime(temporal, current_formatter)
+                dt = datetime_datetime.strptime(temporal, current_formatter)
 
-        if convert_to.lower() in ["iso_offset_date", "iso_offset_time", "iso_offset_date_time"] and dt.tzinfo is None:
+        if (
+            convert_to.lower()
+            in ["iso_offset_date", "iso_offset_time", "iso_offset_date_time"]
+            and dt.tzinfo is None
+        ):
             raise Exception("missing timezone")
 
         # Convert to target format
@@ -279,26 +309,32 @@ def convert_format(temporal: mgp.Nullable[str], current_format: str, convert_to:
                 dt = dt.replace(tzinfo=ZoneInfo("UTC"))
             # For local formats, remove timezone info
             elif not convert_to_formatter.endswith("%z") and dt.tzinfo is not None:
-                dt = dt.replace(tzinfo=None)
+                dt = dt.replace(tzinfo=False)
 
             converted = dt.strftime(convert_to_formatter)
 
             # Format offset as +hh:mm for offset formats
-            if convert_to_formatter.endswith("%z") and len(converted) > FormatLength.DATE:
+            if (
+                convert_to_formatter.endswith("%z")
+                and len(converted) > FormatLength.DATE
+            ):
                 converted = f"{converted[:-2]}:{converted[-2:]}"
 
         return converted
 
     except Exception as e:
-        raise Exception(f"Error converting '{temporal}' from '{current_format}' to '{convert_to}': {e}")
+        raise Exception(
+            f"Error converting '{temporal}' from '{current_format}' to '{convert_to}': {e}"
+        ) from e
 
 
-@mgp.read_proc
-def get_date_formats(context: mgp.ProcCtx) -> mgp.Record(formats=mgp.List[str]):
+@mgp_read_proc
+def get_date_formats(context: mgp_ProcCtx) -> mgp_Record(formats=mgp_List[str]):
     """
     Returns a list of supported date formats.
 
     Returns:
         formats: List of supported date formats
     """
-    return mgp.Record(formats=list(DateFormatUtil.ISO_DATE_FORMATS.keys()))
+    _return_value = mgp_Record(formats=list(DateFormatUtil.ISO_DATE_FORMATS.keys()))
+    return _return_value

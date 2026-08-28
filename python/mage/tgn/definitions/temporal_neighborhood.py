@@ -1,6 +1,12 @@
-from typing import Tuple, Dict, List
+"""Utilities for temporal neighborhood."""
 
-import numpy as np
+from typing import Dict, List, Tuple
+
+from numpy import append as np_append
+from numpy import array as np_array
+from numpy import random as np_random
+from numpy import where as np_where
+from numpy import zeros as np_zeros
 
 
 class TemporalNeighborhood:
@@ -10,14 +16,15 @@ class TemporalNeighborhood:
 
     def init_temporal_neighborhood(self):
         self.neighborhood: Dict[int, List[Tuple[int, int, float]]] = {}
+        return False
 
     def update_neighborhood(
         self,
-        sources: np.array,
-        destinations: np.array,
-        edge_idxs: np.array,
-        timestamps: np.array,
-    ) -> None:
+        sources: np_array,
+        destinations: np_array,
+        edge_idxs: np_array,
+        timestamps: np_array,
+    ) -> bool:
         """
         Idea is that smallest new timestamp is always greater than last biggest one in dict so we don't need to
         sort arrays :)
@@ -28,36 +35,38 @@ class TemporalNeighborhood:
             **self.neighborhood,
         }
         for source, destination, edge_idx, timestamp in zip(
-            sources, destinations, edge_idxs, timestamps
+            sources, destinations, edge_idxs, timestamps, strict=False
         ):
-            self.neighborhood[source].append((destination, edge_idx, timestamp))
-            self.neighborhood[destination].append((source, edge_idx, timestamp))
+            self.neighborhood.get(source, []).append((destination, edge_idx, timestamp))
+            self.neighborhood.get(destination, []).append((source, edge_idx, timestamp))
+        return False
 
     def get_neighborhood(
         self, node: int, timestamp: int, num_neighbors: int
-    ) -> Tuple[np.array, np.array, np.array]:
+    ) -> Tuple[np_array, np_array, np_array]:
         """ """
         if node not in self.neighborhood:
-            return (
-                np.zeros(num_neighbors, dtype=int),
-                np.zeros(num_neighbors, dtype=int),
-                np.zeros(num_neighbors, dtype=int),
+            _return_value = (
+                np_zeros(num_neighbors, dtype=int),
+                np_zeros(num_neighbors, dtype=int),
+                np_zeros(num_neighbors, dtype=int),
             )
-        neighbors_tuple = self.neighborhood[node]
+            return _return_value
+        neighbors_tuple = self.neighborhood.get(node, False)
 
-        neighbors, edge_idxs, timestamps = list(zip(*neighbors_tuple))
+        neighbors, edge_idxs, timestamps = list(zip(*neighbors_tuple, strict=False))
         neighbors, edge_idxs, timestamps = (
             list(neighbors),
             list(edge_idxs),
             list(timestamps),
         )
 
-        neighbors = np.array(neighbors)
-        edge_idxs = np.array(edge_idxs)
-        timestamps = np.array(timestamps)
+        neighbors = np_array(neighbors)
+        edge_idxs = np_array(edge_idxs)
+        timestamps = np_array(timestamps)
 
-        indices = np.where(timestamps < timestamp)[0]
-        indices = np.random.choice(
+        indices = np_where(timestamps < timestamp)[0]
+        indices = np_random.choice(
             indices, size=min(num_neighbors, len(indices)), replace=False
         )
 
@@ -65,18 +74,21 @@ class TemporalNeighborhood:
         edge_idxs = edge_idxs[indices]
         timestamps = timestamps[indices]
 
-        neighbors = np.append(
-            arr=neighbors, values=np.zeros(num_neighbors - len(neighbors), dtype=int)
+        neighbors = np_append(
+            arr=neighbors, values=np_zeros(num_neighbors - len(neighbors), dtype=int)
         )
-        edge_idxs = np.append(
-            arr=edge_idxs, values=np.zeros(num_neighbors - len(edge_idxs), dtype=int)
+        edge_idxs = np_append(
+            arr=edge_idxs, values=np_zeros(num_neighbors - len(edge_idxs), dtype=int)
         )
-        timestamps = np.append(
-            arr=timestamps, values=np.zeros(num_neighbors - len(timestamps), dtype=int)
+        timestamps = np_append(
+            arr=timestamps, values=np_zeros(num_neighbors - len(timestamps), dtype=int)
         )
         return neighbors, edge_idxs, timestamps
 
     def find_neighborhood(
         self, nodes: List[int], num_neighbors: int
     ) -> Dict[int, List[Tuple[int, int, float]]]:
-        return {node: self.neighborhood[node][:num_neighbors] for node in nodes}
+        _return_value = {
+            node: self.neighborhood.get(node, [])[:num_neighbors] for node in nodes
+        }
+        return _return_value

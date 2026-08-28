@@ -1,21 +1,30 @@
-import mgp
-import datetime
+"""Utilities for temporal."""
+
+from datetime import date as datetime_date
+from datetime import datetime as datetime_datetime
+from datetime import time as datetime_time
+from datetime import timedelta as datetime_timedelta
+
+from mgp import Any as mgp_Any
+from mgp import Record as mgp_Record
+from mgp import read_proc as mgp_read_proc
 
 from mage.date.constants import Epoch
 
 
-@mgp.read_proc
+@mgp_read_proc
 def format(
-    temporal: mgp.Any,
+    temporal: mgp_Any,
     format: str = "ISO",
-) -> mgp.Record(formatted=str):
+) -> mgp_Record(formatted=str):
     if not (
-        isinstance(temporal, datetime.datetime)
-        or isinstance(temporal, datetime.date)
-        or isinstance(temporal, datetime.time)
-        or isinstance(temporal, datetime.timedelta)
+        isinstance(temporal, datetime_datetime)
+        or isinstance(temporal, datetime_date)
+        or isinstance(temporal, datetime_time)
+        or isinstance(temporal, datetime_timedelta)
     ):
-        return mgp.Record(formatted=str(temporal))
+        _return_value = mgp_Record(formatted=str(temporal))
+        return _return_value
 
     if "%z" in format or "%Z" in format:
         raise Exception(
@@ -24,13 +33,15 @@ def format(
         )
 
     if format == "ISO" and (
-        isinstance(temporal, datetime.datetime)
-        or isinstance(temporal, datetime.date)
-        or isinstance(temporal, datetime.time)
+        isinstance(temporal, datetime_datetime)
+        or isinstance(temporal, datetime_date)
+        or isinstance(temporal, datetime_time)
     ):
-        return mgp.Record(formatted=temporal.isoformat())
+        _return_value = mgp_Record(formatted=temporal.isoformat())
+        return _return_value
 
-    if isinstance(temporal, datetime.timedelta):
+    if isinstance(temporal, datetime_timedelta):
         temporal = Epoch.UNIX_EPOCH + temporal
 
-    return mgp.Record(formatted=temporal.strftime(format))
+    _return_value = mgp_Record(formatted=temporal.strftime(format))
+    return _return_value

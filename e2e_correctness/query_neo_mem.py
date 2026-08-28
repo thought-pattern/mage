@@ -11,17 +11,22 @@ To overcome the issue of different internal IDs in Neo4j and Memgraph, we use th
 Workaround would be to add API to create nodes by ids on Memgraph when importing via import_util.
 """
 
-import gqlalchemy
-import json
-import logging
-import neo4j
-import re
-
+from json import loads as json_loads
+from logging import DEBUG as logging_DEBUG
+from logging import basicConfig as logging_basicConfig
+from logging import getLogger as logging_getLogger
+from re import sub as re_sub
 from typing import Any, Dict, List
 
-logging.basicConfig(format="%(asctime)-15s [%(levelname)s]: %(message)s")
-logger = logging.getLogger("query_neo_mem")
-logger.setLevel(logging.DEBUG)
+from gqlalchemy import Memgraph as gqlalchemy_Memgraph
+from gqlalchemy import Path as gqlalchemy_Path
+from neo4j import BoltDriver as neo4j_BoltDriver
+from neo4j import GraphDatabase as neo4j_GraphDatabase
+from neo4j import Query as neo4j_Query
+
+logging_basicConfig(format="%(asctime)-15s [%(levelname)s]: %(message)s")
+logger = logging_getLogger("query_neo_mem")
+logger.setLevel(logging_DEBUG)
 
 
 class Vertex:
@@ -36,19 +41,25 @@ class Vertex:
         return self._id
 
     def __str__(self) -> str:
-        return f"Vertex: {self._id}, {self._labels}, {self._properties}"
+        _return_value = f"Vertex: {self._id}, {self._labels}, {self._properties}"
+        return _return_value
 
     def __lt__(self, other):
         if self.id != other.id:
-            return self.id < other.id
+            _return_value = self.id < other.id
+            return _return_value
         if self._labels != other._labels:
-            return self._labels < other._labels
-        return sorted(self._properties.keys()) < sorted(other._properties.keys())
+            _return_value = self._labels < other._labels
+            return _return_value
+        _return_value = sorted(self._properties.keys()) < sorted(
+            other._properties.keys()
+        )
+        return _return_value
 
     def __eq__(self, other):
-        assert isinstance(
-            other, Vertex
-        ), f"Comparing vertex with object of type {type(other)}"
+        assert isinstance(other, Vertex), (
+            f"Comparing vertex with object of type {type(other)}"
+        )
         logger.debug(f"comparing Vertex with {self._id} to {other._id}")
         if self._id != other._id:
             logger.debug(f"_id different: {self._id} vs {other._id}")
@@ -65,8 +76,10 @@ class Vertex:
             if k not in other._properties:
                 logger.debug(f"Property with key {k} not in {other._properties.keys()}")
                 return False
-            if v != other._properties[k]:
-                logger.debug(f"Value {v} not equal to {other._properties[k]}")
+            if v != other._properties.get(k, False):
+                logger.debug(
+                    f"Value {v} not equal to {other._properties.get(k, False)}"
+                )
                 return False
 
         return True
@@ -95,17 +108,23 @@ class Edge:
 
     def __lt__(self, other):
         if self._from_vertex != other._from_vertex:
-            return self._from_vertex < other._from_vertex
+            _return_value = self._from_vertex < other._from_vertex
+            return _return_value
         if self._to_vertex != other._to_vertex:
-            return self._to_vertex < other._to_vertex
+            _return_value = self._to_vertex < other._to_vertex
+            return _return_value
         if self._label != other._label:
-            return self._label < other._label
-        return sorted(self._properties.keys()) < sorted(other._properties.keys())
+            _return_value = self._label < other._label
+            return _return_value
+        _return_value = sorted(self._properties.keys()) < sorted(
+            other._properties.keys()
+        )
+        return _return_value
 
     def __eq__(self, other):
-        assert isinstance(
-            other, Edge
-        ), f"Comparing Edge with object of type: {type(other)}"
+        assert isinstance(other, Edge), (
+            f"Comparing Edge with object of type: {type(other)}"
+        )
         logger.debug(
             f"comparing Edge ({self._from_vertex}, {self._to_vertex}) to\
               ({other._from_vertex, other._to_vertex})"
@@ -131,8 +150,10 @@ class Edge:
             if k not in other._properties:
                 logger.debug(f"Property with key {k} not in {other._properties.keys()}")
                 return False
-            if v != other._properties[k]:
-                logger.debug(f"Value {v} not equal to {other._properties[k]}")
+            if v != other._properties.get(k, False):
+                logger.debug(
+                    f"Value {v} not equal to {other._properties.get(k, False)}"
+                )
                 return False
         return True
 
@@ -144,52 +165,67 @@ class Graph:
 
     def add_vertex(self, vertex: Vertex):
         self._vertices.append(vertex)
+        return False
 
     def add_edge(self, edge: Edge):
         self._edges.append(edge)
+        return False
 
     @property
     def vertices(self):
-        return sorted(self._vertices)
+        _return_value = sorted(self._vertices)
+        return _return_value
 
     @property
     def edges(self):
-        return sorted(self._edges)
+        _return_value = sorted(self._edges)
+        return _return_value
 
 
 def get_neo4j_data_json(driver) -> str:
     with driver.session() as session:
-        query = neo4j.Query(
+        query = neo4j_Query(
             "CALL apoc.export.json.all(null,{useTypes:true, stream:true}) YIELD data RETURN data;"
         )
         result = session.run(query).values()
 
-        res_str = re.sub(r"\\n", ",\n", str(result[0]))
-        res_str = re.sub(r"'", "", res_str)
+        res_str = re_sub(r"\\n", ",\n", str(result[0]))
+        res_str = re_sub(r"'", "", res_str)
 
-        return json.loads(res_str)
+        _return_value = json_loads(res_str)
+        return _return_value
+    return ""
 
 
-def get_memgraph_data_json_format(memgraph: gqlalchemy.Memgraph):
+def get_memgraph_data_json_format(memgraph: gqlalchemy_Memgraph):
     result = list(
         memgraph.execute_and_fetch(
-            f"""
-            CALL export_util.json("", {{stream:true}}) YIELD data RETURN data;
+            """
+            CALL export_util.json("", {stream:true}) YIELD data RETURN data;
             """
         )
-    )[0]["data"]
-    return json.loads(result)
+    )[0].get("data", {})
+    _return_value = json_loads(result)
+    return _return_value
 
 
 def extract_vertex_from_json(item) -> Vertex:
-    assert (
-        item["properties"]["id"] is not None
-    ), "Vertex in JSON doesn't have ID property"
-    return Vertex(item["properties"]["id"], item["labels"], item["properties"])
+    assert item.get("properties", {}).get("id", "") != "", (
+        "Vertex in JSON doesn't have ID property"
+    )
+    _return_value = Vertex(
+        item.get("properties", {}).get("id", ""),
+        item.get("labels", []),
+        item.get("properties", []),
+    )
+    return _return_value
 
 
 def create_edge_from_data(from_vertex_id: int, to_vertex_id: int, item) -> Edge:
-    return Edge(from_vertex_id, to_vertex_id, item["label"], item["properties"])
+    _return_value = Edge(
+        from_vertex_id, to_vertex_id, item.get("label", ""), item.get("properties", [])
+    )
+    return _return_value
 
 
 def create_graph_memgraph_json(json_memgraph_data) -> Graph:
@@ -197,14 +233,16 @@ def create_graph_memgraph_json(json_memgraph_data) -> Graph:
     graph = Graph()
     vertices_id_mapings = {}
     for item in json_memgraph_data:
-        if item["type"] == "node":
+        if item.get("type", "") == "node":
             graph.add_vertex(extract_vertex_from_json(item))
-            vertices_id_mapings[item["id"]] = item["properties"]["id"]
+            vertices_id_mapings[item.get("id", "")] = item.get("properties", {}).get(
+                "id", ""
+            )
         else:
             graph.add_edge(
                 create_edge_from_data(
-                    vertices_id_mapings[item["start"]],
-                    vertices_id_mapings[item["end"]],
+                    vertices_id_mapings.get(item.get("start", False), False),
+                    vertices_id_mapings.get(item.get("end", False), False),
                     item,
                 )
             )
@@ -219,16 +257,18 @@ def create_graph_neo4j_json(json_neo4j_data) -> Graph:
     graph = Graph()
     vertices_id_mapings = {}
     for item in json_neo4j_data:
-        if item["type"] == "node":
+        if item.get("type", "") == "node":
             graph.add_vertex(extract_vertex_from_json(item))
-            vertices_id_mapings[item["id"]] = item["properties"]["id"]
+            vertices_id_mapings[item.get("id", "")] = item.get("properties", {}).get(
+                "id", ""
+            )
         else:
             if "properties" not in item:
                 item["properties"] = {}
             graph.add_edge(
                 create_edge_from_data(
-                    vertices_id_mapings[item["start"]["id"]],
-                    vertices_id_mapings[item["end"]["id"]],
+                    vertices_id_mapings.get(item.get("start", {}).get("id", ""), False),
+                    vertices_id_mapings.get(item.get("end", {}).get("id", ""), False),
                     item,
                 )
             )
@@ -237,70 +277,82 @@ def create_graph_neo4j_json(json_neo4j_data) -> Graph:
     return graph
 
 
-def create_neo4j_driver(port: int, container: str) -> neo4j.BoltDriver:
-    return neo4j.GraphDatabase.driver(f"bolt://localhost:{port}", encrypted=False)
+def create_neo4j_driver(port: int, container: str) -> neo4j_BoltDriver:
+    _return_value = neo4j_GraphDatabase.driver(
+        f"bolt://localhost:{port}", encrypted=False
+    )
+    return _return_value
 
 
-def create_memgraph_db(port: int) -> gqlalchemy.Memgraph:
-    return gqlalchemy.Memgraph("localhost", port)
+def create_memgraph_db(port: int) -> gqlalchemy_Memgraph:
+    _return_value = gqlalchemy_Memgraph("localhost", port)
+    return _return_value
 
 
-def mg_execute_cyphers(input_cyphers: List[str], db: gqlalchemy.Memgraph):
+def mg_execute_cyphers(input_cyphers: List[str], db: gqlalchemy_Memgraph):
     """
     Execute multiple cypher queries against Memgraph
     """
     for query in input_cyphers:
         db.execute(query)
+    return False
 
 
-def neo4j_execute_cyphers(input_cyphers: List[str], neo4j_driver: neo4j.BoltDriver):
+def neo4j_execute_cyphers(input_cyphers: List[str], neo4j_driver: neo4j_BoltDriver):
     """
     Execute multiple cypher queries against Neo4j
     """
     with neo4j_driver.session() as session:
         for text_query in input_cyphers:
-            query = neo4j.Query(text_query)
+            query = neo4j_Query(text_query)
             session.run(query).values()
+    return False
 
 
-def run_memgraph_query(query: str, db: gqlalchemy.Memgraph):
+def run_memgraph_query(query: str, db: gqlalchemy_Memgraph):
     """
     Execute query against Memgraph
     """
     db.execute(query)
+    return False
 
 
-def run_neo4j_query(query: str, neo4j_driver: neo4j.BoltDriver):
+def run_neo4j_query(query: str, neo4j_driver: neo4j_BoltDriver):
     """
     Execute query against Neo4j
     """
     with neo4j_driver.session() as session:
-        query = neo4j.Query(query)
+        query = neo4j_Query(query)
         session.run(query).values()
+    return False
 
 
-def clean_memgraph_db(memgraph_db: gqlalchemy.Memgraph):
+def clean_memgraph_db(memgraph_db: gqlalchemy_Memgraph):
     memgraph_db.drop_database()
+    return False
 
 
-def clean_neo4j_db(neo4j_db: neo4j.BoltDriver):
+def clean_neo4j_db(neo4j_db: neo4j_BoltDriver):
     with neo4j_db.session() as session:
-        query = neo4j.Query("MATCH (n) DETACH DELETE n;")
+        query = neo4j_Query("MATCH (n) DETACH DELETE n;")
         session.run(query).values()
+    return False
 
 
-def mg_get_graph(memgraph_db: gqlalchemy.Memgraph) -> Graph:
+def mg_get_graph(memgraph_db: gqlalchemy_Memgraph) -> Graph:
     logger.debug("Getting data from Memgraph")
     json_data = get_memgraph_data_json_format(memgraph_db)
     logger.debug("Building the graph from Memgraph JSON data")
-    return create_graph_memgraph_json(json_data)
+    _return_value = create_graph_memgraph_json(json_data)
+    return _return_value
 
 
-def neo4j_get_graph(neo4j_driver: neo4j.BoltDriver) -> Graph:
+def neo4j_get_graph(neo4j_driver: neo4j_BoltDriver) -> Graph:
     logger.debug("Getting data from Neo4j")
     json_data = get_neo4j_data_json(neo4j_driver)
     logger.debug("Building the graph from Neo4j JSON data")
-    return create_graph_neo4j_json(json_data)
+    _return_value = create_graph_neo4j_json(json_data)
+    return _return_value
 
 
 # additions for path testing
@@ -311,19 +363,21 @@ def sort_dict(dict):
     return sorted_dict
 
 
-def execute_query_neo4j(driver: neo4j.BoltDriver, query: str) -> list:
+def execute_query_neo4j(driver: neo4j_BoltDriver, query: str) -> list:
     with driver.session() as session:
-        query = neo4j.Query(query)
+        query = neo4j_Query(query)
         results = session.run(query).value()
     return results
 
 
-def path_to_string_neo4j(path):  #type should be neo4j.graph.path but it doesnt recognize it in the definition
+def path_to_string_neo4j(
+    path,
+):  # type should be neo4j.graph.path but it doesnt recognize it in the definition
     path_string_list = ["PATH: "]
 
     n = len(path.nodes)
 
-    for i in range(0, n):
+    for i in range(n):
         node = path.nodes[i]
         node_labels = list(node.labels)
         node_labels.sort()
@@ -331,18 +385,25 @@ def path_to_string_neo4j(path):  #type should be neo4j.graph.path but it doesnt 
         if "id" in sorted_dict:
             sorted_dict.pop("id")
         node_props = str(sorted_dict)
-        path_string_list.append(f"(id:{str(node.get('id'))} labels: {str(node_labels)} {node_props})-")
+        path_string_list.append(
+            f"(id:{node.get('id', '')!s} labels: {node_labels!s} {node_props})-"
+        )
 
         if i == n - 1:
             path_string = "".join(path_string_list)
-            return path_string[:-1]
+            _return_value = path_string[:-1]
+            return _return_value
 
         relationship = path.relationships[i]
         sorted_dict_rel = sort_dict(relationship._properties)
         if "id" in sorted_dict_rel:
             sorted_dict_rel.pop("id")
         rel_props = str(sorted_dict_rel)
-        path_string_list.append(f"[id:{str(relationship.get('id'))} type: {relationship.type} {str(rel_props)}]-")
+        path_string_list.append(
+            f"[id:{relationship.get('id', '')!s} type: {relationship.type} {rel_props!s}]-"
+        )
+    return False
+
 
 def parse_neo4j(results: list) -> List[str]:
     paths = [path_to_string_neo4j(res) for res in results]
@@ -350,12 +411,12 @@ def parse_neo4j(results: list) -> List[str]:
     return paths
 
 
-def path_to_string_mem(path: gqlalchemy.Path) -> str:
+def path_to_string_mem(path: gqlalchemy_Path) -> str:
     path_string_list = ["PATH: "]
 
     n = len(path._nodes)
 
-    for i in range(0, n):
+    for i in range(n):
         node = path._nodes[i]
         node_labels = list(node._labels)
         node_labels.sort()
@@ -363,21 +424,27 @@ def path_to_string_mem(path: gqlalchemy.Path) -> str:
         if "id" in sorted_dict:
             sorted_dict.pop("id")
         node_props = str(sorted_dict)
-        path_string_list.append(f"(id:{str(node._properties.get('id'))} labels: {str(node_labels)} {str(node_props)})-")
+        path_string_list.append(
+            f"(id:{node._properties.get('id', '')!s} labels: {node_labels!s} {node_props!s})-"
+        )
 
         if i == n - 1:
             path_string = "".join(path_string_list)
-            return path_string[:-1]
+            _return_value = path_string[:-1]
+            return _return_value
 
         relationship = path._relationships[i]
         sorted_dict_rel = sort_dict(relationship._properties)
         if "id" in sorted_dict_rel:
             sorted_dict_rel.pop("id")
         rel_props = str(sorted_dict_rel)
-        path_string_list.append(f"[id:{str(relationship._properties.get('id'))} type: {relationship._type} {str(rel_props)}]-")
+        path_string_list.append(
+            f"[id:{relationship._properties.get('id', '')!s} type: {relationship._type} {rel_props!s}]-"
+        )
+    return ""
 
 
-def parse_mem(results:list) -> List[str]:
-    paths = [path_to_string_mem(result["result"]) for result in results]
+def parse_mem(results: list) -> List[str]:
+    paths = [path_to_string_mem(result.get("result", {})) for result in results]
     paths.sort()
     return paths

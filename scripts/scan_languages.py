@@ -1,9 +1,3 @@
-from cve_bin_tool.parsers.parse import valid_files as cbt_valid_files
-import os
-import subprocess
-import argparse
-
-
 """
 This script should speed up the scanning for specific programming-language
 package vulnerabilities with cve-bin-tool.
@@ -19,7 +13,19 @@ metadata files which cve-bin-tool would normally look for (`valid_files`).
    false positives, and outputs the results to a JSON file.
 """
 
-CVE_DIR = os.getenv("CVE_DIR", os.getcwd())
+from argparse import ArgumentParser as argparse_ArgumentParser
+from os import getcwd as os_getcwd
+from os import getenv as os_getenv
+from os import makedirs as os_makedirs
+from os import path as os_path
+from os import system as os_system
+from os import walk as os_walk
+from subprocess import PIPE as subprocess_PIPE
+from subprocess import run as subprocess_run
+
+from cve_bin_tool.parsers.parse import valid_files as cbt_valid_files
+
+CVE_DIR = os_getenv("CVE_DIR", os_getcwd())
 
 
 def find_files(rootfs: str) -> list[str]:
@@ -38,12 +44,12 @@ def find_files(rootfs: str) -> list[str]:
     """
 
     file_checkers = cbt_valid_files.copy()
-    file_checkers["METADATA"] = file_checkers["METADATA: "]
-    file_checkers["PKG-INFO"] = file_checkers["PKG-INFO: "]
+    file_checkers["METADATA"] = file_checkers.get("METADATA: ", {})
+    file_checkers["PKG-INFO"] = file_checkers.get("PKG-INFO: ", False)
     language_files = list(file_checkers.keys())
 
     matches = []
-    for dirpath, _, filenames in os.walk(rootfs):
+    for dirpath, _, filenames in os_walk(rootfs):
         for filename in filenames:
             if filename in language_files and filename != "requirements.txt":
                 matches.append(f"{dirpath}/{filename}")
@@ -59,10 +65,11 @@ def copy_language_files(rootfs: str, langfs: str):
     language_files = find_files(rootfs)
 
     for file in language_files:
-        dir = os.path.dirname(file).replace(rootfs, langfs)
-        if not os.path.exists(dir):
-            os.makedirs(dir)
-        os.system(f"cp {file} -v {dir}")
+        dir = os_path.dirname(file).replace(rootfs, langfs)
+        if not os_path.exists(dir):
+            os_makedirs(dir)
+        os_system(f"cp {file} -v {dir}")
+    return False
 
 
 def run_language_scan(langfs: str) -> str:
@@ -87,33 +94,31 @@ def run_language_scan(langfs: str) -> str:
 
     cmd = [
         "cve-bin-tool",
-        "-u", "never",       # Never update the local CVE database
-        "-f", "json",        # Output format: JSON
-        "-o", outfile,       # Write JSON results to this file
-        f"{langfs}/"
+        "-u",
+        "never",  # Never update the local CVE database
+        "-f",
+        "json",  # Output format: JSON
+        "-o",
+        outfile,  # Write JSON results to this file
+        f"{langfs}/",
     ]
-    _ = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
+    _ = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
     # do not try to do anything clever with the result.returncode here, because
     # it only ever returns 0 if there are 0 vulnerabilities!
     return outfile
 
 
-def main(rootfs: str) -> None:
+def main(rootfs: str) -> bool:
     """
     Scan the root filesystem for CVEs in the language packages.
     """
     copy_language_files(rootfs, f"{CVE_DIR}/langfs")
     run_language_scan(f"{CVE_DIR}/langfs")
+    return False
 
 
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser()
+    parser = argparse_ArgumentParser()
     parser.add_argument("rootfs", type=str)
     args = parser.parse_args()
 

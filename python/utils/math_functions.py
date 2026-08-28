@@ -1,7 +1,10 @@
+"""Utilities for math functions."""
+
 from typing import List
 
-import numpy as np
+from numpy import array as np_array
 
 
 def normalize(an_array: List[float]) -> List[float]:
-    return np.array(an_array) / sum(an_array)
+    _return_value = np_array(an_array) / sum(an_array)
+    return _return_value

@@ -1,8 +1,12 @@
+"""Utilities for vrp cp solver."""
+
 from abc import ABC, abstractmethod
-from gekko import GEKKO
-from mage.geography import VRPPath, VRPResult, VRPSolver, InvalidDepotException
 from typing import List, Tuple
-import numpy as np
+
+from gekko import GEKKO
+from numpy import array as np_array
+
+from mage.geography import InvalidDepotException, VRPPath, VRPResult, VRPSolver
 
 
 class VRPConstraintProgrammingSolver(VRPSolver):
@@ -13,7 +17,7 @@ class VRPConstraintProgrammingSolver(VRPSolver):
     SOURCE_INDEX = -1
     SINK_INDEX = -2
 
-    def __init__(self, no_vehicles: int, distance_matrix: np.array, depot_index: int):
+    def __init__(self, no_vehicles: int, distance_matrix: np_array, depot_index: int):
         if depot_index < 0 or depot_index >= len(distance_matrix):
             raise InvalidDepotException("Depot index outside the range of locations!")
 
@@ -71,9 +75,10 @@ class VRPConstraintProgrammingSolver(VRPSolver):
 
     def solve(self):
         self._model.solve()
+        return False
 
     def get_result(self) -> VRPResult:
-        return VRPResult(
+        _return_value = VRPResult(
             [
                 VRPPath(
                     key[0] if key[0] >= 0 else self.depot_index,
@@ -83,6 +88,7 @@ class VRPConstraintProgrammingSolver(VRPSolver):
                 if int(var.value[0]) == 1
             ]
         )
+        return _return_value
 
     def get_distance(self, edge: Tuple[int, int]) -> float:
         node_from, node_to = edge
@@ -91,14 +97,16 @@ class VRPConstraintProgrammingSolver(VRPSolver):
             node in [self.SOURCE_INDEX, self.SINK_INDEX]
             for node in [node_from, node_to]
         ):
-            return 0
+            return 0.0
 
-        return self.distance_matrix[node_from][node_to]
+        _return_value = self.distance_matrix[node_from][node_to]
+        return _return_value
 
     def _initialize(self):
         for node_index in range(len(self.distance_matrix)):
             if node_index in self._location_node_ids:
                 self._initialize_location_node(node_index)
+        return False
 
     def _initialize_location_node(self, node_index: int):
         self._time_vars[node_index] = self._model.Var(value=0, lb=0, integer=False)
@@ -114,15 +122,18 @@ class VRPConstraintProgrammingSolver(VRPSolver):
         # Either it was a beginning node, or a vehicle has visited it in the drive.
         if len(out_vars) > 0:
             self._model.Equation(
-                self._edge_chosen_vars[(node_index, self.SINK_INDEX)] + sum(out_vars)
+                self._edge_chosen_vars.get((node_index, self.SINK_INDEX), 0.0)
+                + sum(out_vars)
                 == 1
             )
 
         if len(in_vars) > 0:
             self._model.Equation(
-                self._edge_chosen_vars[(self.SOURCE_INDEX, node_index)] + sum(in_vars)
+                self._edge_chosen_vars.get((self.SOURCE_INDEX, node_index), 0.0)
+                + sum(in_vars)
                 == 1
             )
+        return False
 
     def _add_adjacent_output_edge_variables(
         self, node_index: int
@@ -155,9 +166,9 @@ class VRPConstraintProgrammingSolver(VRPSolver):
         return edges_vars
 
     def _add_variable(self, edge: Tuple[int, int]) -> GEKKO.Var:
-        var = self._edge_chosen_vars.get(edge)
+        var = self._edge_chosen_vars.get(edge, False)
 
-        if var is None:
+        if var is False:
             var = self._model.Var(value=0, lb=0, ub=1, integer=True)
             self._edge_chosen_vars[edge] = var
 
@@ -169,6 +180,7 @@ class VRPConstraintProgrammingSolver(VRPSolver):
         """
         for constraint in self._constraints:
             constraint.apply_constraint()
+        return False
 
     def _add_objective(self):
         intermediate_sum = 0
@@ -177,12 +189,14 @@ class VRPConstraintProgrammingSolver(VRPSolver):
             intermediate_sum += self._model.Intermediate(duration * variable)
 
         self._model.Obj(intermediate_sum)
+        return False
 
     def _add_options(self):
         # The SOLVER option specifies the type of solver that solves the
         # VRP problem. More on solver options and other parameters can be found on
         # https://gekko.readthedocs.io/en/latest/global.html
         self._model.options.SOLVER = 1
+        return False
 
 
 class VRPConstraint(ABC):
@@ -190,8 +204,7 @@ class VRPConstraint(ABC):
         self._model = model
 
     @abstractmethod
-    def apply_constraint(self):
-        pass
+    def apply_constraint(self): ...
 
 
 class TimeIncreasesWithPassingFromOneNodeToAnotherConstraint(VRPConstraint):
@@ -199,7 +212,7 @@ class TimeIncreasesWithPassingFromOneNodeToAnotherConstraint(VRPConstraint):
     Allow progression in time when passing from one node to another.
     """
 
-    def __init__(self, model: GEKKO, variables, time_vars, distance_matrix: np.array):
+    def __init__(self, model: GEKKO, variables, time_vars, distance_matrix: np_array):
         super().__init__(model)
 
         self._variables = variables
@@ -220,6 +233,7 @@ class TimeIncreasesWithPassingFromOneNodeToAnotherConstraint(VRPConstraint):
                 * self._variables[edge]
                 <= self._time_variables[to_node]
             )
+        return False
 
 
 class No3NodeCyclesConstraint(VRPConstraint):
@@ -250,6 +264,7 @@ class No3NodeCyclesConstraint(VRPConstraint):
                         + self._variables[(c, a)]
                         <= 2
                     )
+        return False
 
 
 class StartInSourceNodeConstraint(VRPConstraint):
@@ -277,6 +292,7 @@ class StartInSourceNodeConstraint(VRPConstraint):
             sum(self._variables[(self._source_id, n)] for n in self._node_ids)
             == self._no_vehicles
         )
+        return False
 
 
 class EndInSinkNodeConstraint(VRPConstraint):
@@ -304,6 +320,7 @@ class EndInSinkNodeConstraint(VRPConstraint):
             sum(self._variables[(n, self._sink_id)] for n in self._node_ids)
             == self._no_vehicles
         )
+        return False
 
 
 class MaximumEdgesActivatedConstraint(VRPConstraint):
@@ -328,6 +345,7 @@ class MaximumEdgesActivatedConstraint(VRPConstraint):
         self._model.Equation(
             sum(self._variables.values()) == len(self._node_ids) + self._no_vehicles
         )
+        return False
 
 
 class NoBacktrackingConstraint(VRPConstraint):
@@ -354,3 +372,4 @@ class NoBacktrackingConstraint(VRPConstraint):
                 + self._variables[(to_node, from_node)]
                 <= 1
             )
+        return False

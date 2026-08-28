@@ -1,6 +1,8 @@
+"""Utilities for events."""
+
 from typing import Dict, List
 
-import numpy as np
+from numpy import ndarray as np_ndarray
 
 
 class Event:
@@ -10,9 +12,10 @@ class Event:
         self.timestamp = timestamp
 
     def __str__(self):
-        return "{source},{timestamp}".format(
+        _return_value = "{source},{timestamp}".format(
             source=self.source, timestamp=self.timestamp
         )
+        return _return_value
 
 
 class NodeEvent(Event):
@@ -20,9 +23,10 @@ class NodeEvent(Event):
         super(NodeEvent, self).__init__(source, timestamp)
 
     def __str__(self):
-        return "{source},{timestamp}".format(
+        _return_value = "{source},{timestamp}".format(
             source=self.source, timestamp=self.timestamp
         )
+        return _return_value
 
 
 class InteractionEvent(Event):
@@ -32,23 +36,24 @@ class InteractionEvent(Event):
         self.edge_idx = edge_idx
 
     def __str__(self):
-        return "{source},{timestamp}".format(
+        _return_value = "{source},{timestamp}".format(
             source=self.source, timestamp=self.timestamp
         )
+        return _return_value
 
 
 def create_interaction_events(
-    sources: np.ndarray,
-    destinations: np.ndarray,
-    timestamps: np.ndarray,
-    edge_idxs: np.ndarray,
+    sources: np_ndarray,
+    destinations: np_ndarray,
+    timestamps: np_ndarray,
+    edge_idxs: np_ndarray,
 ) -> Dict[int, List[InteractionEvent]]:
     "Every event has two interaction events"
     interaction_events: Dict[int, List[InteractionEvent]] = {
         node: [] for node in set(sources).union(set(destinations))
     }
     for i in range(len(sources)):
-        interaction_events[sources[i]].append(
+        interaction_events.get(sources[i], []).append(
             InteractionEvent(
                 source=sources[i],
                 dest=destinations[i],

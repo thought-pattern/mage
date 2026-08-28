@@ -1,23 +1,29 @@
-import abc
+"""Utilities for set cover."""
+
+from abc import ABC as abc_ABC
+from abc import abstractmethod as abc_abstractmethod
 from collections import defaultdict
 from typing import List
 
-import mgp
+from mgp import ProcCtx as mgp_ProcCtx
+from mgp import Record as mgp_Record
+from mgp import Vertex as mgp_Vertex
+from mgp import read_proc as mgp_read_proc
 
 from mage.constraint_programming import (
-    GreedyMatchingProblem,
     GekkoMatchingProblem,
-    GreedyMPSolver,
     GekkoMPSolver,
+    GreedyMatchingProblem,
+    GreedyMPSolver,
 )
 
 
-@mgp.read_proc
+@mgp_read_proc
 def cp_solve(
-    context: mgp.ProcCtx,
-    element_vertexes: List[mgp.Vertex],
-    set_vertexes: List[mgp.Vertex],
-) -> mgp.Record(containing_set=mgp.Vertex):
+    context: mgp_ProcCtx,
+    element_vertexes: List[mgp_Vertex],
+    set_vertexes: List[mgp_Vertex],
+) -> mgp_Record(containing_set=mgp_Vertex):
     """
     This set cover solver method returns 1 filed
 
@@ -45,15 +51,16 @@ def cp_solve(
 
     resulting_nodes = [context.graph.get_vertex_by_id(x) for x in result]
 
-    return [mgp.Record(containing_set=x) for x in resulting_nodes]
+    _return_value = [mgp_Record(containing_set=x) for x in resulting_nodes]
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def greedy(
-    context: mgp.ProcCtx,
-    element_vertexes: List[mgp.Vertex],
-    set_vertexes: List[mgp.Vertex],
-) -> mgp.Record(containing_set=mgp.Vertex):
+    context: mgp_ProcCtx,
+    element_vertexes: List[mgp_Vertex],
+    set_vertexes: List[mgp_Vertex],
+) -> mgp_Record(containing_set=mgp_Vertex):
     """
     This set cover solver method returns 1 filed
 
@@ -81,15 +88,16 @@ def greedy(
 
     resulting_nodes = [context.graph.get_vertex_by_id(x) for x in result]
 
-    return [mgp.Record(containing_set=x) for x in resulting_nodes]
+    _return_value = [mgp_Record(containing_set=x) for x in resulting_nodes]
+    return _return_value
 
 
-class MatchingProblemCreator(abc.ABC):
+class MatchingProblemCreator(abc_ABC):
     """
     Creator abstract class of matching problems
     """
 
-    @abc.abstractmethod
+    @abc_abstractmethod
     def create_matching_problem(self, element_vertexes, set_vertexes):
         """
         Creates a matching problem
@@ -98,7 +106,7 @@ class MatchingProblemCreator(abc.ABC):
         :return: matching problem
         """
 
-        pass
+        ...
 
 
 class GreedyMatchingProblemCreator(MatchingProblemCreator):
@@ -107,7 +115,7 @@ class GreedyMatchingProblemCreator(MatchingProblemCreator):
     """
 
     def create_matching_problem(
-        self, element_vertexes: List[mgp.Vertex], set_vertexes: List[mgp.Vertex]
+        self, element_vertexes: List[mgp_Vertex], set_vertexes: List[mgp_Vertex]
     ):
         """
         Creates a matching problem to be solved with greedy method
@@ -123,10 +131,11 @@ class GreedyMatchingProblemCreator(MatchingProblemCreator):
 
         elements_by_sets = defaultdict(set)
 
-        for element, contained_set in zip(element_values, set_values):
-            elements_by_sets[contained_set].add(element)
+        for element, contained_set in zip(element_values, set_values, strict=False):
+            elements_by_sets.get(contained_set, set()).add(element)
 
-        return GreedyMatchingProblem(all_elements, all_sets, elements_by_sets)
+        _return_value = GreedyMatchingProblem(all_elements, all_sets, elements_by_sets)
+        return _return_value
 
 
 class GekkoMatchingProblemCreator(MatchingProblemCreator):
@@ -135,7 +144,7 @@ class GekkoMatchingProblemCreator(MatchingProblemCreator):
     """
 
     def create_matching_problem(
-        self, element_vertexes: List[mgp.Vertex], set_vertexes: List[mgp.Vertex]
+        self, element_vertexes: List[mgp_Vertex], set_vertexes: List[mgp_Vertex]
     ):
         """
         Creates a matching problem to be solved with gekko constraint programming method
@@ -149,7 +158,8 @@ class GekkoMatchingProblemCreator(MatchingProblemCreator):
         set_values_distinct = set(set_values)
         sets_by_elements = defaultdict(set)
 
-        for element, contained_set in zip(element_values, set_values):
-            sets_by_elements[element].add(contained_set)
+        for element, contained_set in zip(element_values, set_values, strict=False):
+            sets_by_elements.get(element, set()).add(contained_set)
 
-        return GekkoMatchingProblem(set_values_distinct, sets_by_elements)
+        _return_value = GekkoMatchingProblem(set_values_distinct, sets_by_elements)
+        return _return_value

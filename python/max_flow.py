@@ -1,17 +1,27 @@
-from math import floor, log2
-from typing import List, Dict
-import mgp
+"""Utilities for max flow."""
+
 from itertools import chain
+from math import floor, log2
+from typing import Dict, List
+
+from mgp import Edge as mgp_Edge
+from mgp import Number as mgp_Number
+from mgp import Path as mgp_Path
+from mgp import ProcCtx as mgp_ProcCtx
+from mgp import Record as mgp_Record
+from mgp import Vertex as mgp_Vertex
+from mgp import read_proc as mgp_read_proc
+
 from mage.max_flow.bfs_weight_min_max import BFS_find_weight_min_max
 
 
-@mgp.read_proc
+@mgp_read_proc
 def get_flow(
-    context: mgp.ProcCtx,
-    start_v: mgp.Vertex,
-    end_v: mgp.Vertex,
+    context: mgp_ProcCtx,
+    start_v: mgp_Vertex,
+    end_v: mgp_Vertex,
     edge_property: str = "weight",
-) -> mgp.Record(max_flow=mgp.Number):
+) -> mgp_Record(max_flow=mgp_Number):
     """
     Calculates maximum flow of graph from paths found with method
     ford_fulkerson_capacity_scaling
@@ -34,16 +44,17 @@ def get_flow(
     for _, flow in paths_and_flows:
         max_flow += flow
 
-    return mgp.Record(max_flow=max_flow)
+    _return_value = mgp_Record(max_flow=max_flow)
+    return _return_value
 
 
-@mgp.read_proc
+@mgp_read_proc
 def get_paths(
-    context: mgp.ProcCtx,
-    start_v: mgp.Vertex,
-    end_v: mgp.Vertex,
+    context: mgp_ProcCtx,
+    start_v: mgp_Vertex,
+    end_v: mgp_Vertex,
     edge_property: str = "weight",
-) -> mgp.Record(path=mgp.Path, flow=mgp.Number):
+) -> mgp_Record(path=mgp_Path, flow=mgp_Number):
     """
     Returns each path and its flow used in max flow of a graph found with
     ford_fulkerson_capacity_scaling
@@ -62,15 +73,16 @@ def get_paths(
     """
     paths_and_flows = ford_fulkerson_capacity_scaling(start_v, end_v, edge_property)
 
-    return [
-        mgp.Record(path=list_to_mgp_path(context, path), flow=flow)
+    _return_value = [
+        mgp_Record(path=list_to_mgp_path(context, path), flow=flow)
         for path, flow in paths_and_flows
     ]
+    return _return_value
 
 
 def ford_fulkerson_capacity_scaling(
-    start_v: mgp.Vertex,
-    end_v: mgp.Vertex,
+    start_v: mgp_Vertex,
+    end_v: mgp_Vertex,
     edge_property: str = "weight",
 ) -> List:
     """
@@ -84,7 +96,7 @@ def ford_fulkerson_capacity_scaling(
     return: list of tuples of path and flow
     """
 
-    if not isinstance(start_v, mgp.Vertex) or not isinstance(end_v, mgp.Vertex):
+    if not isinstance(start_v, mgp_Vertex) or not isinstance(end_v, mgp_Vertex):
         return []
 
     max_weight, min_weight = BFS_find_weight_min_max(start_v, edge_property)
@@ -113,7 +125,7 @@ def ford_fulkerson_capacity_scaling(
             continue
 
         for i, e in enumerate(augmenting_path):
-            if isinstance(e, mgp.Edge):
+            if isinstance(e, mgp_Edge):
                 if augmenting_path[i - 1] == e.from_vertex.id:
                     edge_flows[e.id] = edge_flows.get(e.id, 0) + flow_bottleneck
                 elif augmenting_path[i - 1] == e.to_vertex.id:
@@ -128,12 +140,12 @@ def ford_fulkerson_capacity_scaling(
 
 def DFS_path_finding(
     path: List,
-    current_v: mgp.Vertex,
-    end_v: mgp.Vertex,
+    current_v: mgp_Vertex,
+    end_v: mgp_Vertex,
     edge_property: str,
-    delta: mgp.Number,
+    delta: mgp_Number,
     edge_flows: Dict,
-) -> mgp.Number:
+) -> mgp_Number:
     """
     Finds augmenting path for max_flow algorithm using recursive DFS
     with minimum edge weight delta, as defined by capacity scaling.
@@ -155,9 +167,9 @@ def DFS_path_finding(
 
         if edge.from_vertex == current_v:
             to_v = edge.to_vertex
-            remaining_capacity = edge.properties[edge_property] - edge_flows.get(
-                edge.id, 0
-            )
+            remaining_capacity = edge.properties.get(
+                edge_property, 0.0
+            ) - edge_flows.get(edge.id, 0)
         else:
             to_v = edge.from_vertex
             remaining_capacity = edge_flows.get(edge.id, 0)
@@ -178,15 +190,17 @@ def DFS_path_finding(
             )
             if flow_bottleneck != -1:
                 # function call found path, propagate back
-                return min(remaining_capacity, flow_bottleneck)
+                _return_value = min(remaining_capacity, flow_bottleneck)
+                return _return_value
 
     # no path found with this vertex, remove it and its edge
     del path[-2:]
 
-    return -1
+    _return_value = -1
+    return _return_value
 
 
-def list_to_mgp_path(context: mgp.ProcCtx, augmenting_path: List) -> mgp.Path:
+def list_to_mgp_path(context: mgp_ProcCtx, augmenting_path: List) -> mgp_Path:
     """
     Converts a list of mgp.VertexId and mgp.EdgeId into mgp.Path
 
@@ -194,9 +208,9 @@ def list_to_mgp_path(context: mgp.ProcCtx, augmenting_path: List) -> mgp.Path:
 
     :return: mgp.Path structure
     """
-    path = mgp.Path(context.graph.get_vertex_by_id(augmenting_path[0]))
+    path = mgp_Path(context.graph.get_vertex_by_id(augmenting_path[0]))
     for _, elem in enumerate(augmenting_path, start=1):
-        if isinstance(elem, mgp.Edge):
+        if isinstance(elem, mgp_Edge):
             path.expand(elem)
 
     return path

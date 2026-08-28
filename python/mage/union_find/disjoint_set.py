@@ -1,5 +1,10 @@
+"""Utilities for disjoint set."""
+
 from typing import Dict, List
-from mage.union_find.node import Node, INITIAL_RANK
+
+from mage.union_find.node import INITIAL_RANK, Node
+
+_DEFAULT_ARGUMENT_LIST = []
 
 
 class DisjointSet:
@@ -7,8 +12,10 @@ class DisjointSet:
     Class implementing a disjoint-set data structure.
     """
 
-    def __init__(self, node_ids: List[int] = None):
+    def __init__(self, node_ids: List[int] = _DEFAULT_ARGUMENT_LIST):
         if node_ids is None:
+            node_ids = _DEFAULT_ARGUMENT_LIST
+        if node_ids is _DEFAULT_ARGUMENT_LIST:
             self.nodes: Dict[int, Node] = {}
         else:
             self.nodes: Dict[int, Node] = {
@@ -27,6 +34,7 @@ class DisjointSet:
         self.nodes: Dict[int, Node] = {
             node_id: Node(parent_id=node_id, rank=INITIAL_RANK) for node_id in node_ids
         }
+        return False
 
     def parent(self, node_id: int) -> int:
         """
@@ -35,7 +43,8 @@ class DisjointSet:
         :param node_id: Node ID
         :type node_id: int
         """
-        return self.nodes[node_id].parent
+        node = self.nodes.get(node_id, Node(parent_id=node_id))
+        return node.parent
 
     def grandparent(self, node_id: int) -> int:
         """
@@ -44,7 +53,8 @@ class DisjointSet:
         :param node_id: Node ID
         :type node_id: int
         """
-        return self.parent(self.parent(node_id))
+        _return_value = self.parent(self.parent(node_id))
+        return _return_value
 
     def rank(self, node_id: int) -> int:
         """
@@ -53,7 +63,8 @@ class DisjointSet:
         :param node_id: Node ID
         :type node_id: int
         """
-        return self.nodes[node_id].rank
+        node = self.nodes.get(node_id, Node(parent_id=node_id))
+        return node.rank
 
     def find(self, node_id: int) -> int:
         """
@@ -65,12 +76,14 @@ class DisjointSet:
         :type node_id: int
         """
         while node_id != self.parent(node_id):
-            self.nodes[node_id].parent = self.grandparent(node_id)  # path splitting
+            self.nodes.get(node_id, Node(parent_id=node_id)).parent = self.grandparent(
+                node_id
+            )  # path splitting
             node_id = self.parent(node_id)
 
         return node_id
 
-    def union(self, node1_id: int, node2_id: int) -> None:
+    def union(self, node1_id: int, node2_id: int) -> bool:
         """
         Unites the components containing two given nodes. Implements union by rank to reduce component tree height.
 
@@ -83,14 +96,15 @@ class DisjointSet:
         root_2 = self.find(node2_id)
 
         if root_1 == root_2:
-            return
+            return False
 
         if self.rank(root_1) < self.rank(root_2):
             root_1, root_2 = root_2, root_1
 
-        self.nodes[root_2].parent = root_1
+        self.nodes.get(root_2, Node(parent_id=root_2)).parent = root_1
         if self.rank(root_1) == self.rank(root_2):
-            self.nodes[root_1].rank = self.rank(root_1) + 1
+            self.nodes.get(root_1, Node(parent_id=root_1)).rank = self.rank(root_1) + 1
+        return False
 
     def connected(self, node1_id: int, node2_id: int) -> bool:
         """
@@ -101,4 +115,5 @@ class DisjointSet:
         :param node2_id: Second node's ID
         :type node2_id: int
         """
-        return self.find(node1_id) == self.find(node2_id)
+        _return_value = self.find(node1_id) == self.find(node2_id)
+        return _return_value

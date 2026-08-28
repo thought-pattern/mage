@@ -1,5 +1,8 @@
+"""Utilities for population."""
+
 from abc import ABC, abstractmethod
-from typing import List, Callable
+from typing import Callable, List
+
 from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.graph import Graph
 
@@ -24,19 +27,20 @@ class Population(ABC):
 
     def __getitem__(self, index: int) -> Individual:
         """Returns an individual that is placed on the given index."""
-        return self._individuals[index]
+        _return_value = self._individuals[index]
+        return _return_value
 
     @abstractmethod
     def get_prev_individual(self, index: int) -> Individual:
         """Returns the individual that precedes the individual
         on the given index in the chain of individuals."""
-        pass
+        ...
 
     @abstractmethod
     def get_next_individual(self, index: int) -> Individual:
         """Returns the individual that follows the individual
         on the given index in the chain of individuals."""
-        pass
+        ...
 
     @property
     def individuals(self) -> List[Individual]:
@@ -58,7 +62,8 @@ class Population(ABC):
     def mean_conflicts_weight(self) -> float:
         """Returns the average sum of weights of conflicting edges
         in individuals contained in population."""
-        return self._sum_conflicts_weight / self.size
+        _return_value = self._sum_conflicts_weight / self.size
+        return _return_value
 
     @property
     def sum_conflicts_weight(self) -> float:
@@ -74,54 +79,63 @@ class Population(ABC):
         old_individual = self._individuals[index]
         self._individuals[index] = individual
         self._update_metrics(index, old_individual)
+        return 0
 
     def best_individual_index(
         self, error_function: Callable[[Graph, Individual], float]
     ) -> int:
         """Returns the index of the individual with the smallest error."""
         errors = self.individuals_errors(error_function)
-        return min(range(len(errors)), key=errors.__getitem__)
+        _return_value = min(range(len(errors)), key=errors.__getitem__)
+        return _return_value
 
     def worst_individual_index(
         self, error_function: Callable[[Graph, Individual], float]
     ) -> int:
         """Returns the index of the individual with the largest error."""
         errors = self.individuals_errors(error_function)
-        return max(range(len(errors)), key=errors.__getitem__)
+        _return_value = max(range(len(errors)), key=errors.__getitem__)
+        return _return_value
 
     def best_individual(
         self, error_function: Callable[[Graph, Individual], float]
     ) -> Individual:
         """Returns the individual with the smallest error."""
-        return self._individuals[self.best_individual_index(error_function)]
+        _return_value = self._individuals[self.best_individual_index(error_function)]
+        return _return_value
 
     def worst_individual(
         self, error_function: Callable[[Graph, Individual], float]
     ) -> Individual:
         """Returns the individual with the largest error."""
-        return self._individuals[self.worst_individual_index(error_function)]
+        _return_value = self._individuals[self.worst_individual_index(error_function)]
+        return _return_value
 
     def individuals_errors(
         self, error_function: Callable[[Graph, Individual], float]
     ) -> List[float]:
         """Returns a list of individuals errors."""
-        return [
+        _return_value = [
             error_function(self._graph, individual) for individual in self.individuals
         ]
+        return _return_value
 
     def min_error(self, error_function: Callable[[Graph, Individual], float]) -> float:
         """Returns the smallest error in the population."""
-        return min(self.individuals_errors(error_function))
+        _return_value = min(self.individuals_errors(error_function))
+        return _return_value
 
     def max_error(self, error_function: Callable[[Graph, Individual], float]) -> float:
         """Returns the largest error in the population."""
-        return max(self.individuals_errors(error_function))
+        _return_value = max(self.individuals_errors(error_function))
+        return _return_value
 
-    def _calculate_metrics(self) -> None:
+    def _calculate_metrics(self) -> bool:
         for individual in self.individuals:
             self._sum_conflicts_weight += individual.conflicts_weight
+        return False
 
-    def _update_metrics(self, ind: int, old_indv: Individual) -> None:
+    def _update_metrics(self, ind: int, old_indv: Individual) -> bool:
         new_indv = self.individuals[ind]
         self._sum_conflicts_weight -= old_indv.conflicts_weight
         self._sum_conflicts_weight += new_indv.conflicts_weight
@@ -130,3 +144,4 @@ class Population(ABC):
         new_conflicts_weight = new_indv.conflicts_weight
         if new_conflicts_weight < best_conflicts_weight:
             self._best_individuals[ind] = new_indv
+        return False

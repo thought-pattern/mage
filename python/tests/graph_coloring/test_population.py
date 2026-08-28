@@ -1,15 +1,15 @@
-import pytest
+"""Tests for test population."""
 
-from mage.graph_coloring_module import Individual
-from mage.graph_coloring_module import ChainPopulation
-from mage.graph_coloring_module import ChainChunk
-from mage.graph_coloring_module import Graph
-import math
+from math import fabs as math_fabs
+
+from pytest import fixture as pytest_fixture
+
+from mage.graph_coloring_module import ChainChunk, ChainPopulation, Graph, Individual
 
 
-@pytest.fixture
+@pytest_fixture
 def graph():
-    return Graph(
+    _return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -19,9 +19,10 @@ def graph():
             4: [(1, 5)],
         },
     )
+    return _return_value
 
 
-@pytest.fixture
+@pytest_fixture
 def chain_population(graph):
     indv_1 = Individual(
         no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1}
@@ -34,7 +35,7 @@ def chain_population(graph):
     return population
 
 
-@pytest.fixture
+@pytest_fixture
 def chain_chunk_population(graph):
     indv_1 = Individual(
         no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1}
@@ -59,42 +60,49 @@ def test_chain_population_best_individual(chain_population, chain_chunk_populati
     result_indv = chain_population.best_individual(error_func)
     expected_indv = chain_population[1]
     assert result_indv == expected_indv
+    return False
 
 
 def test_chain_population_worst_individual(chain_population):
     result_indv = chain_population.worst_individual(error_func)
     expected_indv = chain_population[2]
     assert result_indv == expected_indv
+    return False
 
 
 def test_chain_population_min_error(chain_population):
     result_indv = chain_population.min_error(error_func)
     expected_indv = 0
-    assert math.fabs(result_indv - expected_indv) < 1e-5
+    assert math_fabs(result_indv - expected_indv) < 1e-5
+    return False
 
 
 def test_chain_population_max_error(chain_population):
     result_indv = chain_population.max_error(error_func)
     expected_indv = 5
-    assert math.fabs(result_indv - expected_indv) < 1e-5
+    assert math_fabs(result_indv - expected_indv) < 1e-5
+    return False
 
 
 def test_chain_population_mean_conflicts_weights(chain_population):
     result_indv = chain_population.mean_conflicts_weight
     expected_indv = 7 / 3
-    assert math.fabs(result_indv - expected_indv) < 1e-5
+    assert math_fabs(result_indv - expected_indv) < 1e-5
+    return False
 
 
 def test_chain_population_sum_conflicts_weight(chain_population):
     result_indv = chain_population.sum_conflicts_weight
     expected_indv = 7
-    assert math.fabs(result_indv - expected_indv) < 1e-5
+    assert math_fabs(result_indv - expected_indv) < 1e-5
+    return False
 
 
 def test_chain_population_correlation(chain_population):
     result = chain_population.correlation
     expected = [2, 2, 2]
     assert expected == result
+    return False
 
 
 def test_set_individual(chain_population, graph):
@@ -104,3 +112,4 @@ def test_set_individual(chain_population, graph):
     assert chain_population.sum_conflicts_weight == 12
     assert chain_population.cumulative_correlation == -2
     assert chain_population.mean_conflicts_weight == 4
+    return False

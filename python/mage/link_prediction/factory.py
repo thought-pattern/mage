@@ -1,19 +1,25 @@
+"""Utilities for factory."""
+
+from itertools import chain as itertools_chain
 from typing import List, Tuple
-import torch
-from mage.link_prediction.models.graph_sage import GraphSAGE
+
+from torch import device as torch_device
+from torch import nn as torch_nn
+from torch import optim as torch_optim
+
+from mage.link_prediction.constants import Activations, Models, Optimizers, Predictors
 from mage.link_prediction.models.gat import GAT
+from mage.link_prediction.models.graph_sage import GraphSAGE
 from mage.link_prediction.predictors.DotPredictor import DotPredictor
 from mage.link_prediction.predictors.MLPPredictor import MLPPredictor
-from mage.link_prediction.constants import Models, Predictors, Optimizers, Activations
-import itertools
 
 
 def create_optimizer(
     optimizer_type: str,
     learning_rate: float,
-    model: torch.nn.Module,
-    predictor: torch.nn.Module,
-) -> torch.optim.Optimizer:
+    model: torch_nn.Module,
+    predictor: torch_nn.Module,
+) -> torch_optim.Optimizer:
     """Creates optimizer with given optimizer type and learning rate.
 
     Args:
@@ -25,15 +31,16 @@ def create_optimizer(
         torch.nn.Optimizer: Optimizer used in the training.
     """
     optimizer_jump_table = {
-        Optimizers.ADAM_OPT: torch.optim.Adam,
-        Optimizers.SGD_OPT: torch.optim.SGD,
+        Optimizers.ADAM_OPT: torch_optim.Adam,
+        Optimizers.SGD_OPT: torch_optim.SGD,
     }
     optimizer_type = optimizer_type.upper()
     if optimizer_type in optimizer_jump_table:
-        return optimizer_jump_table[optimizer_type](
-            itertools.chain(model.parameters(), predictor.parameters()),
+        _return_value = optimizer_jump_table.get(optimizer_type, torch_optim.Adam)(
+            itertools_chain(model.parameters(), predictor.parameters()),
             lr=learning_rate,
         )
+        return _return_value
     else:
         raise Exception(f"Optimizer {optimizer_type} not supported. ")
 
@@ -49,8 +56,8 @@ def create_model(
     alphas: List[float],
     residuals: List[bool],
     edge_types: List[str],
-    device: torch.device,
-) -> torch.nn.Module:
+    device: torch_device,
+) -> torch_nn.Module:
     """Creates a model given a layer type and sizes of the hidden layers.
 
     Args:
@@ -69,7 +76,7 @@ def create_model(
         torch.nn.Module: Model used in the link prediction task.
     """
     if layer_type.lower() == Models.GRAPH_SAGE:
-        return GraphSAGE(
+        _return_value = GraphSAGE(
             in_feats=in_feats,
             hidden_features_size=hidden_features_size,
             aggregator=aggregator,
@@ -77,8 +84,9 @@ def create_model(
             edge_types=edge_types,
             device=device,
         )
+        return _return_value
     elif layer_type.lower() == Models.GRAPH_ATTN:
-        return GAT(
+        _return_value = GAT(
             in_feats=in_feats,
             hidden_features_size=hidden_features_size,
             attn_num_heads=attn_num_heads,
@@ -89,13 +97,14 @@ def create_model(
             edge_types=edge_types,
             device=device,
         )
+        return _return_value
     else:
         raise Exception(f"Layer type {layer_type} not supported. ")
 
 
 def create_predictor(
-    predictor_type: str, predictor_hidden_size: int, device: torch.device
-) -> torch.nn.Module:
+    predictor_type: str, predictor_hidden_size: int, device: torch_device
+) -> torch_nn.Module:
     """Create a predictor based on a given predictor type.
 
     Args:
@@ -105,14 +114,16 @@ def create_predictor(
         torch.nn.Module: Predictor implemented in predictors module.
     """
     if predictor_type.lower() == Predictors.DOT_PREDICTOR:
-        return DotPredictor()
+        _return_value = DotPredictor()
+        return _return_value
     elif predictor_type.lower() == Predictors.MLP_PREDICTOR:
-        return MLPPredictor(h_feats=predictor_hidden_size, device=device)
+        _return_value = MLPPredictor(h_feats=predictor_hidden_size, device=device)
+        return _return_value
     else:
         raise Exception(f"Predictor type {predictor_type} not supported. ")
 
 
-def create_activation_function(act_func: str) -> Tuple[torch.nn.Module, float]:
+def create_activation_function(act_func: str) -> Tuple[torch_nn.Module, float]:
     """Creates activation function based on a given name.
 
     Args:
@@ -123,6 +134,8 @@ def create_activation_function(act_func: str) -> Tuple[torch.nn.Module, float]:
         float: Classification threshold
     """
     if act_func == Activations.SIGMOID:
-        return torch.nn.Sigmoid(), 0.5
+        _return_value = torch_nn.Sigmoid(), 0.5
+        return _return_value
     else:
         raise Exception(f"Currently, only {Activations.SIGMOID} is supported. ")
+    return ()

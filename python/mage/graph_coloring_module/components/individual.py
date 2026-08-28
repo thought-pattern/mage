@@ -1,11 +1,18 @@
+"""Utilities for individual."""
+
 from random import choice
 from typing import List, Set, Tuple
-from mage.graph_coloring_module.graph import Graph
+
 from mage.graph_coloring_module.exceptions import (
-    WrongColoringException,
     IllegalColorException,
     IllegalNodeException,
+    WrongColoringException,
 )
+from mage.graph_coloring_module.graph import Graph
+
+_DEFAULT_ARGUMENT_SET = set()
+
+_DEFAULT_ARGUMENT_LIST = []
 
 
 class Individual:
@@ -20,17 +27,25 @@ class Individual:
         self,
         no_of_colors: int,
         graph: Graph,
-        chromosome: List[int] = None,
-        conflicts_weight: int = None,
-        conflict_nodes: Set[int] = None,
-        conflicts_counter: List[int] = None,
+        chromosome: List[int] = _DEFAULT_ARGUMENT_LIST,
+        conflicts_weight: int = 0,
+        conflict_nodes: Set[int] = _DEFAULT_ARGUMENT_SET,
+        conflicts_counter: List[int] = _DEFAULT_ARGUMENT_LIST,
     ):
+        if chromosome is None:
+            chromosome = _DEFAULT_ARGUMENT_LIST
+        if conflict_nodes is None:
+            conflict_nodes = _DEFAULT_ARGUMENT_SET
+        if conflicts_weight is None:
+            conflicts_weight = 0
+        if conflicts_counter is _DEFAULT_ARGUMENT_LIST:
+            conflicts_counter = _DEFAULT_ARGUMENT_LIST.copy()
         self._graph = graph
         self._no_of_units = len(graph)
         self._no_of_colors = no_of_colors
-        if chromosome is None:
+        if chromosome is _DEFAULT_ARGUMENT_LIST:
             self._chromosome = list(
-                choice(range(0, no_of_colors)) for _ in range(len(graph))
+                choice(range(no_of_colors)) for _ in range(len(graph))
             )
         else:
             self._chromosome = chromosome
@@ -39,12 +54,13 @@ class Individual:
         self._conflicts_counter = conflicts_counter
         self._conflict_nodes = conflict_nodes
 
-        if conflicts_weight is None or conflict_nodes is None:
+        if conflicts_weight == 0 or conflict_nodes is _DEFAULT_ARGUMENT_SET:
             self._calculate_conflicts()
 
     def __getitem__(self, index: int) -> int:
         """Returns the color stored on the given index."""
-        return self._chromosome[index]
+        _return_value = self._chromosome[index]
+        return _return_value
 
     @property
     def chromosome(self) -> List[int]:
@@ -94,7 +110,8 @@ class Individual:
         returns a new individual if the given arguments are correct. If the given
         color is not allowed then the IllegalColorException exception is raised.
         If the given node does not exist then the IllegalNodeException is raised."""
-        return self.replace_units([index], [color])
+        _return_value = self.replace_units([index], [color])
+        return _return_value
 
     def replace_units(self, indices: List[int], colors: List[int]):
         """Sets the colors of the nodes with the corresponding indices to the given
@@ -114,7 +131,7 @@ class Individual:
         conflict_nodes = self._conflict_nodes.copy()
         conflict_edges = self.conflicts_weight
 
-        for index, color in zip(indices, colors):
+        for index, color in zip(indices, colors, strict=False):
             if not (0 <= color < self._no_of_colors):
                 raise IllegalColorException(
                     "The given color is not in the range of allowed colors!"
@@ -194,3 +211,4 @@ class Individual:
 
         conflicting_edges //= 2
         self._conflicts_weight = conflicting_edges
+        return False

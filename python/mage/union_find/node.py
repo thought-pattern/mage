@@ -1,3 +1,5 @@
+"""Utilities for node."""
+
 INITIAL_RANK = 0
 
 
@@ -18,6 +20,7 @@ class Node:
     @parent.setter
     def parent(self, x: int):
         self._parent = x
+        return False
 
     @property
     def rank(self) -> int:
@@ -26,3 +29,4 @@ class Node:
     @rank.setter
     def rank(self, x: int):
         self._rank = x
+        return False
