@@ -1,10 +1,10 @@
 """Utilities for test collections."""
 
-from importlib import import_module as _import_module
+from importlib import import_module as imported_import_module
 
 from gqlalchemy import Memgraph
 
-pytest = _import_module("pytest")
+pytest = imported_import_module("pytest")
 
 
 def test_flatten_e2e():
@@ -78,10 +78,7 @@ def test_flatten_e2e():
     )
     flattened_movies = next(result).get("flattened_movies", [])
     assert len(flattened_movies) == 3
-    assert all(
-        movie.get("title", "").startswith("The Matrix") for movie in flattened_movies
-    )
+    assert all(movie.get("title", "").startswith("The Matrix") for movie in flattened_movies)
 
     # Cleanup
     memgraph.execute("MATCH (n) DETACH DELETE n")
-    return False

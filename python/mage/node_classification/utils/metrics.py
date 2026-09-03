@@ -1,9 +1,6 @@
 """Utilities for metrics."""
 
-from typing import Dict, List
-
-from torch import tensor as torch_tensor
-from torch_geometric.data import Data
+from torch import Tensor as torch_Tensor
 from torchmetrics import AUC, Accuracy, F1Score, Precision, Recall
 
 METRICS = {
@@ -16,13 +13,13 @@ METRICS = {
 
 
 def metrics(
-    mask: torch_tensor,
-    out: torch_tensor,
-    data: Data,
-    options: List[str],
+    mask: torch_Tensor,
+    out,
+    data,
+    options: list[str],
     observed_attribute: str,
     device: str,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Selected metrics calculated for current model and data.
 
     Args:
@@ -36,9 +33,7 @@ def metrics(
         Dict: dictionary of calculated metrics
     """
 
-    pred = out[observed_attribute].argmax(
-        dim=1
-    )  # Use the class with highest probability.
+    pred = out[observed_attribute].argmax(dim=1)  # Use the class with highest probability.
 
     data = data.get(observed_attribute, {})
 

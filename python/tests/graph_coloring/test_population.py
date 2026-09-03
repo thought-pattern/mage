@@ -9,7 +9,7 @@ from mage.graph_coloring_module import ChainChunk, ChainPopulation, Graph, Indiv
 
 @pytest_fixture
 def graph():
-    _return_value = Graph(
+    computed_return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -19,34 +19,24 @@ def graph():
             4: [(1, 5)],
         },
     )
-    return _return_value
+    return computed_return_value
 
 
 @pytest_fixture
 def chain_population(graph):
-    indv_1 = Individual(
-        no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1}
-    )
+    indv_1 = Individual(no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1})
     indv_2 = Individual(no_of_colors=3, graph=graph, chromosome=[1, 2, 0, 2, 1])
-    indv_3 = Individual(
-        no_of_colors=3, graph=graph, chromosome=[2, 1, 0, 2, 1], conflict_nodes={1, 4}
-    )
+    indv_3 = Individual(no_of_colors=3, graph=graph, chromosome=[2, 1, 0, 2, 1], conflict_nodes={1, 4})
     population = ChainPopulation(graph, [indv_1, indv_2, indv_3])
     return population
 
 
 @pytest_fixture
 def chain_chunk_population(graph):
-    indv_1 = Individual(
-        no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1}
-    )
+    indv_1 = Individual(no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1})
     indv_2 = Individual(no_of_colors=3, graph=graph, chromosome=[1, 2, 0, 2, 1])
-    indv_3 = Individual(
-        no_of_colors=3, graph=graph, chromosome=[2, 1, 0, 2, 1], conflict_nodes={1, 4}
-    )
-    indv_prev = Individual(
-        no_of_colors=3, graph=graph, chromosome=[2, 1, 0, 0, 0], conflict_nodes={2, 3}
-    )
+    indv_3 = Individual(no_of_colors=3, graph=graph, chromosome=[2, 1, 0, 2, 1], conflict_nodes={1, 4})
+    indv_prev = Individual(no_of_colors=3, graph=graph, chromosome=[2, 1, 0, 0, 0], conflict_nodes={2, 3})
     indv_next = Individual(no_of_colors=3, graph=graph, chromosome=[0, 1, 2, 1, 0])
     chain_chunk = ChainChunk(graph, [indv_1, indv_2, indv_3], indv_prev, indv_next)
     return chain_chunk
@@ -60,49 +50,42 @@ def test_chain_population_best_individual(chain_population, chain_chunk_populati
     result_indv = chain_population.best_individual(error_func)
     expected_indv = chain_population[1]
     assert result_indv == expected_indv
-    return False
 
 
 def test_chain_population_worst_individual(chain_population):
     result_indv = chain_population.worst_individual(error_func)
     expected_indv = chain_population[2]
     assert result_indv == expected_indv
-    return False
 
 
 def test_chain_population_min_error(chain_population):
     result_indv = chain_population.min_error(error_func)
     expected_indv = 0
     assert math_fabs(result_indv - expected_indv) < 1e-5
-    return False
 
 
 def test_chain_population_max_error(chain_population):
     result_indv = chain_population.max_error(error_func)
     expected_indv = 5
     assert math_fabs(result_indv - expected_indv) < 1e-5
-    return False
 
 
 def test_chain_population_mean_conflicts_weights(chain_population):
     result_indv = chain_population.mean_conflicts_weight
     expected_indv = 7 / 3
     assert math_fabs(result_indv - expected_indv) < 1e-5
-    return False
 
 
 def test_chain_population_sum_conflicts_weight(chain_population):
     result_indv = chain_population.sum_conflicts_weight
     expected_indv = 7
     assert math_fabs(result_indv - expected_indv) < 1e-5
-    return False
 
 
 def test_chain_population_correlation(chain_population):
     result = chain_population.correlation
     expected = [2, 2, 2]
     assert expected == result
-    return False
 
 
 def test_set_individual(chain_population, graph):
@@ -112,4 +95,3 @@ def test_set_individual(chain_population, graph):
     assert chain_population.sum_conflicts_weight == 12
     assert chain_population.cumulative_correlation == -2
     assert chain_population.mean_conflicts_weight == 4
-    return False

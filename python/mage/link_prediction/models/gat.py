@@ -1,7 +1,5 @@
 """Utilities for gat."""
 
-from typing import Dict, List
-
 from dgl import graph as dgl_graph
 from dgl.nn import HeteroGraphConv
 from dgl.nn.pytorch import GATConv
@@ -15,13 +13,13 @@ class GAT(torch_nn.Module):
     def __init__(
         self,
         in_feats: int,
-        hidden_features_size: List[int],
-        attn_num_heads: List[int],
-        feat_drops: List[float],
-        attn_drops: List[float],
-        alphas: List[float],
-        residuals: List[bool],
-        edge_types: List[str],
+        hidden_features_size: list[int],
+        attn_num_heads: list[int],
+        feat_drops: list[float],
+        attn_drops: list[float],
+        alphas: list[float],
+        residuals: list[bool],
+        edge_types: list[str],
         device: torch_device,
     ):
         """Initializes GAT module with layer sizes.
@@ -40,7 +38,7 @@ class GAT(torch_nn.Module):
         self.layers = torch_nn.ModuleList()
         self.num_layers = len(hidden_features_size)
         # Define activations
-        activations = [
+        activations: list[object] = [
             torch_nn.functional.elu for _ in range(self.num_layers - 1)
         ]  # All activations except last layer
         activations.append(False)
@@ -66,8 +64,8 @@ class GAT(torch_nn.Module):
             in_feats = hidden_features_size[i]
 
     def forward(
-        self, blocks: List[dgl_graph], h: Dict[str, torch_Tensor]
-    ) -> Dict[str, torch_Tensor]:
+        self, blocks: list[dgl_graph], h: dict[str, torch_Tensor]
+    ) -> dict[str, torch_Tensor]:
         (
             "Performs forward pass on batches.\n\n        Args:\n            blocks (List[dgl.heterograph.DG"  # Continue literal.
             "LBlock]): First block is DGLBlock of all nodes that are needed to compute representations fo"  # Continue literal.
@@ -82,8 +80,8 @@ class GAT(torch_nn.Module):
         return h
 
     def online_forward(
-        self, graph: dgl_graph, h: Dict[str, torch_Tensor]
-    ) -> Dict[str, torch_Tensor]:
+        self, graph: dgl_graph, h: dict[str, torch_Tensor]
+    ) -> dict[str, torch_Tensor]:
         """Performs forward pass on batches.
 
         Args:

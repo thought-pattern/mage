@@ -2,7 +2,6 @@
 
 from random import choice as random_choice
 from random import randint as random_randint
-from typing import Any, Dict
 
 from mage.graph_coloring_module.algorithms.algorithm import Algorithm
 from mage.graph_coloring_module.components.individual import Individual
@@ -12,7 +11,7 @@ from mage.graph_coloring_module.utils.available_colors import available_colors
 from mage.graph_coloring_module.utils.parameters_utils import param_value
 from mage.graph_coloring_module.utils.validation import validate
 
-_DEFAULT_ARGUMENT_DICT = {}
+DEFAULT_ARGUMENT_DICT = {}
 
 
 class LDO(Algorithm):
@@ -25,19 +24,15 @@ class LDO(Algorithm):
         return "LDO"
 
     @validate(Parameter.NO_OF_COLORS)
-    def run(
-        self, graph: Graph, parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT
-    ) -> Individual:
+    def run(self, graph: Graph, parameters: dict = DEFAULT_ARGUMENT_DICT) -> Individual:
         """Returns the individual that represents the result of the LDO algorithm."""
 
-        if parameters is _DEFAULT_ARGUMENT_DICT:
-            parameters = _DEFAULT_ARGUMENT_DICT.copy()
+        if parameters is DEFAULT_ARGUMENT_DICT:
+            parameters = DEFAULT_ARGUMENT_DICT.copy()
         no_of_colors = param_value(graph, parameters, Parameter.NO_OF_COLORS)
 
         chromosome = [-1 for _ in graph.nodes]
-        sorted_nodes = sorted(
-            list(graph.nodes), key=lambda node: graph.degree(node), reverse=True
-        )
+        sorted_nodes = sorted(list(graph.nodes), key=lambda node: graph.degree(node), reverse=True)
 
         for node in sorted_nodes:
             colors = available_colors(graph, no_of_colors, chromosome, node)
@@ -47,5 +42,5 @@ class LDO(Algorithm):
                 color = random_randint(0, no_of_colors - 1)
             chromosome[node] = color
 
-        _return_value = Individual(no_of_colors, graph, chromosome)
-        return _return_value
+        computed_return_value = Individual(no_of_colors, graph, chromosome)
+        return computed_return_value

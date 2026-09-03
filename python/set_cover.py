@@ -3,7 +3,6 @@
 from abc import ABC as abc_ABC
 from abc import abstractmethod as abc_abstractmethod
 from collections import defaultdict
-from typing import List
 
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
@@ -21,9 +20,9 @@ from mage.constraint_programming import (
 @mgp_read_proc
 def cp_solve(
     context: mgp_ProcCtx,
-    element_vertexes: List[mgp_Vertex],
-    set_vertexes: List[mgp_Vertex],
-) -> mgp_Record(containing_set=mgp_Vertex):
+    element_vertexes: list[mgp_Vertex],
+    set_vertexes: list[mgp_Vertex],
+) -> list[mgp_Record]:
     """
     This set cover solver method returns 1 filed
 
@@ -51,16 +50,16 @@ def cp_solve(
 
     resulting_nodes = [context.graph.get_vertex_by_id(x) for x in result]
 
-    _return_value = [mgp_Record(containing_set=x) for x in resulting_nodes]
-    return _return_value
+    computed_return_value = [mgp_Record(containing_set=x) for x in resulting_nodes]
+    return computed_return_value
 
 
 @mgp_read_proc
 def greedy(
     context: mgp_ProcCtx,
-    element_vertexes: List[mgp_Vertex],
-    set_vertexes: List[mgp_Vertex],
-) -> mgp_Record(containing_set=mgp_Vertex):
+    element_vertexes: list[mgp_Vertex],
+    set_vertexes: list[mgp_Vertex],
+) -> list[mgp_Record]:
     """
     This set cover solver method returns 1 filed
 
@@ -88,8 +87,8 @@ def greedy(
 
     resulting_nodes = [context.graph.get_vertex_by_id(x) for x in result]
 
-    _return_value = [mgp_Record(containing_set=x) for x in resulting_nodes]
-    return _return_value
+    computed_return_value = [mgp_Record(containing_set=x) for x in resulting_nodes]
+    return computed_return_value
 
 
 class MatchingProblemCreator(abc_ABC):
@@ -114,9 +113,7 @@ class GreedyMatchingProblemCreator(MatchingProblemCreator):
     Creator class for set cover to be solved with greedy method
     """
 
-    def create_matching_problem(
-        self, element_vertexes: List[mgp_Vertex], set_vertexes: List[mgp_Vertex]
-    ):
+    def create_matching_problem(self, element_vertexes: list[mgp_Vertex], set_vertexes: list[mgp_Vertex]):
         """
         Creates a matching problem to be solved with greedy method
         :param element_vertexes: Element vertexes pair component list
@@ -134,8 +131,8 @@ class GreedyMatchingProblemCreator(MatchingProblemCreator):
         for element, contained_set in zip(element_values, set_values, strict=False):
             elements_by_sets.get(contained_set, set()).add(element)
 
-        _return_value = GreedyMatchingProblem(all_elements, all_sets, elements_by_sets)
-        return _return_value
+        computed_return_value = GreedyMatchingProblem(all_elements, all_sets, elements_by_sets)
+        return computed_return_value
 
 
 class GekkoMatchingProblemCreator(MatchingProblemCreator):
@@ -143,9 +140,7 @@ class GekkoMatchingProblemCreator(MatchingProblemCreator):
     Creator class for set cover to be solved with gekko constraint programming
     """
 
-    def create_matching_problem(
-        self, element_vertexes: List[mgp_Vertex], set_vertexes: List[mgp_Vertex]
-    ):
+    def create_matching_problem(self, element_vertexes: list[mgp_Vertex], set_vertexes: list[mgp_Vertex]):
         """
         Creates a matching problem to be solved with gekko constraint programming method
         :param element_vertexes: Element vertexes pair component list
@@ -161,5 +156,5 @@ class GekkoMatchingProblemCreator(MatchingProblemCreator):
         for element, contained_set in zip(element_values, set_values, strict=False):
             sets_by_elements.get(element, set()).add(contained_set)
 
-        _return_value = GekkoMatchingProblem(set_values_distinct, sets_by_elements)
-        return _return_value
+        computed_return_value = GekkoMatchingProblem(set_values_distinct, sets_by_elements)
+        return computed_return_value

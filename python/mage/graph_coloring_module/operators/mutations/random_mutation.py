@@ -3,7 +3,6 @@
 from random import choice as random_choice
 from random import randint as random_randint
 from random import random as random_random
-from typing import Any, Dict, List, Tuple
 
 from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.graph import Graph
@@ -13,7 +12,7 @@ from mage.graph_coloring_module.utils.available_colors import available_colors
 from mage.graph_coloring_module.utils.parameters_utils import param_value
 from mage.graph_coloring_module.utils.validation import validate
 
-_DEFAULT_ARGUMENT_DICT = {}
+DEFAULT_ARGUMENT_DICT = {}
 
 
 class RandomMutation(Mutation):
@@ -32,16 +31,14 @@ class RandomMutation(Mutation):
         self,
         graph: Graph,
         individual: Individual,
-        parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT,
-    ) -> Tuple[Individual, List[int]]:
+        parameters: dict = DEFAULT_ARGUMENT_DICT,
+    ) -> tuple[Individual, list[int]]:
         """A function that mutates the given individual and
         returns the new individual and nodes that were changed."""
 
-        if parameters is _DEFAULT_ARGUMENT_DICT:
-            parameters = _DEFAULT_ARGUMENT_DICT.copy()
-        random_mutation_probability = param_value(
-            graph, parameters, Parameter.RANDOM_MUTATION_PROBABILITY
-        )
+        if parameters is DEFAULT_ARGUMENT_DICT:
+            parameters = DEFAULT_ARGUMENT_DICT.copy()
+        random_mutation_probability = param_value(graph, parameters, Parameter.RANDOM_MUTATION_PROBABILITY)
         no_of_colors = param_value(graph, parameters, Parameter.NO_OF_COLORS)
 
         conflict_nodes = individual.conflict_nodes
@@ -55,16 +52,11 @@ class RandomMutation(Mutation):
 
         node = (
             random_choice(non_conflict_nodes)
-            if len(non_conflict_nodes) > 0
-            and random_random() < random_mutation_probability
+            if len(non_conflict_nodes) > 0 and random_random() < random_mutation_probability
             else random_choice(list(conflict_nodes))
         )
         colors = available_colors(graph, no_of_colors, individual.chromosome, node)
-        color = (
-            random_choice(colors)
-            if len(colors) > 0
-            else random_randint(0, no_of_colors - 1)
-        )
+        color = random_choice(colors) if len(colors) > 0 else random_randint(0, no_of_colors - 1)
 
         mutated_individual = individual.replace_unit(node, color)
         return mutated_individual, [node]

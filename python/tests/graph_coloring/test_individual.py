@@ -12,7 +12,7 @@ from mage.graph_coloring_module.exceptions import (
 
 
 def graph():
-    _return_value = Graph(
+    computed_return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -22,11 +22,11 @@ def graph():
             4: [(1, 5)],
         },
     )
-    return _return_value
+    return computed_return_value
 
 
 def graph_not_connected():
-    _return_value = Graph(
+    computed_return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -36,7 +36,7 @@ def graph_not_connected():
             4: [(3, 3)],
         },
     )
-    return _return_value
+    return computed_return_value
 
 
 @pytest_fixture
@@ -71,7 +71,6 @@ def test_conflict_nodes(no_of_colors, graph, chromosome, expected):
     indv = Individual(no_of_colors=no_of_colors, graph=graph, chromosome=chromosome)
     result = indv.conflict_nodes
     assert result == expected
-    return False
 
 
 @pytest_mark.parametrize(
@@ -89,7 +88,6 @@ def test_conflict_weights(no_of_colors, graph, chromosome, expected):
     indv = Individual(no_of_colors=no_of_colors, graph=graph, chromosome=chromosome)
     result = indv.conflicts_weight
     assert result == expected
-    return False
 
 
 @pytest_mark.parametrize(
@@ -108,7 +106,6 @@ def test_check_coloring(no_of_colors, graph, chromosome, expected):
     indv = Individual(no_of_colors=no_of_colors, graph=graph, chromosome=chromosome)
     result = indv.check_coloring()
     assert result == expected
-    return False
 
 
 @pytest_mark.parametrize(
@@ -212,4 +209,3 @@ def test_replace_units(
         assert new_indv.conflict_nodes == expected_conflicts
         assert new_indv.conflicts_weight == expected_weights
         assert new_indv.check_coloring() == expected_coloring
-    return False

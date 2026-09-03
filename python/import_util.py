@@ -4,7 +4,6 @@ from ast import literal_eval as ast_literal_eval
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from json import load as js_load
-from typing import Any, Dict, List
 
 from defusedxml import ElementTree as ET
 from gqlalchemy import Memgraph as gqlalchemy_Memgraph
@@ -16,7 +15,7 @@ from mgp import write_proc as mgp_write_proc
 
 from mage.export_import_util.parameters import Parameter
 
-_DEFAULT_ARGUMENT_DICT = {
+DEFAULT_ARGUMENT_DICT = {
     "graphML": False,
     "leaveOutLabels": False,
     "leaveOutProperties": False,
@@ -72,7 +71,7 @@ class KeyObjectGraphML:
         name: str,
         is_for: str,
         type: str = "",
-        type_is_list: str = "",
+        type_is_list: bool = False,
         default_value: str = "",
     ):
         self.name = name
@@ -82,7 +81,7 @@ class KeyObjectGraphML:
         self.default_value = default_value
 
     def __hash__(self):
-        _return_value = hash(
+        computed_return_value = hash(
             (
                 self.name,
                 self.is_for,
@@ -91,37 +90,37 @@ class KeyObjectGraphML:
                 self.default_value,
             )
         )
-        return _return_value
+        return computed_return_value
 
     def __eq__(self, other):
         if not isinstance(other, type(self)):
             return NotImplemented
-        _return_value = (
+        computed_return_value = (
             self.name == other.name
             and self.is_for == other.is_for
             and self.type == other.type
             and self.type_is_list == other.type_is_list
             and self.default_value == other.default_value
         )
-        return _return_value
+        return computed_return_value
 
 
 def convert_to_isoformat(property: object):
     if isinstance(property, timedelta):
-        _return_value = Parameter.DURATION.value + str(property) + ")"
-        return _return_value
+        computed_return_value = Parameter.DURATION.value + str(property) + ")"
+        return computed_return_value
 
     elif isinstance(property, time):
-        _return_value = Parameter.LOCALTIME.value + property.isoformat() + ")"
-        return _return_value
+        computed_return_value = Parameter.LOCALTIME.value + property.isoformat() + ")"
+        return computed_return_value
 
     elif isinstance(property, datetime):
-        _return_value = Parameter.LOCALDATETIME.value + property.isoformat() + ")"
-        return _return_value
+        computed_return_value = Parameter.LOCALDATETIME.value + property.isoformat() + ")"
+        return computed_return_value
 
     elif isinstance(property, date):
-        _return_value = Parameter.DATE.value + property.isoformat() + ")"
-        return _return_value
+        computed_return_value = Parameter.DATE.value + property.isoformat() + ")"
+        return computed_return_value
 
     else:
         return property
@@ -129,8 +128,8 @@ def convert_to_isoformat(property: object):
 
 def to_duration_isoformat(value: timedelta) -> str:
     """Converts timedelta to ISO-8601 duration: P<date>T<time>"""
-    date_parts: List[str] = []
-    time_parts: List[str] = []
+    date_parts: list[str] = []
+    time_parts: list[str] = []
 
     if value.days != 0:
         date_parts.append(f"{abs(value.days)}D")
@@ -146,26 +145,24 @@ def to_duration_isoformat(value: timedelta) -> str:
         if minutes > 0:
             time_parts.append(f"{minutes}M")
         if seconds > 0 or microseconds > 0:
-            microseconds_part = (
-                f".{abs(value.microseconds)}" if value.microseconds != 0 else ""
-            )
+            microseconds_part = f".{abs(value.microseconds)}" if value.microseconds != 0 else ""
             time_parts.append(f"{seconds}{microseconds_part}S")
 
     date_duration_str = "".join(date_parts)
     time_duration_str = f"T{''.join(time_parts)}" if time_parts else ""
 
-    _return_value = f"P{date_duration_str}{time_duration_str}"
-    return _return_value
+    computed_return_value = f"P{date_duration_str}{time_duration_str}"
+    return computed_return_value
 
 
 def convert_to_isoformat_graphML(property: object):
     if isinstance(property, timedelta):
-        _return_value = to_duration_isoformat(property)
-        return _return_value
+        computed_return_value = to_duration_isoformat(property)
+        return computed_return_value
 
     if isinstance(property, (time, date, datetime)):
-        _return_value = property.isoformat()
-        return _return_value
+        computed_return_value = property.isoformat()
+        return computed_return_value
 
     else:
         return property
@@ -173,8 +170,8 @@ def convert_to_isoformat_graphML(property: object):
 
 def get_graph(
     ctx: mgp_ProcCtx,
-    config: mgp_Map = _DEFAULT_ARGUMENT_DICT,
-) -> List[object]:
+    config: mgp_Map = DEFAULT_ARGUMENT_DICT,
+) -> list[object]:
     """
     config : Map
         - graphML: bool
@@ -182,8 +179,8 @@ def get_graph(
         - leaveOutProperties: bool
 
     """
-    if config is _DEFAULT_ARGUMENT_DICT:
-        config = _DEFAULT_ARGUMENT_DICT.copy()
+    if config is DEFAULT_ARGUMENT_DICT:
+        config = DEFAULT_ARGUMENT_DICT.copy()
     nodes = list()
     relationships = list()
 
@@ -193,24 +190,15 @@ def get_graph(
         if not config.get("leaveOutLabels", []):
             labels = [label.name for label in vertex.labels]
         if config.get("graphML", False) and not config.get("leaveOutProperties", []):
-            properties = {
-                key: convert_to_isoformat_graphML(vertex.properties.get(key, False))
-                for key in vertex.properties.keys()
-            }
+            properties = {key: convert_to_isoformat_graphML(vertex.properties.get(key, False)) for key in vertex.properties.keys()}
         elif not config.get("leaveOutProperties", []):
-            properties = {
-                key: convert_to_isoformat(vertex.properties.get(key, False))
-                for key in vertex.properties.keys()
-            }
+            properties = {key: convert_to_isoformat(vertex.properties.get(key, False)) for key in vertex.properties.keys()}
 
         nodes.append(Node(vertex.id, labels, properties).get_dict())
 
         for edge in vertex.out_edges:
             if not config.get("leaveOutProperties", []):
-                properties = {
-                    key: convert_to_isoformat(edge.properties.get(key, False))
-                    for key in edge.properties.keys()
-                }
+                properties = {key: convert_to_isoformat(edge.properties.get(key, False)) for key in edge.properties.keys()}
 
             relationships.append(
                 Relationship(
@@ -222,8 +210,8 @@ def get_graph(
                 ).get_dict()
             )
 
-    _return_value = nodes + relationships
-    return _return_value
+    computed_return_value = nodes + relationships
+    return computed_return_value
 
 
 def convert_from_isoformat(property: object):
@@ -233,30 +221,30 @@ def convert_from_isoformat(property: object):
     if str.startswith(property, Parameter.DURATION.value):
         duration_iso = property.split("(")[-1].split(")")[0]
         parsed_time = datetime.strptime(duration_iso, "%H:%M:%S.%f")
-        _return_value = timedelta(
+        computed_return_value = timedelta(
             hours=parsed_time.hour,
             minutes=parsed_time.minute,
             seconds=parsed_time.second,
             microseconds=parsed_time.microsecond,
         )
-        return _return_value
+        return computed_return_value
     elif str.startswith(property, Parameter.LOCALTIME.value):
         local_time_iso = property.split("(")[-1].split(")")[0]
-        _return_value = time.fromisoformat(local_time_iso)
-        return _return_value
+        computed_return_value = time.fromisoformat(local_time_iso)
+        return computed_return_value
     elif str.startswith(property, Parameter.LOCALDATETIME.value):
         local_datetime_iso = property.split("(")[-1].split(")")[0]
-        _return_value = datetime.fromisoformat(local_datetime_iso)
-        return _return_value
+        computed_return_value = datetime.fromisoformat(local_datetime_iso)
+        return computed_return_value
     elif str.startswith(property, Parameter.DATE.value):
         date_iso = property.split("(")[-1].split(")")[0]
-        _return_value = date.fromisoformat(date_iso)
-        return _return_value
+        computed_return_value = date.fromisoformat(date_iso)
+        return computed_return_value
     else:
         return property
 
 
-def create_vertex(ctx: mgp_ProcCtx, properties: Dict[str, Any], labels: List[str]):
+def create_vertex(ctx: mgp_ProcCtx, properties: dict[str, object], labels: list[str]):
     vertex = ctx.graph.create_vertex()
     vertex_properties = vertex.properties
 
@@ -271,11 +259,11 @@ def create_vertex(ctx: mgp_ProcCtx, properties: Dict[str, Any], labels: List[str
 
 def create_edge(
     ctx: mgp_ProcCtx,
-    properties: Dict[str, Any],
+    properties: dict[str, object],
     start_node_id: object,
     end_node_id: object,
     type: str,
-    vertex_ids: Dict[object, int],
+    vertex_ids: dict[object, int],
 ):
     vertex_from = ctx.graph.get_vertex_by_id(vertex_ids.get(start_node_id, False))
     vertex_to = ctx.graph.get_vertex_by_id(vertex_ids.get(end_node_id, False))
@@ -288,7 +276,7 @@ def create_edge(
 
 
 @mgp_write_proc
-def cypher(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
+def cypher(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
     """
     Procedure to import the Cypher created by the export_util.json procedure.
     The lab import feature should be prefered.
@@ -306,17 +294,17 @@ def cypher(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
                 stripped_query = query.strip()
                 if stripped_query:
                     memgraph.execute(stripped_query)
-    except OSError as _caught_error_296:
-        raise OSError("Could not open/read file.") from _caught_error_296
-    except Exception as _caught_error_298:
-        raise Exception("Unable to execute the given queries") from _caught_error_298
+    except OSError as caught_error_296:
+        raise OSError("Could not open/read file.") from caught_error_296
+    except Exception as caught_error_298:
+        raise Exception("Unable to execute the given queries") from caught_error_298
 
-    _return_value = mgp_Record()
-    return _return_value
+    computed_return_value = mgp_Record()
+    return computed_return_value
 
 
 @mgp_write_proc
-def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
+def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
     """
     Procedure to import the JSON created by the export_util.json procedure.
 
@@ -328,23 +316,23 @@ def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
     try:
         with open(path, "r") as file:
             graph_objects = js_load(file)
-    except Exception as _caught_error_318:
-        raise OSError("Could not open/read file.") from _caught_error_318
+    except Exception as caught_error_318:
+        raise OSError("Could not open/read file.") from caught_error_318
 
     vertex_ids = dict()
 
-    for object in graph_objects:
+    for graph_object in graph_objects:
         if all(
-            key in object
+            key in graph_object
             for key in (
                 Parameter.TYPE.value,
                 Parameter.PROPERTIES.value,
                 Parameter.ID.value,
             )
         ):
-            type_value = object[Parameter.TYPE.value]
-            properties_value = object[Parameter.PROPERTIES.value]
-            id_value = object[Parameter.ID.value]
+            type_value = graph_object.get(Parameter.TYPE.value, "")
+            properties_value = graph_object.get(Parameter.PROPERTIES.value, {})
+            id_value = graph_object.get(Parameter.ID.value, 0)
         else:
             raise KeyError(
                 "Each graph object needs to have 'type', \
@@ -352,8 +340,8 @@ def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
             )
 
         if type_value == Parameter.NODE.value:
-            if Parameter.LABELS.value in object:
-                labels_value = object[Parameter.LABELS.value]
+            if Parameter.LABELS.value in graph_object:
+                labels_value = graph_object.get(Parameter.LABELS.value, [])
             else:
                 raise KeyError("Each node object needs to have 'labels' key.")
 
@@ -361,16 +349,16 @@ def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
 
         elif type_value == Parameter.RELATIONSHIP.value:
             if all(
-                key in object
+                key in graph_object
                 for key in (
                     Parameter.START.value,
                     Parameter.END.value,
                     Parameter.LABEL.value,
                 )
             ):
-                start_node_id = object[Parameter.START.value]
-                end_node_id = object[Parameter.END.value]
-                edge_type = object[Parameter.LABEL.value]
+                start_node_id = graph_object.get(Parameter.START.value, 0)
+                end_node_id = graph_object.get(Parameter.END.value, 0)
+                edge_type = graph_object.get(Parameter.LABEL.value, "")
             else:
                 raise KeyError(
                     "Each relationship object needs to have 'start', \
@@ -388,19 +376,16 @@ def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
         else:
             raise KeyError("The provided file does not match the correct JSON format.")
 
-    _return_value = mgp_Record()
-    return _return_value
+    computed_return_value = mgp_Record()
+    return computed_return_value
 
 
-def find_node(ctx: mgp_ProcCtx, label: str, prop_key: str, prop_value: str) -> int:
+def find_node(ctx: mgp_ProcCtx, label: str, prop_key: str, prop_value: object) -> int:
     for vertex in ctx.graph.vertices:
         if (
             label in [label.name for label in vertex.labels]
             and prop_key in vertex.properties.keys()
-            and str(
-                convert_to_isoformat_graphML(vertex.properties.get(prop_key, False))
-            )
-            == prop_value
+            and str(convert_to_isoformat_graphML(vertex.properties.get(prop_key, False))) == prop_value
         ):
             return vertex.id
     return 0
@@ -410,17 +395,17 @@ def cast_element(text: str, type: str) -> object:
     if text == "":
         return ""
     if type == "string":
-        _return_value = str(text)
-        return _return_value
+        computed_return_value = str(text)
+        return computed_return_value
     if type == "int" or type == "long":
-        _return_value = int(text)
-        return _return_value
+        computed_return_value = int(text)
+        return computed_return_value
     if type == "boolean":
-        _return_value = bool(text)
-        return _return_value
+        computed_return_value = bool(text)
+        return computed_return_value
     if type == "float" or type == "double":
-        _return_value = float(text)
-        return _return_value
+        computed_return_value = float(text)
+        return computed_return_value
     if type == "":
         return text
     return False
@@ -432,11 +417,11 @@ def cast(text: str, type: str, is_list: bool) -> object:
         for element in ast_literal_eval(text):
             casted_list.append(cast_element(element, type))
         return casted_list
-    _return_value = cast_element(text, type)
-    return _return_value
+    computed_return_value = cast_element(text, type)
+    return computed_return_value
 
 
-def set_default_keys(key_dict: Dict[str, Any], properties: Dict[str, Any], is_for: str):
+def set_default_keys(key_dict: dict[str, KeyObjectGraphML], properties: dict[str, object], is_for: str):
     for key_object in key_dict.values():
         if key_object.default_value != "" and key_object.is_for == is_for:
             properties.update(
@@ -471,10 +456,7 @@ def set_default_config(config: mgp_Map) -> mgp_Map:
         or not isinstance(config.get("source", ""), dict)
         or not isinstance(config.get("target", False), dict)
         or (config.get("source", "") and "label" not in config.get("source", {}).keys())
-        or (
-            config.get("target", False)
-            and "label" not in config.get("target", {}).keys()
-        )
+        or (config.get("target", False) and "label" not in config.get("target", {}).keys())
     ):
         raise TypeError(
             "Config parameter must be a map with specific \
@@ -488,7 +470,7 @@ def graphml(
     ctx: mgp_ProcCtx,
     path: str = "",
     config: mgp_Map = False,
-) -> mgp_Record(status=str):
+) -> mgp_Record:
     """
     Procedure to export the whole database to a graphML file.
 
@@ -504,19 +486,19 @@ def graphml(
 
     try:
         tree = ET.parse(path)
-    except Exception as _caught_error_488:
-        raise OSError("Could not open/read file.") from _caught_error_488
+    except Exception as caught_error_488:
+        raise OSError("Could not open/read file.") from caught_error_488
 
     root = tree.getroot()
+    if root is None:
+        raise ValueError("GraphML document has no root element")
     graphml_ns = root.tag.split("}")[0].strip("{")
     namespace = {"graphml": graphml_ns}
 
-    keys = dict()
+    keys: dict[str, KeyObjectGraphML] = {}
 
     for key in root.findall(".//graphml:key", namespace):
-        working_key = KeyObjectGraphML(
-            key.attrib.get("attr.name", False), key.attrib.get("for", False)
-        )
+        working_key = KeyObjectGraphML(key.attrib.get("attr.name", ""), key.attrib.get("for", ""))
         if "attr.list" in key.attrib.keys():
             working_key.type_is_list = True
             working_key.type = key.attrib.get("attr.list", "")
@@ -524,7 +506,7 @@ def graphml(
             working_key.type = key.attrib.get("attr.type", "")
         child = key.findall(".//graphml:default", namespace)
         if child:
-            working_key.default_value = child[0].text
+            working_key.default_value = child[0].text or ""
         working_key.id = key.attrib.get("id", "")
         keys.update({key.attrib.get("id", ""): working_key})
 
@@ -543,12 +525,10 @@ def graphml(
 
         for data in node.findall("graphml:data", namespace):
             working_key = keys.get(data.attrib.get("key", ""), False)
-            if working_key is False:
-                working_key = KeyObjectGraphML(
-                    data.attrib.get("key", ""), "node", "string"
-                )
+            if not isinstance(working_key, KeyObjectGraphML):
+                working_key = KeyObjectGraphML(data.attrib.get("key", ""), "node", "string")
             if config.get("readLabels", False) and working_key.name == "labels":
-                new_labels = data.text.split(":")
+                new_labels = (data.text or "").split(":")
                 new_labels.pop(0)
                 if new_labels != labels:
                     labels = labels + new_labels
@@ -556,16 +536,14 @@ def graphml(
                 properties.update(
                     {
                         working_key.name: cast(
-                            data.text,
+                            data.text or "",
                             working_key.type,
                             working_key.type_is_list,
                         )
                     }
                 )
 
-        real_ids.update(
-            {node.attrib.get("id", ""): create_vertex(ctx, properties, labels)}
-        )
+        real_ids.update({node.attrib.get("id", ""): create_vertex(ctx, properties, labels)})
 
     for rel in root.findall(".//graphml:edge", namespace):
         if "label" in rel.attrib.keys():
@@ -578,15 +556,13 @@ def graphml(
 
         for data in rel.findall("graphml:data", namespace):
             working_key = keys.get(data.attrib.get("key", ""), False)
-            if working_key is False:
-                working_key = KeyObjectGraphML(
-                    data.attrib.get("key", ""), "edge", "string"
-                )
+            if not isinstance(working_key, KeyObjectGraphML):
+                working_key = KeyObjectGraphML(data.attrib.get("key", ""), "edge", "string")
             if not working_key.name == "label":  # Tinkerpop???
                 properties.update(
                     {
                         working_key.name: cast(
-                            data.text,
+                            data.text or "",
                             working_key.type,
                             working_key.type_is_list,
                         )
@@ -596,9 +572,7 @@ def graphml(
         if rel.attrib.get("source", "") not in real_ids:
             if not config.get("source", ""):
                 # without source/target config, we try with the internal id
-                real_ids.update(
-                    {rel.attrib.get("source", ""): int(rel.attrib.get("source", 0))}
-                )
+                real_ids.update({rel.attrib.get("source", ""): int(rel.attrib.get("source", 0))})
             else:
                 source_config = config.get("source", "")
                 if "id" not in source_config.keys():
@@ -614,9 +588,7 @@ def graphml(
         if rel.attrib.get("target", False) not in real_ids:
             if not config.get("target", False):
                 # without source/target config, we look for the internal id
-                real_ids.update(
-                    {rel.attrib.get("target", False): int(rel.attrib.get("target", 0))}
-                )
+                real_ids.update({rel.attrib.get("target", False): int(rel.attrib.get("target", 0))})
             else:
                 target_config = config.get("target", False)
                 if "id" not in target_config.keys():
@@ -638,5 +610,5 @@ def graphml(
             real_ids,
         )
 
-    _return_value = mgp_Record(status="success")
-    return _return_value
+    computed_return_value = mgp_Record(status="success")
+    return computed_return_value

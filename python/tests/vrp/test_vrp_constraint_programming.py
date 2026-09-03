@@ -10,16 +10,13 @@ from mage.geography import InvalidDepotException
 
 @pytest_fixture
 def default_distance_matrix():
-    _return_value = np_array([[0, 1, 2], [1, 0, 3], [2, 3, 0]])
-    return _return_value
+    computed_return_value = np_array([[0, 1, 2], [1, 0, 3], [2, 3, 0]])
+    return computed_return_value
 
 
 def test_negative_depot_index_raise_exception(default_distance_matrix):
     with pytest_raises(InvalidDepotException):
-        VRPConstraintProgrammingSolver(
-            no_vehicles=2, distance_matrix=default_distance_matrix, depot_index=-1
-        )
-    return False
+        VRPConstraintProgrammingSolver(no_vehicles=2, distance_matrix=default_distance_matrix, depot_index=-1)
 
 
 def test_depot_index_to_big_raise_exception(default_distance_matrix):
@@ -29,4 +26,3 @@ def test_depot_index_to_big_raise_exception(default_distance_matrix):
             distance_matrix=default_distance_matrix,
             depot_index=len(default_distance_matrix),
         )
-    return False

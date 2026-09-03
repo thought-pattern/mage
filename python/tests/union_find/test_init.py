@@ -1,26 +1,30 @@
 """Tests for test init."""
 
 from pytest import fixture as pytest_fixture
+from pytest import raises as pytest_raises
 
 from mage.union_find.disjoint_set import DisjointSet
-from tests.union_find.constants import Constants
 
 
 @pytest_fixture
 def disjoint_set():
-    _return_value = DisjointSet(node_ids=Constants.IDs)
-    return _return_value
+    computed_return_value = DisjointSet(node_ids=list(range(10)))
+    return computed_return_value
 
 
 class TestInit:
-    def test_keys(self, disjoint_set):
-        assert all(i in disjoint_set.nodes.keys() for i in Constants.IDs)
-        return False
+    def test_nodes_begin_as_independent_components(self, disjoint_set):
+        assert all(disjoint_set.connected(node_id, node_id) for node_id in range(10))
+        assert disjoint_set.connected(0, 9) is False
 
-    def test_parent(self, disjoint_set):
-        assert all(disjoint_set.nodes[ID].parent == ID for ID in Constants.IDs)
-        return False
+    def test_reinitialize_replaces_components(self, disjoint_set):
+        disjoint_set.union(0, 1)
+        disjoint_set.reinitialize([4, 5])
 
-    def test_rank(self, disjoint_set):
-        assert all(disjoint_set.nodes[ID].rank == 0 for ID in Constants.IDs)
-        return False
+        assert disjoint_set.connected(4, 5) is False
+        with pytest_raises(KeyError):
+            disjoint_set.find(0)
+
+    def test_duplicate_nodes_are_rejected(self):
+        with pytest_raises(ValueError, match="unique"):
+            DisjointSet([1, 1])

@@ -18,7 +18,7 @@ from mgp import Record as mgp_Record
 from mgp import function as mgp_function
 from mgp import read_proc as mgp_read_proc
 
-_DEFAULT_ARGUMENT_DICT = {}
+DEFAULT_ARGUMENT_DICT = {}
 
 TYPE = "_type"
 TEXT = "_text"
@@ -51,12 +51,12 @@ def xml_file_to_string(xml_file):
     try:
         with open(xml_file, "r") as xml_file:
             xml_string = xml_file.read().replace("\n", "").replace("  ", "")
-    except PermissionError as _caught_error_53:
+    except PermissionError as caught_error_53:
         raise PermissionError(
             "You don't have permissions to write into that file.Make sure to give the necessary permissions to user memgraph."
-        ) from _caught_error_53
-    except Exception as _caught_error_57:
-        raise OSError("Could not open or write to file.") from _caught_error_57
+        ) from caught_error_53
+    except Exception as caught_error_57:
+        raise OSError("Could not open or write to file.") from caught_error_57
     return xml_string
 
 
@@ -83,11 +83,10 @@ def parse(xml_input: str, simple: bool = False, path: str = "") -> mgp_Map:
     """
 
     root = False
-    parser = ET.DefusedXMLParser()
     if path:
-        root = ET.fromstring(xml_file_to_string(path), parser)
+        root = ET.fromstring(xml_file_to_string(path))
     else:
-        root = ET.fromstring(xml_input, parser)
+        root = ET.fromstring(xml_input)
     output_map = parse_element(root, simple)
     return output_map
 
@@ -112,8 +111,8 @@ def load(
     simple: bool = False,
     path: str = "",
     xpath: str = "",
-    headers: mgp_Map = _DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record(output_map=mgp_Map):
+    headers: mgp_Map = DEFAULT_ARGUMENT_DICT,
+) -> list[mgp_Record]:
     """
     Procedure to load XML from url or from file to a map.
 
@@ -141,12 +140,11 @@ def load(
         mgp.Map -> XML file or URL parsed as map.
         In case XPATH is active, a map of for each element will be returned.
     """
-    if headers is _DEFAULT_ARGUMENT_DICT:
-        headers = _DEFAULT_ARGUMENT_DICT.copy()
+    if headers is DEFAULT_ARGUMENT_DICT:
+        headers = DEFAULT_ARGUMENT_DICT.copy()
     root = False
-    parser = ET.DefusedXMLParser()
     if path:
-        root = ET.fromstring(xml_file_to_string(path), parser)
+        root = ET.fromstring(xml_file_to_string(path))
     else:
         check_url(xml_url)
         try:
@@ -163,5 +161,5 @@ def load(
             record_list.append(mgp_Record(output_map=parse_element(element, simple)))
         return record_list
     output_map = parse_element(root, simple)
-    _return_value = mgp_Record(output_map=output_map)
-    return _return_value
+    computed_return_value = [mgp_Record(output_map=output_map)]
+    return computed_return_value

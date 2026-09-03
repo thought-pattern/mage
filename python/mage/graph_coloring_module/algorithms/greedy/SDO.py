@@ -3,7 +3,6 @@
 from queue import PriorityQueue
 from random import choice as random_choice
 from random import randint as random_randint
-from typing import Any, Dict, List
 
 from mage.graph_coloring_module.algorithms.algorithm import Algorithm
 from mage.graph_coloring_module.components.individual import Individual
@@ -13,7 +12,7 @@ from mage.graph_coloring_module.utils.available_colors import available_colors
 from mage.graph_coloring_module.utils.parameters_utils import param_value
 from mage.graph_coloring_module.utils.validation import validate
 
-_DEFAULT_ARGUMENT_DICT = {}
+DEFAULT_ARGUMENT_DICT = {}
 
 
 class SDO(Algorithm):
@@ -27,13 +26,11 @@ class SDO(Algorithm):
         return "SDO"
 
     @validate(Parameter.NO_OF_COLORS)
-    def run(
-        self, graph: Graph, parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT
-    ) -> Individual:
+    def run(self, graph: Graph, parameters: dict = DEFAULT_ARGUMENT_DICT) -> Individual:
         """Returns the individual that represents the result of the SDO algorithm."""
 
-        if parameters is _DEFAULT_ARGUMENT_DICT:
-            parameters = _DEFAULT_ARGUMENT_DICT.copy()
+        if parameters is DEFAULT_ARGUMENT_DICT:
+            parameters = DEFAULT_ARGUMENT_DICT.copy()
         no_of_colors = param_value(graph, parameters, Parameter.NO_OF_COLORS)
 
         processed = [False for _ in graph.nodes]
@@ -41,7 +38,7 @@ class SDO(Algorithm):
         chromosome = [-1 for _ in graph.nodes]
 
         while not all(processed):
-            current_node = self._get_non_processed_node(processed)
+            current_node = self.get_non_processed_node(processed)
             sorted_nodes = PriorityQueue()
             sorted_nodes.put((saturation_degrees[current_node], current_node))
 
@@ -62,10 +59,10 @@ class SDO(Algorithm):
                             saturation_degrees[neigh] += 1
                             sorted_nodes.put((-1 * saturation_degrees[neigh], neigh))
 
-        _return_value = Individual(no_of_colors, graph, chromosome)
-        return _return_value
+        computed_return_value = Individual(no_of_colors, graph, chromosome)
+        return computed_return_value
 
-    def _get_non_processed_node(self, processed: List[bool]) -> int:
+    def get_non_processed_node(self, processed: list[bool]) -> int:
         for i, flag in enumerate(processed):
             if not flag:
                 return i

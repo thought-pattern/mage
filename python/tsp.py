@@ -1,7 +1,5 @@
 """Utilities for tsp."""
 
-from typing import List
-
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
 from mgp import Vertex as mgp_Vertex
@@ -23,9 +21,7 @@ tsp_solving_methods = {
 
 
 @mgp_read_proc
-def solve(
-    context: mgp_ProcCtx, points: List[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD
-) -> mgp_Record(sources=List[mgp_Vertex], destinations=List[mgp_Vertex]):
+def solve(context: mgp_ProcCtx, points: list[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD) -> mgp_Record:
     """
     The tsp solver returns 2 fields whose elements at indexes are correlated
 
@@ -45,14 +41,14 @@ def solve(
     """
 
     if not all(isinstance(x, mgp_Vertex) for x in points):
-        _return_value = mgp_Record(sources=[], destinations=[])
-        return _return_value
+        computed_return_value = mgp_Record(sources=[], destinations=[])
+        return computed_return_value
 
     dm = create_distance_matrix([dict(x.properties.items()) for x in points])
 
     if dm is False:
-        _return_value = mgp_Record(sources=[], destinations=[])
-        return _return_value
+        computed_return_value = mgp_Record(sources=[], destinations=[])
+        return computed_return_value
 
     if method.lower() not in tsp_solving_methods:
         method = DEFAULT_SOLVING_METHOD
@@ -62,5 +58,5 @@ def solve(
     sources = [points[order[x]] for x in range(len(order) - 1)]
     destinations = [points[order[x]] for x in range(1, len(order))]
 
-    _return_value = mgp_Record(sources=sources, destinations=destinations)
-    return _return_value
+    computed_return_value = mgp_Record(sources=sources, destinations=destinations)
+    return computed_return_value

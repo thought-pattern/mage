@@ -1,7 +1,5 @@
 """Utilities for convergence callback."""
 
-from typing import Any, Dict
-
 from mage.graph_coloring_module.components.population import Population
 from mage.graph_coloring_module.graph import Graph
 from mage.graph_coloring_module.iteration_callbacks.iteration_callback import (
@@ -24,45 +22,39 @@ class ConvergenceCallback(IterationCallback):
     """
 
     def __init__(self):
-        self._iteration = 0
-        self._best_solution_error = float("inf")
+        self.internal_iteration = 0
+        self.best_solution_error = float("inf")
         super().__init__()
 
     @validate(Parameter.ERROR, Parameter.CONVERGENCE_CALLBACK_TOLERANCE)
-    def update(self, graph: Graph, population: Population, parameters: Dict[str, Any]):
+    def update(self, graph: Graph, population: Population, parameters: dict):
         error = param_value(graph, parameters, Parameter.ERROR)
-        convergence_callback_tolerance = param_value(
-            graph, parameters, Parameter.CONVERGENCE_CALLBACK_TOLERANCE
-        )
+        convergence_callback_tolerance = param_value(graph, parameters, Parameter.CONVERGENCE_CALLBACK_TOLERANCE)
 
-        if self._best_solution_error == float("inf"):
-            self._iteration = 1
-            self._best_solution_error = population.min_error(error.individual_err)
+        if self.best_solution_error == float("inf"):
+            self.internal_iteration = 1
+            self.best_solution_error = population.min_error(error.individual_err)
         else:
-            self._iteration += 1
-            if population.min_error(error.individual_err) < self._best_solution_error:
-                self._best_solution_error = population.min_error(error.individual_err)
-                self._iteration = 0
+            self.internal_iteration += 1
+            if population.min_error(error.individual_err) < self.best_solution_error:
+                self.best_solution_error = population.min_error(error.individual_err)
+                self.internal_iteration = 0
 
-        if self._iteration == convergence_callback_tolerance:
-            self._convergence_detected(graph, population, parameters)
+        if self.internal_iteration == convergence_callback_tolerance:
+            self.convergence_detected(graph, population, parameters)
         return False
 
-    def end(self, graph: Graph, population: Population, parameters: Dict[str, Any]):
+    def end(self, graph: Graph, population: Population, parameters: dict):
         return False
 
     @validate(Parameter.ERROR, Parameter.CONVERGENCE_CALLBACK_ACTIONS)
-    def _convergence_detected(
-        self, graph: Graph, population: Population, parameters: Dict[str, Any]
-    ):
+    def convergence_detected(self, graph: Graph, population: Population, parameters: dict):
         error = param_value(graph, parameters, Parameter.ERROR)
-        convergence_callback_actions = param_value(
-            graph, parameters, Parameter.CONVERGENCE_CALLBACK_ACTIONS
-        )
+        convergence_callback_actions = param_value(graph, parameters, Parameter.CONVERGENCE_CALLBACK_ACTIONS)
 
         for action in convergence_callback_actions:
             action.execute(graph, population, parameters)
 
-        self._iteration = 0
-        self._best_solution_error = population.min_error(error.individual_err)
+        self.internal_iteration = 0
+        self.best_solution_error = population.min_error(error.individual_err)
         return False

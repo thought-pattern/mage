@@ -1,7 +1,5 @@
 """Utilities for message aggregator."""
 
-from typing import List
-
 from torch import Tensor as torch_Tensor
 from torch import cat as torch_cat
 from torch import mean as torch_mean
@@ -16,8 +14,8 @@ class MessageAggregator(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, data: List[torch_Tensor]) -> torch_Tensor:
-        raise Exception("Not implemented")
+    def forward(self, data: list[torch_Tensor]) -> torch_Tensor:
+        raise NotImplementedError("MessageAggregator subclasses must implement forward")
 
 
 class MeanMessageAggregator(MessageAggregator):
@@ -30,15 +28,17 @@ class MeanMessageAggregator(MessageAggregator):
     def __init__(self):
         super().__init__()
 
-    def forward(self, data: List[torch_Tensor]) -> torch_Tensor:
+    def forward(self, data: list[torch_Tensor]) -> torch_Tensor:
+        if not data:
+            raise ValueError("MeanMessageAggregator requires at least one message")
         # here we will 2D tensor
         # shape = (len(data), num_features)
         data_torch = torch_cat(data)
         # mean across rows
         mean = torch_mean(data_torch, dim=0)
         # return shape = (1, num_features)
-        _return_value = mean.reshape((1, -1))
-        return _return_value
+        computed_return_value = mean.reshape((1, -1))
+        return computed_return_value
 
 
 class LastMessageAggregator(MessageAggregator):
@@ -50,6 +50,8 @@ class LastMessageAggregator(MessageAggregator):
     def __init__(self):
         super().__init__()
 
-    def forward(self, data: List[torch_Tensor]) -> torch_Tensor:
-        _return_value = data[-1]
-        return _return_value
+    def forward(self, data: list[torch_Tensor]) -> torch_Tensor:
+        if not data:
+            raise ValueError("LastMessageAggregator requires at least one message")
+        computed_return_value = data[-1]
+        return computed_return_value

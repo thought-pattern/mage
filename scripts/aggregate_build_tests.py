@@ -4,11 +4,10 @@ from argparse import ArgumentParser as argparse_ArgumentParser
 from json import dumps as json_dumps
 from os import getenv as os_getenv
 from subprocess import run as subprocess_run
-from typing import List
 from urllib.parse import quote
 
 
-def list_build_files(date: int, image_type: str = "mage") -> List[str]:
+def list_build_files(date: int, image_type: str = "mage") -> list[str]:
     """
     Lists the files in s3 for the current build date
 
@@ -35,9 +34,16 @@ def list_build_files(date: int, image_type: str = "mage") -> List[str]:
         capture_output=True,
         text=True,
     )
+    if p.returncode != 0:
+        raise RuntimeError(f"unable to list {image_type} build files for {date}: {p.stderr.strip()}")
 
     # extract the file keys found
-    files = [line.split()[3] for line in p.stdout.splitlines()]
+    files = []
+    for line in p.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 4:
+            raise RuntimeError(f"unexpected aws s3 ls output line: {line!r}")
+        files.append(fields[3])
 
     return files
 
@@ -89,21 +95,14 @@ def parse_file_os_arch(file, image_type):
         if "malloc" in file:
             arch = f"{arch}-malloc"
 
-        os = (
-            file.split("/")[3]
-            .replace("-malloc", "")
-            .replace("-aarch64", "")
-            .replace("-relwithdebinfo", "")
-        )
+        os = file.split("/")[3].replace("-malloc", "").replace("-aarch64", "").replace("-relwithdebinfo", "")
     else:
         raise ValueError(f"Unsupported image_type: {image_type}")
 
     return os, arch
 
 
-def build_package_json(
-    files: List[str], return_url: bool = True, image_type: str = "mage"
-) -> dict:
+def build_package_json(files: list[str], return_url: bool = True, image_type: str = "mage") -> dict:
     """
     Extracts the OS and CPU architecture and builds the dict/json used by the
     daily-builds workflow
@@ -131,9 +130,7 @@ def build_package_json(
     out = {}
     for file in files:
         if return_url:
-            url = quote(
-                f"https://s3.eu-west-1.amazonaws.com/deps.memgraph.io/{file}", safe=":/"
-            )
+            url = quote(f"https://s3.eu-west-1.amazonaws.com/deps.memgraph.io/{file}", safe=":/")
         else:
             url = file
 
@@ -147,9 +144,7 @@ def build_package_json(
     return out
 
 
-def list_daily_release_packages(
-    date: int, return_url: bool = True, image_type: str = "mage"
-) -> dict:
+def list_daily_release_packages(date: int, return_url: bool = True, image_type: str = "mage") -> dict:
     """
     returns dict containing all packages for a specific date
 
@@ -202,10 +197,18 @@ def main(image_type: str) -> bool:
     }
     """
 
-    date = int(os_getenv("CURRENT_BUILD_DATE"))
+    date_value = os_getenv("CURRENT_BUILD_DATE")
+    if not isinstance(date_value, str) or not date_value:
+        raise RuntimeError("CURRENT_BUILD_DATE must be set")
+    try:
+        date = int(date_value)
+    except ValueError as caught_error:
+        raise RuntimeError("CURRENT_BUILD_DATE must be an integer in YYYYMMDD form") from caught_error
 
     # TODO: add individual test results and URL to each one
     tests = os_getenv("TEST_RESULT")
+    if not isinstance(tests, str) or not tests:
+        raise RuntimeError("TEST_RESULT must be set")
 
     # collect packages part of the payload
     packages = list_daily_release_packages(date, image_type=image_type)
@@ -226,9 +229,7 @@ def main(image_type: str) -> bool:
 
 if __name__ == "__main__":
     parser = argparse_ArgumentParser()
-    parser.add_argument(
-        "image_type", type=str, choices=["memgraph", "mage"], default="mage"
-    )
+    parser.add_argument("image_type", type=str, choices=["memgraph", "mage"], default="mage")
     args = parser.parse_args()
 
     main(args.image_type)

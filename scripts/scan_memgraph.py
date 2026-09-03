@@ -17,7 +17,6 @@ each scan will produce a temporary JSON file containing results.
 
 from argparse import ArgumentParser as argparse_ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from hashlib import sha256 as hashlib_sha256
 from json import JSONDecodeError as json_JSONDecodeError
 from json import dump as json_dump
 from json import load as json_load
@@ -27,11 +26,10 @@ from os import lstat as os_lstat
 from os import makedirs as os_makedirs
 from os import path as os_path
 from os import walk as os_walk
-from random import random as random_random
 from stat import S_ISLNK as stat_S_ISLNK
 from subprocess import PIPE as subprocess_PIPE
 from subprocess import run as subprocess_run
-from typing import List
+from uuid import uuid4 as uuid_uuid4
 
 from tqdm import tqdm
 
@@ -53,10 +51,8 @@ def file_hash(output_dir: str) -> str:
        The temporary file name.
     """
 
-    hash = hashlib_sha256(str(random_random()).encode("utf-8")).hexdigest()
-
-    _return_value = f"{output_dir}/{hash}.json"
-    return _return_value
+    computed_return_value = f"{output_dir}/{uuid_uuid4().hex}.json"
+    return computed_return_value
 
 
 def find_memgraph_files(start_dir: str) -> list:
@@ -78,9 +74,8 @@ def find_memgraph_files(start_dir: str) -> list:
             fullpath = f"{dirpath}/{filename}"
             try:
                 st = os_lstat(fullpath)
-            except OSError:
-                # Skip files we can’t stat
-                continue
+            except OSError as err:
+                raise RuntimeError(f"unable to inspect CVE scan target {fullpath}: {err}") from err
 
             is_symlink = stat_S_ISLNK(st.st_mode)
 
@@ -129,28 +124,22 @@ def run_cve_scan(target: str, output_dir: str) -> dict:
     ]
 
     # Run the command, capturing stdout/stderr
-    subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
-    # do not try to do anything clever with the proc.returncode here, because
-    # it only ever returns 0 if there are 0 vulnerabilities!
+    completed = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
 
     # Some targets produce no JSON at all; check before opening.
     if not os_path.isfile(output_path):
-        raise RuntimeError(
-            f"Expected JSON not found for {target!r}; no file at {output_path}"
-        )
+        raise RuntimeError(f"CVE scan produced no JSON for {target!r} (status {completed.returncode}): {completed.stderr.strip()}")
 
     try:
         with open(output_path, "r", encoding="utf-8") as f:
             data = json_load(f)
-    except (OSError, json_JSONDecodeError) as e:
-        raise RuntimeError(f"Could not read JSON for {target!r}: {e}") from e
+    except (OSError, json_JSONDecodeError) as err:
+        raise RuntimeError(f"Could not read JSON for {target!r}: {err}") from err
 
     return data
 
 
-def scan_directories_with_progress(
-    dirs_to_scan: List[str], output_dir: str = f"{CVE_DIR}/tmp", max_workers: int = 20
-) -> bool:
+def scan_directories_with_progress(dirs_to_scan: list[str], output_dir: str = f"{CVE_DIR}/tmp", max_workers: int = 20) -> bool:
     """
     Given a list of directories, scan each one in parallel using cve-bin-tool.
     - Uses '-u never' and '-f json'.
@@ -176,9 +165,7 @@ def scan_directories_with_progress(
 
     # Submit one task per directory
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_dir = {
-            executor.submit(run_cve_scan, d, output_dir): d for d in dirs_to_scan
-        }
+        future_to_dir = {executor.submit(run_cve_scan, d, output_dir): d for d in dirs_to_scan}
 
         # Wrap as_completed in tqdm for a live progress bar
         for future in tqdm(
@@ -202,7 +189,7 @@ def scan_directories_with_progress(
     return False
 
 
-def place_slowest_first(rootfs: str, directories: List[str]) -> List[str]:
+def place_slowest_first(rootfs: str, directories: list[str]) -> list[str]:
     """
     Move the slowest binaries to be scanned to be first in the list, so that
     quicker ones can be scanned in parallel.
@@ -262,9 +249,7 @@ def main(rootfs: str, max_workers: int) -> bool:
 if __name__ == "__main__":
     parser = argparse_ArgumentParser()
     parser.add_argument("rootfs", type=str, help="docker container root path to scan")
-    parser.add_argument(
-        "max_workers", type=int, help="maximum number of workers to use"
-    )
+    parser.add_argument("max_workers", type=int, help="maximum number of workers to use")
     args = parser.parse_args()
 
     main(args.rootfs, args.max_workers)

@@ -2,14 +2,10 @@
 
 from inspect import cleandoc
 from itertools import chain, repeat
-from typing import Dict, List
 
 from gensim import models as gensim_models
-from mgp import List as mgp_List
-from mgp import Number as mgp_Number
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
 from mgp import read_proc as mgp_read_proc
 from mgp import write_proc as mgp_write_proc
 
@@ -34,17 +30,10 @@ class Parameters:
 NODE_EMBEDDING_PROPERTY = "embedding"
 
 
-def learn_embeddings(
-    walks: List[List[int]], **word2vec_params
-) -> Dict[int, List[float]]:
+def learn_embeddings(walks: list[list[int]], **word2vec_params) -> dict[int, list[float]]:
     model = gensim_models.Word2Vec(sentences=walks, **word2vec_params)
 
-    embeddings = {
-        index: embedding
-        for index, embedding in zip(
-            model.wv.index_to_key, model.wv.vectors, strict=False
-        )
-    }
+    embeddings = {index: embedding for index, embedding in zip(model.wv.index_to_key, model.wv.vectors, strict=False)}
 
     return embeddings
 
@@ -66,7 +55,7 @@ def calculate_node_embeddings(
     hs: int,
     negative: int,
     epochs: int,
-) -> Dict[int, List[float]]:
+) -> dict[int, list[float]]:
     word2vec_params = {
         Parameters.VECTOR_SIZE: vector_size,
         Parameters.WINDOW: window,
@@ -81,30 +70,22 @@ def calculate_node_embeddings(
         Parameters.NEGATIVE: negative,
     }
 
-    second_order_random_walk = SecondOrderRandomWalk(
-        p=p, q=q, num_walks=int(num_walks), walk_length=int(walk_length)
-    )
+    second_order_random_walk = SecondOrderRandomWalk(p=p, q=q, num_walks=int(num_walks), walk_length=int(walk_length))
 
     walks = second_order_random_walk.sample_node_walks(graph)
     embeddings = learn_embeddings(walks, **word2vec_params)
     return embeddings
 
 
-def get_graph_memgraph_ctx(
-    ctx: mgp_ProcCtx, edge_weight_property: str, is_directed: bool = False
-) -> Graph:
+def get_graph_memgraph_ctx(ctx: mgp_ProcCtx, edge_weight_property: str, is_directed: bool = False) -> Graph:
     edges_weights = {}
     for vertex in ctx.graph.vertices:
         for edge in vertex.out_edges:
             edge_weight = float(edge.properties.get(edge_weight_property, default=1))
             old_value = 0
             if (edge.from_vertex.id, edge.to_vertex.id) in edges_weights:
-                old_value = edges_weights.get(
-                    (edge.from_vertex.id, edge.to_vertex.id), ""
-                )
-            edges_weights[(edge.from_vertex.id, edge.to_vertex.id)] = (
-                old_value + edge_weight
-            )
+                old_value = edges_weights.get((edge.from_vertex.id, edge.to_vertex.id), "")
+            edges_weights[(edge.from_vertex.id, edge.to_vertex.id)] = old_value + edge_weight
 
     graph: Graph = GraphHolder(edges_weights, is_directed)
     return graph
@@ -130,7 +111,7 @@ def get_embeddings(
     negative=5,
     epochs=5,
     edge_weight_property="weight",
-) -> mgp_Record(nodes=mgp_List[mgp_Vertex], embeddings=mgp_List[mgp_List[mgp_Number]]):
+) -> mgp_Record:
     """
     Function to get node embeddings. Uses gensim.models.Word2Vec params.
 
@@ -176,9 +157,7 @@ def get_embeddings(
     edge_weight_property: str,
         Property from graph in database from which you want to take edge weights.
     """
-    graph: Graph = get_graph_memgraph_ctx(
-        ctx=ctx, is_directed=is_directed, edge_weight_property=edge_weight_property
-    )
+    graph: Graph = get_graph_memgraph_ctx(ctx=ctx, is_directed=is_directed, edge_weight_property=edge_weight_property)
     embeddings = calculate_node_embeddings(
         graph=graph,
         p=p,
@@ -205,8 +184,8 @@ def get_embeddings(
         nodes_result.append(ctx.graph.get_vertex_by_id(node_id))
         embeddings_result.append(embeddings.get(node_id, False))
     # TODO (antoniofilipovic): when api becomes available, change to return list of records
-    _return_value = mgp_Record(nodes=nodes_result, embeddings=embeddings_result)
-    return _return_value
+    computed_return_value = mgp_Record(nodes=nodes_result, embeddings=embeddings_result)
+    return computed_return_value
 
 
 @mgp_write_proc
@@ -229,7 +208,7 @@ def set_embeddings(
     negative=5,
     epochs=5,
     edge_weight_property="weight",
-) -> mgp_Record(nodes=mgp_List[mgp_Vertex], embeddings=mgp_List[mgp_List[mgp_Number]]):
+) -> mgp_Record:
     """
     Function to get node embeddings. Uses gensim.models.Word2Vec params.
 
@@ -277,9 +256,7 @@ def set_embeddings(
     edge_weight_property: str,
         Property from graph in database from which you want to take edge weights.
     """
-    graph: Graph = get_graph_memgraph_ctx(
-        ctx=ctx, is_directed=is_directed, edge_weight_property=edge_weight_property
-    )
+    graph: Graph = get_graph_memgraph_ctx(ctx=ctx, is_directed=is_directed, edge_weight_property=edge_weight_property)
     embeddings = calculate_node_embeddings(
         graph=graph,
         p=p,
@@ -310,27 +287,22 @@ def set_embeddings(
         nodes_result.append(ctx.graph.get_vertex_by_id(node_id))
         embeddings_result.append(embeddings.get(node_id, False))
     # TODO (antoniofilipovic): when api becomes available, change to return list of records
-    _return_value = mgp_Record(nodes=nodes_result, embeddings=embeddings_result)
-    return _return_value
+    computed_return_value = mgp_Record(nodes=nodes_result, embeddings=embeddings_result)
+    return computed_return_value
 
 
 @mgp_read_proc
-def help() -> mgp_Record(name=str, value=str):
+def help() -> list[mgp_Record]:
     """Shows manual page for node2vec"""
     records = []
 
     def make_records(name, doc):
-        _return_value = (
-            mgp_Record(name=n, value=v)
-            for n, v in zip(
-                chain([name], repeat("")), cleandoc(doc).splitlines(), strict=False
-            )
+        computed_return_value = (
+            mgp_Record(name=n, value=v) for n, v in zip(chain([name], repeat("")), cleandoc(doc).splitlines(), strict=False)
         )
-        return _return_value
+        return computed_return_value
 
     for func in (help, get_embeddings):
-        records.extend(
-            make_records("Procedure '{}'".format(func.__name__), func.__doc__)
-        )
+        records.extend(make_records("Procedure '{}'".format(func.__name__), func.__doc__))
 
     return records

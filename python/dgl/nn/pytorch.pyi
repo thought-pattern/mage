@@ -1,0 +1,9 @@
+"""Static contract for DGL PyTorch layers."""
+
+from typing import Any as Dynamic
+from torch import nn as torch_nn
+
+class GATConv(torch_nn.Module):
+    def __init__(self, *args: Dynamic, **kwargs: Dynamic) -> None: ...
+    def __call__(self, *args: Dynamic, **kwargs: Dynamic) -> Dynamic: ...
+    def __getattr__(self, name: str) -> Dynamic: ...

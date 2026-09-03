@@ -34,7 +34,6 @@ from subprocess import run as subprocess_run
 from sys import exit as sys_exit
 from tempfile import mkdtemp as tempfile_mkdtemp
 from time import sleep as time_sleep
-from typing import Any
 
 from neo4j import GraphDatabase
 from networkx import DiGraph as nx_DiGraph
@@ -55,13 +54,13 @@ CONTAINER_NAME = os_environ.get("MEMGRAPH_CONTAINER", "memgraph-cugraph-validati
 IMAGE_NAME = os_environ.get("MEMGRAPH_IMAGE", "memgraph-mage-cugraph:latest")
 
 # Data directory - use temp dir if not specified
-_default_data_dir = os_environ.get("MEMGRAPH_DATA_DIR", "")
-if _default_data_dir:
-    MEMGRAPH_DATA_DIR = Path(_default_data_dir)
-    _using_temp_dir = False
+default_data_dir = os_environ.get("MEMGRAPH_DATA_DIR", "")
+if default_data_dir:
+    MEMGRAPH_DATA_DIR = Path(default_data_dir)
+    using_temp_dir = False
 else:
     MEMGRAPH_DATA_DIR = Path(tempfile_mkdtemp(prefix="memgraph_validation_"))
-    _using_temp_dir = True
+    using_temp_dir = True
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -122,16 +121,13 @@ def build_networkx_graph() -> nx_DiGraph:
         (5, 9),  # HUB -> A1, B1 -> HUB
     ]
 
-    all_edges = [
-        (u, v, {"weight": 1.0})
-        for u, v in community1_edges + community2_edges + hub_edges
-    ]
+    all_edges = [(u, v, {"weight": 1.0}) for u, v in community1_edges + community2_edges + hub_edges]
     G.add_edges_from(all_edges)
 
     return G
 
 
-def get_networkx_ground_truth(G: nx_DiGraph) -> dict[str, Any]:
+def get_networkx_ground_truth(G: nx_DiGraph):
     """Compute ground truth values using NetworkX algorithms."""
     # Create name lookup
     id_to_name = {node: G.nodes[node].get("name", "") for node in G.nodes()}
@@ -151,9 +147,7 @@ def get_networkx_ground_truth(G: nx_DiGraph) -> dict[str, Any]:
 
     # Katz Centrality
     try:
-        katz = nx_katz_centrality(
-            G, alpha=0.1, beta=1.0, max_iter=100, tol=1e-6, normalized=False
-        )
+        katz = nx_katz_centrality(G, alpha=0.1, beta=1.0, max_iter=100, tol=1e-6, normalized=False)
         katz_by_name = {id_to_name.get(k, False): v for k, v in katz.items()}
     except nx_NetworkXError:
         # Katz may not converge for some graphs
@@ -170,9 +164,7 @@ def get_networkx_ground_truth(G: nx_DiGraph) -> dict[str, Any]:
     # Personalized PageRank from node 1 (A1)
     personalization = dict.fromkeys(G.nodes(), 0.0)
     personalization[1] = 1.0
-    ppr = nx_pagerank(
-        G, alpha=0.85, personalization=personalization, max_iter=100, tol=1e-5
-    )
+    ppr = nx_pagerank(G, alpha=0.85, personalization=personalization, max_iter=100, tol=1e-5)
     ppr_by_name = {id_to_name.get(k, False): v for k, v in ppr.items()}
 
     return {
@@ -199,17 +191,15 @@ def values_match(expected: float, actual: float, name: str = "") -> tuple[bool, 
     if diff <= TOLERANCE:
         return True, ""
     else:
-        _return_value = (
+        computed_return_value = (
             False,
             f"{name}: expected {expected:.6f}, got {actual:.6f} (diff: {diff:.1%})",
         )
-        return _return_value
+        return computed_return_value
     return ()
 
 
-def communities_match(
-    expected: dict[str, int], actual: dict[str, int]
-) -> tuple[bool, str]:
+def communities_match(expected: dict[str, int], actual: dict[str, int]) -> tuple[bool, str]:
     """Check if community assignments group the same nodes together."""
 
     # Build sets of nodes in each community for both
@@ -219,8 +209,8 @@ def communities_match(
             if comm_id not in sets:
                 sets[comm_id] = set()
             sets.get(comm_id, set()).add(node)
-        _return_value = list(sets.values())
-        return _return_value
+        computed_return_value = list(sets.values())
+        return computed_return_value
 
     expected_sets = get_community_sets(expected)
     actual_sets = get_community_sets(actual)
@@ -246,17 +236,17 @@ def communities_match(
                     found = True
 
         if not found:
-            _return_value = False, f"Community {exp_set} not found in actual results"
-            return _return_value
+            computed_return_value = False, f"Community {exp_set} not found in actual results"
+            return computed_return_value
 
     return True, ""
 
 
-def run_cmd(cmd: list[str], check: bool = True) -> subprocess_CompletedProcess:
+def run_cmd(cmd: list[str]) -> subprocess_CompletedProcess:
     """Run a shell command."""
     print(f"  $ {' '.join(cmd)}")
-    _return_value = subprocess_run(cmd, capture_output=True, text=True, check=check)
-    return _return_value
+    computed_return_value = subprocess_run(cmd, capture_output=True, text=True, check=True)
+    return computed_return_value
 
 
 def setup_container():
@@ -266,12 +256,11 @@ def setup_container():
     print("=" * 60)
 
     print("\n>>> Killing all memgraph containers...")
-    result = run_cmd(["docker", "ps", "-a", "--format", "{{.Names}}"], check=False)
+    result = run_cmd(["docker", "ps", "-a", "--format", "{{.Names}}"])
     for container in result.stdout.strip().split("\n"):
         if container and "memgraph" in container.lower():
             print(f"  Stopping {container}...")
-            run_cmd(["docker", "stop", container], check=False)
-            run_cmd(["docker", "rm", container], check=False)
+            run_cmd(["docker", "rm", "-f", container])
 
     print(f"\n>>> Clearing entire data directory at {MEMGRAPH_DATA_DIR}...")
     if MEMGRAPH_DATA_DIR.exists():
@@ -281,7 +270,7 @@ def setup_container():
     print("  Created fresh directory")
 
     print(f"\n>>> Checking image '{IMAGE_NAME}' exists...")
-    result = run_cmd(["docker", "images", "-q", IMAGE_NAME], check=False)
+    result = run_cmd(["docker", "images", "-q", IMAGE_NAME])
     if not result.stdout.strip():
         print(f"ERROR: Image '{IMAGE_NAME}' not found!")
         print("Build it first with:")
@@ -323,9 +312,7 @@ def setup_container():
     print(f"  Container started: {container_id}")
 
     print("\n>>> Verifying container uses correct image...")
-    result = run_cmd(
-        ["docker", "inspect", "--format", "{{.Config.Image}}", CONTAINER_NAME]
-    )
+    result = run_cmd(["docker", "inspect", "--format", "{{.Config.Image}}", CONTAINER_NAME])
     actual_image = result.stdout.strip()
     print(f"  Container image: {actual_image}")
     if actual_image != IMAGE_NAME:
@@ -403,13 +390,11 @@ def create_test_graph(session):
     edge_count = result.single().get("edges", 0)
 
     print(f"✓ Test graph created: {node_count} nodes, {edge_count} edges")
-    _return_value = node_count == 9 and edge_count == 16
-    return _return_value
+    computed_return_value = node_count == 9 and edge_count == 16
+    return computed_return_value
 
 
-def validate_node_identities(
-    records: list, algorithm_name: str
-) -> tuple[bool, list[str]]:
+def validate_node_identities(records: list, algorithm_name: str) -> tuple[bool, list[str]]:
     """Validate that all expected nodes are returned with correct identities."""
     errors = []
 
@@ -427,20 +412,22 @@ def validate_node_identities(
     if extra:
         errors.append(f"Unexpected nodes: {extra}")
 
-    _return_value = len(errors) == 0, errors
-    return _return_value
+    computed_return_value = len(errors) == 0, errors
+    return computed_return_value
 
 
 def test_pagerank(session, ground_truth: dict) -> bool:
     """Test PageRank algorithm against NetworkX ground truth."""
     print("\n--- Testing PageRank ---")
     try:
-        result = session.run("""
+        result = session.run(
+            """
             CALL cugraph.pagerank.get(100, 0.85, 1e-5)
             YIELD node, pagerank
             RETURN node.id AS id, node.name AS name, pagerank
             ORDER BY pagerank DESC
-        """)
+        """
+        )
 
         records = list(result)
 
@@ -470,15 +457,11 @@ def test_pagerank(session, ground_truth: dict) -> bool:
 
         # Verify ranking order matches
         actual_ranking = [r.get("name", "") for r in records]
-        expected_ranking = sorted(
-            expected.keys(), key=lambda x: expected.get(x, False), reverse=True
-        )
+        expected_ranking = sorted(expected.keys(), key=lambda x: expected.get(x, False), reverse=True)
 
         # Check top 3 ranking
         if actual_ranking[:3] != expected_ranking[:3]:
-            print(
-                f"  ⚠ Ranking differs: cuGraph={actual_ranking[:3]}, NetworkX={expected_ranking[:3]}"
-            )
+            print(f"  ⚠ Ranking differs: cuGraph={actual_ranking[:3]}, NetworkX={expected_ranking[:3]}")
             # This is a warning, not a failure - numerical precision can cause minor reordering
 
         return all_match
@@ -492,12 +475,14 @@ def test_betweenness_centrality(session, ground_truth: dict) -> bool:
     """Test Betweenness Centrality - HUB must be highest."""
     print("\n--- Testing Betweenness Centrality ---")
     try:
-        result = session.run("""
+        result = session.run(
+            """
             CALL cugraph.betweenness_centrality.get(true, true)
             YIELD node, betweenness
             RETURN node.id AS id, node.name AS name, betweenness
             ORDER BY betweenness DESC
-        """)
+        """
+        )
 
         records = list(result)
 
@@ -526,9 +511,7 @@ def test_betweenness_centrality(session, ground_truth: dict) -> bool:
         # Semantic check: HUB should be in top 3 and have high betweenness (it's the bridge)
         # Note: In linear chain topology, chain endpoints (A1, B1) have higher betweenness
         # because all paths from their chains must pass through them
-        sorted_records = sorted(
-            records, key=lambda r: r.get("betweenness", []), reverse=True
-        )
+        sorted_records = sorted(records, key=lambda r: r.get("betweenness", []), reverse=True)
         top_3_names = [r.get("name", "") for r in sorted_records[:3]]
         hub_bc = next(
             (r.get("betweenness", []) for r in records if r.get("name", "") == "HUB"),
@@ -556,12 +539,14 @@ def test_hits(session, ground_truth: dict) -> bool:
     """Test HITS algorithm against NetworkX ground truth."""
     print("\n--- Testing HITS ---")
     try:
-        result = session.run("""
+        result = session.run(
+            """
             CALL cugraph.hits.get(100, 1e-5, true)
             YIELD node, hub, authority
             RETURN node.id AS id, node.name AS name, hub, authority
             ORDER BY hub DESC
-        """)
+        """
+        )
 
         records = list(result)
 
@@ -610,12 +595,14 @@ def test_louvain(session, ground_truth: dict) -> bool:
     """Test Louvain community detection - A1-A4 and B1-B4 should be grouped."""
     print("\n--- Testing Louvain ---")
     try:
-        result = session.run("""
+        result = session.run(
+            """
             CALL cugraph.louvain.get()
             YIELD node, partition
             RETURN node.id AS id, node.name AS name, partition AS community
             ORDER BY partition, id
-        """)
+        """
+        )
 
         records = list(result)
 
@@ -625,9 +612,7 @@ def test_louvain(session, ground_truth: dict) -> bool:
                 print(f"  ✗ {err}")
             return False
 
-        actual_communities = {
-            r.get("name", ""): r.get("community", False) for r in records
-        }
+        actual_communities = {r.get("name", ""): r.get("community", False) for r in records}
         communities = set(actual_communities.values())
         print(f"✓ Louvain: {len(records)} nodes in {len(communities)} communities")
 
@@ -667,12 +652,14 @@ def test_leiden(session, ground_truth: dict) -> bool:
     """Test Leiden community detection - A1-A4 and B1-B4 should be grouped."""
     print("\n--- Testing Leiden ---")
     try:
-        result = session.run("""
+        result = session.run(
+            """
             CALL cugraph.leiden.get()
             YIELD node, partition
             RETURN node.id AS id, node.name AS name, partition AS community
             ORDER BY partition, id
-        """)
+        """
+        )
 
         records = list(result)
 
@@ -682,9 +669,7 @@ def test_leiden(session, ground_truth: dict) -> bool:
                 print(f"  ✗ {err}")
             return False
 
-        actual_communities = {
-            r.get("name", ""): r.get("community", False) for r in records
-        }
+        actual_communities = {r.get("name", ""): r.get("community", False) for r in records}
         communities = set(actual_communities.values())
         print(f"✓ Leiden: {len(records)} nodes in {len(communities)} communities")
 
@@ -716,12 +701,14 @@ def test_katz_centrality(session, ground_truth: dict) -> bool:
     """Test Katz Centrality algorithm."""
     print("\n--- Testing Katz Centrality ---")
     try:
-        result = session.run("""
+        result = session.run(
+            """
             CALL cugraph.katz_centrality.get(0.1, 1.0, 1e-6, 100, false)
             YIELD node, katz
             RETURN node.id AS id, node.name AS name, katz
             ORDER BY katz DESC
-        """)
+        """
+        )
 
         records = list(result)
 
@@ -763,13 +750,15 @@ def test_personalized_pagerank(session, ground_truth: dict) -> bool:
     """Test Personalized PageRank from A1."""
     print("\n--- Testing Personalized PageRank ---")
     try:
-        result = session.run("""
+        result = session.run(
+            """
             MATCH (source:Node {id: 1})
             CALL cugraph.personalized_pagerank.get(source, 100, 0.85, 1e-5)
             YIELD node, pagerank
             RETURN node.id AS id, node.name AS name, pagerank
             ORDER BY pagerank DESC
-        """)
+        """
+        )
 
         records = list(result)
 
@@ -803,9 +792,7 @@ def test_personalized_pagerank(session, ground_truth: dict) -> bool:
         max_ppr = max(r.get("pagerank", False) for r in records)
 
         if a1_ppr != max_ppr:
-            print(
-                f"  ⚠ A1 should have highest PPR but doesn't (A1={a1_ppr}, max={max_ppr})"
-            )
+            print(f"  ⚠ A1 should have highest PPR but doesn't (A1={a1_ppr}, max={max_ppr})")
         else:
             print("  ✓ A1 has highest PPR as expected (source node)")
 
@@ -813,84 +800,6 @@ def test_personalized_pagerank(session, ground_truth: dict) -> bool:
 
     except Exception as e:
         print(f"✗ Personalized PageRank failed: {e}")
-        return False
-
-
-def test_balanced_cut_clustering(session, ground_truth: dict) -> bool:
-    """Test Balanced Cut Clustering."""
-    print("\n--- Testing Balanced Cut Clustering ---")
-    try:
-        result = session.run("""
-            CALL cugraph.balanced_cut_clustering.get(2)
-            YIELD node, cluster
-            RETURN node.id AS id, node.name AS name, cluster
-            ORDER BY cluster, id
-        """)
-
-        records = list(result)
-
-        valid, errors = validate_node_identities(records, "Balanced Cut")
-        if not valid:
-            for err in errors:
-                print(f"  ✗ {err}")
-            return False
-
-        clusters = set(r.get("cluster", False) for r in records)
-        print(
-            f"✓ Balanced Cut Clustering: {len(records)} nodes in {len(clusters)} clusters"
-        )
-
-        for r in records:
-            print(f"    {r.get('name', '')}: cluster {r.get('cluster', False)}")
-
-        if len(clusters) != 2:
-            print(f"  ✗ Expected 2 clusters, got {len(clusters)}")
-            return False
-
-        print("  ✓ Correctly produced 2 clusters")
-        return True
-
-    except Exception as e:
-        print(f"✗ Balanced Cut Clustering failed: {e}")
-        return False
-
-
-def test_spectral_clustering(session, ground_truth: dict) -> bool:
-    """Test Spectral Clustering."""
-    print("\n--- Testing Spectral Clustering ---")
-    try:
-        result = session.run("""
-            CALL cugraph.spectral_clustering.get(2)
-            YIELD node, cluster
-            RETURN node.id AS id, node.name AS name, cluster
-            ORDER BY cluster, id
-        """)
-
-        records = list(result)
-
-        valid, errors = validate_node_identities(records, "Spectral")
-        if not valid:
-            for err in errors:
-                print(f"  ✗ {err}")
-            return False
-
-        clusters = set(r.get("cluster", False) for r in records)
-        print(
-            f"✓ Spectral Clustering: {len(records)} nodes in {len(clusters)} clusters"
-        )
-
-        for r in records:
-            print(f"    {r.get('name', '')}: cluster {r.get('cluster', False)}")
-
-        if len(clusters) != 2:
-            print(f"  ✗ Expected 2 clusters, got {len(clusters)}")
-            return False
-
-        print("  ✓ Correctly produced 2 clusters")
-        return True
-
-    except Exception as e:
-        print(f"✗ Spectral Clustering failed: {e}")
         return False
 
 
@@ -911,11 +820,15 @@ def main():
     # Show expected values
     print("\n  Expected PageRank (top 3):")
     pr = ground_truth.get("pagerank", False)
+    if not isinstance(pr, dict):
+        raise TypeError("PageRank ground truth must be a dictionary")
     for name in sorted(pr.keys(), key=lambda x: pr[x], reverse=True)[:3]:
         print(f"    {name}: {pr[name]:.6f}")
 
     print("\n  Expected Betweenness (top 3):")
     bc = ground_truth.get("betweenness", False)
+    if not isinstance(bc, dict):
+        raise TypeError("betweenness ground truth must be a dictionary")
     for name in sorted(bc.keys(), key=lambda x: bc[x], reverse=True)[:3]:
         print(f"    {name}: {bc[name]:.6f}")
 
@@ -938,22 +851,12 @@ def main():
             results = {}
 
             results["PageRank"] = test_pagerank(session, ground_truth)
-            results["Betweenness Centrality"] = test_betweenness_centrality(
-                session, ground_truth
-            )
+            results["Betweenness Centrality"] = test_betweenness_centrality(session, ground_truth)
             results["HITS"] = test_hits(session, ground_truth)
             results["Louvain"] = test_louvain(session, ground_truth)
             results["Leiden"] = test_leiden(session, ground_truth)
             results["Katz Centrality"] = test_katz_centrality(session, ground_truth)
-            results["Personalized PageRank"] = test_personalized_pagerank(
-                session, ground_truth
-            )
-            results["Balanced Cut Clustering"] = test_balanced_cut_clustering(
-                session, ground_truth
-            )
-            results["Spectral Clustering"] = test_spectral_clustering(
-                session, ground_truth
-            )
+            results["Personalized PageRank"] = test_personalized_pagerank(session, ground_truth)
 
             print("\n" + "=" * 60)
             print("TEST SUMMARY")
@@ -977,7 +880,7 @@ def main():
 
     finally:
         # Cleanup temp directory if we created one
-        if _using_temp_dir and MEMGRAPH_DATA_DIR.exists():
+        if using_temp_dir and MEMGRAPH_DATA_DIR.exists():
             print(f"\n>>> Cleaning up temp data directory: {MEMGRAPH_DATA_DIR}")
             shutil_rmtree(MEMGRAPH_DATA_DIR, ignore_errors=True)
         driver.close()

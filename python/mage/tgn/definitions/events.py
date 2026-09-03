@@ -1,7 +1,5 @@
 """Utilities for events."""
 
-from typing import Dict, List
-
 from numpy import ndarray as np_ndarray
 
 
@@ -12,10 +10,8 @@ class Event:
         self.timestamp = timestamp
 
     def __str__(self):
-        _return_value = "{source},{timestamp}".format(
-            source=self.source, timestamp=self.timestamp
-        )
-        return _return_value
+        computed_return_value = "{source},{timestamp}".format(source=self.source, timestamp=self.timestamp)
+        return computed_return_value
 
 
 class NodeEvent(Event):
@@ -23,10 +19,8 @@ class NodeEvent(Event):
         super(NodeEvent, self).__init__(source, timestamp)
 
     def __str__(self):
-        _return_value = "{source},{timestamp}".format(
-            source=self.source, timestamp=self.timestamp
-        )
-        return _return_value
+        computed_return_value = "{source},{timestamp}".format(source=self.source, timestamp=self.timestamp)
+        return computed_return_value
 
 
 class InteractionEvent(Event):
@@ -36,10 +30,8 @@ class InteractionEvent(Event):
         self.edge_idx = edge_idx
 
     def __str__(self):
-        _return_value = "{source},{timestamp}".format(
-            source=self.source, timestamp=self.timestamp
-        )
-        return _return_value
+        computed_return_value = "{source},{timestamp}".format(source=self.source, timestamp=self.timestamp)
+        return computed_return_value
 
 
 def create_interaction_events(
@@ -47,11 +39,9 @@ def create_interaction_events(
     destinations: np_ndarray,
     timestamps: np_ndarray,
     edge_idxs: np_ndarray,
-) -> Dict[int, List[InteractionEvent]]:
+) -> dict[int, list[InteractionEvent]]:
     "Every event has two interaction events"
-    interaction_events: Dict[int, List[InteractionEvent]] = {
-        node: [] for node in set(sources).union(set(destinations))
-    }
+    interaction_events: dict[int, list[InteractionEvent]] = {node: [] for node in set(sources).union(set(destinations))}
     for i in range(len(sources)):
         interaction_events.get(sources[i], []).append(
             InteractionEvent(

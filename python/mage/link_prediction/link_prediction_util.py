@@ -2,7 +2,6 @@
 
 from collections import defaultdict
 from random import seed as random_seed
-from typing import Callable, Dict, List, Tuple
 
 from dgl import dataloading as dgl_dataloading
 from dgl import graph as dgl_graph
@@ -29,7 +28,6 @@ from torch import ones as torch_ones
 from torch import optim as torch_optim
 from torch import save as torch_save
 from torch import sigmoid as torch_sigmoid
-from torch import tensor as torch_tensor
 from torch import zeros as torch_zeros
 
 from mage.link_prediction.constants import (
@@ -40,12 +38,8 @@ from mage.link_prediction.constants import (
 
 # Function for obtaining reverse_relation naming given original relation
 def reverse_relation(relation):
-    _return_value = (
-        "rev_" + relation
-        if isinstance(relation, str)
-        else (relation[2], "rev_" + relation[1], relation[0])
-    )
-    return _return_value
+    computed_return_value = "rev_" + relation if isinstance(relation, str) else (relation[2], "rev_" + relation[1], relation[0])
+    return computed_return_value
 
 
 def add_self_loop(g: dgl_heterograph, self_loop_edge_type: str) -> dgl_heterograph:
@@ -66,16 +60,12 @@ def add_self_loop(g: dgl_heterograph, self_loop_edge_type: str) -> dgl_heterogra
     device = g.device
     idtype = g.idtype
     for ntype in g.ntypes:
-        nids = torch_arange(
-            start=0, end=g.num_nodes(ntype), step=1, dtype=idtype, device=device
-        )
+        nids = torch_arange(start=0, end=g.num_nodes(ntype), step=1, dtype=idtype, device=device)
         data_dict[(ntype, self_loop_edge_type, ntype)] = (nids, nids)
         num_nodes_dict[ntype] = g.num_nodes(ntype)
 
-    _return_value = dgl_heterograph(
-        data_dict=data_dict, num_nodes_dict=num_nodes_dict, idtype=idtype, device=device
-    )
-    return _return_value
+    computed_return_value = dgl_heterograph(data_dict=data_dict, num_nodes_dict=num_nodes_dict, idtype=idtype, device=device)
+    return computed_return_value
 
 
 def proj_0(graph: dgl_graph, node_features_property: str) -> bool:
@@ -92,16 +82,11 @@ def proj_0(graph: dgl_graph, node_features_property: str) -> bool:
     for node_type in graph.ntypes:
         p1d = (
             0,
-            ftr_size_max
-            - graph.nodes[node_type]
-            .data.get(node_features_property, torch_zeros((0, 0)))
-            .shape[1],
+            ftr_size_max - graph.nodes[node_type].data.get(node_features_property, torch_zeros((0, 0))).shape[1],
         )  # Padding left if 0 and padding right is dim_goal - arr.shape[1]
 
         graph.nodes[node_type].data[node_features_property] = torch_nn.functional.pad(
-            graph.nodes[node_type].data.get(
-                node_features_property, torch_zeros((0, 0))
-            ),
+            graph.nodes[node_type].data.get(node_features_property, torch_zeros((0, 0))),
             p1d,
             mode="constant",
             value=0,
@@ -111,7 +96,7 @@ def proj_0(graph: dgl_graph, node_features_property: str) -> bool:
 
 def preprocess(
     graph: dgl_graph, split_ratio: float, target_relation: str, device: torch_device
-) -> Tuple[dgl_graph, dgl_graph, dgl_graph, dgl_graph, dgl_graph]:
+) -> tuple[dict[str, torch_Tensor], dict[str, torch_Tensor]]:
     (
         "Preprocess method splits dataset in training and validation set by creating necessary masks "  # Continue literal.
         "for distinguishing those two.\n        This method is also used for setting numpy and torch r"  # Continue literal.
@@ -134,9 +119,7 @@ def preprocess(
     # Get edge IDS
     edge_type_u, _ = graph.edges(etype=target_relation)
     graph_edges_len = len(edge_type_u)
-    eids = np_arange(
-        graph_edges_len
-    )  # get all edge ids from number of edges and create a numpy vector from it.
+    eids = np_arange(graph_edges_len)  # get all edge ids from number of edges and create a numpy vector from it.
     eids = np_random.permutation(eids)  # randomly permute edges
     eids = torch_from_numpy(eids).to(device=device)
 
@@ -159,7 +142,7 @@ def preprocess(
     return train_eid_dict, val_eid_dict
 
 
-def classify(probs: torch_tensor, threshold: float) -> torch_tensor:
+def classify(probs: torch_Tensor, threshold: float) -> torch_Tensor:
     """Classifies based on probabilities of the class with the label one.
 
     Args:
@@ -169,19 +152,19 @@ def classify(probs: torch_tensor, threshold: float) -> torch_tensor:
         torch.tensor: classes
     """
 
-    _return_value = probs > threshold
-    return _return_value
+    computed_return_value = probs > threshold
+    return computed_return_value
 
 
 def evaluate(
-    metrics: List[str],
-    labels: torch_tensor,
-    probs: torch_tensor,
-    result: Dict[str, float],
+    metrics: list[str],
+    labels: torch_Tensor,
+    probs: torch_Tensor,
+    result: dict[str, float],
     threshold: float,
     epoch: int,
     loss: float,
-    operator: Callable[[float, float], float],
+    operator,
 ) -> bool:
     """Returns all metrics specified in metrics list based on labels and predicted classes. In-place modification of dictionary.
 
@@ -201,58 +184,34 @@ def evaluate(
     tn, fp, fn, tp = confusion_matrix(labels, classes).ravel()
     for metric_name in metrics:
         if metric_name == Metrics.ACCURACY:
-            result[Metrics.ACCURACY] = operator(
-                result.get(Metrics.ACCURACY, False), accuracy_score(labels, classes)
-            )
+            result[Metrics.ACCURACY] = operator(result.get(Metrics.ACCURACY, False), accuracy_score(labels, classes))
         elif metric_name == Metrics.AUC_SCORE:
             result[Metrics.AUC_SCORE] = operator(
                 result.get(Metrics.AUC_SCORE, False),
                 roc_auc_score(labels, probs.detach()),
             )
         elif metric_name == Metrics.F1:
-            result[Metrics.F1] = operator(
-                result.get(Metrics.F1, False), f1_score(labels, classes)
-            )
+            result[Metrics.F1] = operator(result.get(Metrics.F1, False), f1_score(labels, classes))
         elif metric_name == Metrics.PRECISION:
-            result[Metrics.PRECISION] = operator(
-                result.get(Metrics.PRECISION, False), precision_score(labels, classes)
-            )
+            result[Metrics.PRECISION] = operator(result.get(Metrics.PRECISION, False), precision_score(labels, classes))
         elif metric_name == Metrics.RECALL:
-            result[Metrics.RECALL] = operator(
-                result.get(Metrics.RECALL, False), recall_score(labels, classes)
-            )
+            result[Metrics.RECALL] = operator(result.get(Metrics.RECALL, False), recall_score(labels, classes))
         elif metric_name == Metrics.POS_PRED_EXAMPLES:
-            result[Metrics.POS_PRED_EXAMPLES] = operator(
-                result.get(Metrics.POS_PRED_EXAMPLES, False), classes.sum().item()
-            )
+            result[Metrics.POS_PRED_EXAMPLES] = operator(result.get(Metrics.POS_PRED_EXAMPLES, False), classes.sum().item())
         elif metric_name == Metrics.NEG_PRED_EXAMPLES:
-            result[Metrics.NEG_PRED_EXAMPLES] = operator(
-                result.get(Metrics.NEG_PRED_EXAMPLES, False), classes.sum().item()
-            )
+            result[Metrics.NEG_PRED_EXAMPLES] = operator(result.get(Metrics.NEG_PRED_EXAMPLES, False), classes.sum().item())
         elif metric_name == Metrics.POS_EXAMPLES:
-            result[Metrics.POS_EXAMPLES] = operator(
-                result.get(Metrics.POS_EXAMPLES, False), (labels == 1).sum().item()
-            )
+            result[Metrics.POS_EXAMPLES] = operator(result.get(Metrics.POS_EXAMPLES, False), (labels == 1).sum().item())
         elif metric_name == Metrics.NEG_EXAMPLES:
-            result[Metrics.NEG_EXAMPLES] = operator(
-                result.get(Metrics.NEG_EXAMPLES, False), (labels == 0).sum().item()
-            )
+            result[Metrics.NEG_EXAMPLES] = operator(result.get(Metrics.NEG_EXAMPLES, False), (labels == 0).sum().item())
         elif metric_name == Metrics.TRUE_POSITIVES:
-            result[Metrics.TRUE_POSITIVES] = operator(
-                result.get(Metrics.TRUE_POSITIVES, False), tp
-            )
+            result[Metrics.TRUE_POSITIVES] = operator(result.get(Metrics.TRUE_POSITIVES, False), tp)
         elif metric_name == Metrics.FALSE_POSITIVES:
-            result[Metrics.FALSE_POSITIVES] = operator(
-                result.get(Metrics.FALSE_POSITIVES, False), fp
-            )
+            result[Metrics.FALSE_POSITIVES] = operator(result.get(Metrics.FALSE_POSITIVES, False), fp)
         elif metric_name == Metrics.TRUE_NEGATIVES:
-            result[Metrics.TRUE_NEGATIVES] = operator(
-                result.get(Metrics.TRUE_NEGATIVES, False), tn
-            )
+            result[Metrics.TRUE_NEGATIVES] = operator(result.get(Metrics.TRUE_NEGATIVES, False), tn)
         elif metric_name == Metrics.FALSE_NEGATIVES:
-            result[Metrics.FALSE_NEGATIVES] = operator(
-                result.get(Metrics.FALSE_NEGATIVES, False), fn
-            )
+            result[Metrics.FALSE_NEGATIVES] = operator(result.get(Metrics.FALSE_NEGATIVES, False), fn)
     return False
 
 
@@ -262,13 +221,13 @@ def batch_forward_pass(
     loss: torch_nn.Module,
     m: torch_nn.Module,
     target_relation: str,
-    input_features: Dict[str, torch_Tensor],
+    input_features: dict[str, torch_Tensor],
     pos_graph: dgl_graph,
     neg_graph: dgl_graph,
-    blocks: List[dgl_graph],
+    blocks: list[dgl_graph],
     num_neg_per_pos_edge: int,
     device: torch_device,
-) -> Tuple[torch_Tensor, torch_Tensor, torch_nn.Module]:
+) -> tuple[torch_Tensor, torch_Tensor, torch_Tensor]:
     (
         "Performs one forward batch pass\n\n    Args:\n        model (torch.nn.Module): A reference to t"  # Continue literal.
         "he model that needs to be trained.\n        predictor (torch.nn.Module): A reference to the e"  # Continue literal.
@@ -288,9 +247,7 @@ def batch_forward_pass(
     # Deal with edge scores
     pos_score = predictor.forward(pos_graph, outputs, target_relation=target_relation)
     neg_score = predictor.forward(neg_graph, outputs, target_relation=target_relation)
-    scores = torch_cat(
-        [pos_score, neg_score]
-    )  # concatenated positive and negative score
+    scores = torch_cat([pos_score, neg_score])  # concatenated positive and negative score
     # probabilities
     probs = m(scores)
     labels = torch_cat(
@@ -320,7 +277,7 @@ def inner_train(
     node_features_property: str,
     console_log_freq: int,
     checkpoint_freq: int,
-    metrics: List[str],
+    metrics: list[str],
     tr_acc_patience: int,
     context_save_dir: str,
     num_neg_per_pos_edge: int,
@@ -328,7 +285,7 @@ def inner_train(
     batch_size: int,
     sampling_workers: int,
     device: torch_device,
-) -> Tuple[List[Dict[str, float]], torch_nn.Module, torch_Tensor]:
+) -> tuple[list[dict[str, float]], list[dict[str, float]]]:
     (
         "Batch training method.\n\n    Args:\n        graph (dgl.graph): A reference to the original gra"  # Continue literal.
         "ph.\n        train_eid_dict (_type_): Mask that identifies training part of the graph. This i"  # Continue literal.
@@ -360,23 +317,16 @@ def inner_train(
     training_results, validation_results = [], []
 
     # First define all necessary samplers
-    negative_sampler = dgl_dataloading.negative_sampler.GlobalUniform(
-        k=num_neg_per_pos_edge, replace=False
-    )
+    negative_sampler = dgl_dataloading.negative_sampler.GlobalUniform(k=num_neg_per_pos_edge, replace=False)
     sampler = dgl_dataloading.MultiLayerFullNeighborSampler(
         num_layers=num_layers, output_device=device
     )  # gather messages from all node neighbors
 
     # Create reverse target relation
     reverse_target_relation = reverse_relation(target_relation)
-    if (
-        reverse_target_relation not in graph.etypes
-        and reverse_target_relation not in graph.canonical_etypes
-    ):
+    if reverse_target_relation not in graph.etypes and reverse_target_relation not in graph.canonical_etypes:
         # same source and destination node
-        sampler = dgl_dataloading.as_edge_prediction_sampler(
-            sampler, negative_sampler=negative_sampler, exclude="self"
-        )
+        sampler = dgl_dataloading.as_edge_prediction_sampler(sampler, negative_sampler=negative_sampler, exclude="self")
     else:
         reverse_etypes = {
             target_relation: reverse_target_relation,
@@ -425,16 +375,16 @@ def inner_train(
 
     # Define lambda functions for operating on dictionaries
     def add_(prior: float, later: float) -> float:
-        _return_value = prior + later
-        return _return_value
+        computed_return_value = prior + later
+        return computed_return_value
 
     def avg_(prior: float, size: float) -> float:
-        _return_value = prior / size
-        return _return_value
+        computed_return_value = prior / size
+        return computed_return_value
 
     def format_float(prior: float) -> float:
-        _return_value = round(prior, 3)
-        return _return_value
+        computed_return_value = round(prior, 3)
+        return computed_return_value
 
     # Training
     max_val_acc, num_val_acc_drop = (
@@ -488,18 +438,12 @@ def inner_train(
         # Edit train results and evaluate on validation set
         if epoch % console_log_freq == 0:
             epoch_training_result = {
-                key: format_float(avg_(val, num_batches))
-                if key != Metrics.EPOCH
-                else val
+                key: format_float(avg_(val, num_batches)) if key != Metrics.EPOCH else val
                 for key, val in epoch_training_result.items()
             }
             training_results.append(epoch_training_result)
             # Check if training finished
-            if (
-                Metrics.ACCURACY in metrics
-                and epoch_training_result.get(Metrics.ACCURACY, 0.0) == 1.0
-                and epoch > 1
-            ):
+            if Metrics.ACCURACY in metrics and epoch_training_result.get(Metrics.ACCURACY, 0.0) == 1.0 and epoch > 1:
                 tr_finished = True
             # Evaluate on the validation set
             model.eval()
@@ -533,14 +477,10 @@ def inner_train(
                         add_,
                     )
                     num_batches += 1
-            if (
-                num_batches > 0
-            ):  # Because it is possible that user specified not to have a validation dataset
+            if num_batches > 0:  # Because it is possible that user specified not to have a validation dataset
                 # Average over batches
                 epoch_validation_result = {
-                    key: format_float(avg_(val, num_batches))
-                    if key != Metrics.EPOCH
-                    else val
+                    key: format_float(avg_(val, num_batches)) if key != Metrics.EPOCH else val
                     for key, val in epoch_validation_result.items()
                 }
                 validation_results.append(epoch_validation_result)
@@ -548,10 +488,7 @@ def inner_train(
                     Metrics.ACCURACY in metrics
                 ):  # If user doesn't want to have accuracy information, it cannot be checked for patience.
                     # Patience check
-                    if (
-                        epoch_validation_result.get(Metrics.ACCURACY, 0.0)
-                        <= max_val_acc
-                    ):
+                    if epoch_validation_result.get(Metrics.ACCURACY, 0.0) <= max_val_acc:
                         num_val_acc_drop += 1
                     else:
                         max_val_acc = epoch_validation_result.get(Metrics.ACCURACY, 0.0)
@@ -562,20 +499,18 @@ def inner_train(
 
         # Save the model if necessary
         if epoch % checkpoint_freq == 0:
-            _save_context(model, predictor, context_save_dir)
+            save_context(model, predictor, context_save_dir)
         # All examples learnt
         if tr_finished:
             break
 
     # Save model at the end of the training
-    _save_context(model, predictor, context_save_dir)
+    save_context(model, predictor, context_save_dir)
 
     return training_results, validation_results
 
 
-def _save_context(
-    model: torch_nn.Module, predictor: torch_nn.Module, context_save_dir: str
-):
+def save_context(model: torch_nn.Module, predictor: torch_nn.Module, context_save_dir: str):
     """Saves model and predictor to path.
 
     Args:
@@ -589,14 +524,14 @@ def _save_context(
 
 
 def inner_predict(
-    model: torch_nn.Module,
-    predictor: torch_nn.Module,
-    graph: dgl_graph,
+    model,
+    predictor,
+    graph,
     node_features_property: str,
     src_node: int,
     dest_node: int,
-    src_type=str,
-    dest_type=str,
+    src_type: str = "",
+    dest_type: str = "",
 ) -> float:
     (
         "Predicts edge scores for given graph. This method is called to obtain edge probability for e"  # Continue literal.
@@ -609,16 +544,13 @@ def inner_predict(
         "type (str): Type of the destination node.\n\n    Returns:\n        float: Edge score.\n"
     )
     graph_features = {
-        node_type: graph.nodes[node_type].data.get(
-            node_features_property, torch_zeros((0, 0))
-        )
-        for node_type in graph.ntypes
+        node_type: graph.nodes[node_type].data.get(node_features_property, torch_zeros((0, 0))) for node_type in graph.ntypes
     }
     with torch_no_grad():
         h = model.online_forward(graph, graph_features)
         src_embedding, dest_embedding = h[src_type][src_node], h[dest_type][dest_node]
         score = predictor.forward_pred(src_embedding, dest_embedding)
         prob = torch_sigmoid(score)
-        _return_value = prob.item()
-        return _return_value
+        computed_return_value = prob.item()
+        return computed_return_value
     return 0.0

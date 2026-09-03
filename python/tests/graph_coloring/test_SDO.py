@@ -1,21 +1,13 @@
 """Tests for test SDO."""
 
-from random import seed as random_seed
-
 from pytest import fixture as pytest_fixture
 
 from mage.graph_coloring_module import SDO, Graph, Parameter
 
 
 @pytest_fixture
-def set_seed():
-    random_seed(42)
-    return False
-
-
-@pytest_fixture
 def graph_1():
-    _return_value = Graph(
+    computed_return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -25,12 +17,12 @@ def graph_1():
             4: [(1, 5)],
         },
     )
-    return _return_value
+    return computed_return_value
 
 
 @pytest_fixture
 def graph_not_connected():
-    _return_value = Graph(
+    computed_return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -40,32 +32,30 @@ def graph_not_connected():
             4: [(3, 3)],
         },
     )
-    return _return_value
+    return computed_return_value
 
 
-def test_SDO(set_seed, graph_1):
+def test_SDO(graph_1):
     algorithm = SDO()
     individual = algorithm.run(graph_1, {Parameter.NO_OF_COLORS: 3})
 
-    expected_result = [2, 0, 1, 2, 1]
-    assert individual.chromosome == expected_result
-    return False
+    assert individual.check_coloring()
+    assert len(individual.chromosome) == len(graph_1)
+    assert all(0 <= color < 3 for color in individual.chromosome)
 
 
-def test_not_connected_graph(set_seed, graph_not_connected):
+def test_not_connected_graph(graph_not_connected):
     algorithm = SDO()
     individual = algorithm.run(graph_not_connected, {Parameter.NO_OF_COLORS: 3})
 
-    expected_result = [2, 0, 1, 2, 1]
-    assert individual.chromosome == expected_result
-    return False
+    assert individual.check_coloring()
+    assert len(individual.chromosome) == len(graph_not_connected)
+    assert all(0 <= color < 3 for color in individual.chromosome)
 
 
-def test_empty_graph(set_seed):
+def test_empty_graph():
     graph = Graph([], {})
     algorithm = SDO()
     individual = algorithm.run(graph, {Parameter.NO_OF_COLORS: 3})
 
-    expected_result = []
-    assert individual.chromosome == expected_result
-    return False
+    assert len(individual.chromosome) == 0

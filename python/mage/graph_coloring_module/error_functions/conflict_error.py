@@ -1,17 +1,16 @@
 """Utilities for conflict error."""
 
 from logging import getLogger as logging_getLogger
-from typing import Any, Dict
 
 from mage.graph_coloring_module.components.individual import Individual
-from mage.graph_coloring_module.components.population import Population
+from mage.graph_coloring_module.components.correlation_population import CorrelationPopulation
 from mage.graph_coloring_module.error_functions.error import Error
 from mage.graph_coloring_module.graph import Graph
 from mage.graph_coloring_module.parameters import Parameter
 from mage.graph_coloring_module.utils.parameters_utils import param_value
 from mage.graph_coloring_module.utils.validation import validate
 
-_DEFAULT_ARGUMENT_DICT = {}
+DEFAULT_ARGUMENT_DICT = {}
 
 logger = logging_getLogger("graph_coloring")
 
@@ -27,24 +26,24 @@ class ConflictError(Error):
         self,
         graph: Graph,
         individual: Individual,
-        parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT,
+        parameters: dict = DEFAULT_ARGUMENT_DICT,
     ) -> float:
         """Calculates the error of the individual as the number of conflicting edges."""
-        if parameters is _DEFAULT_ARGUMENT_DICT:
-            parameters = _DEFAULT_ARGUMENT_DICT.copy()
+        if parameters is DEFAULT_ARGUMENT_DICT:
+            parameters = DEFAULT_ARGUMENT_DICT.copy()
         return individual.conflicts_weight
 
     @validate(Parameter.CONFLICT_ERR_ALPHA, Parameter.CONFLICT_ERR_BETA)
     def population_err(
         self,
         graph: Graph,
-        population: Population,
-        parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT,
+        population: CorrelationPopulation,
+        parameters: dict = DEFAULT_ARGUMENT_DICT,
     ) -> float:
         """Calculates the population error as the sum of potential and kinetic energy."""
 
-        if parameters is _DEFAULT_ARGUMENT_DICT:
-            parameters = _DEFAULT_ARGUMENT_DICT.copy()
+        if parameters is DEFAULT_ARGUMENT_DICT:
+            parameters = DEFAULT_ARGUMENT_DICT.copy()
         alpha = param_value(graph, parameters, Parameter.CONFLICT_ERR_ALPHA)
         beta = param_value(graph, parameters, Parameter.CONFLICT_ERR_BETA)
 
@@ -61,19 +60,17 @@ class ConflictError(Error):
         old_individual: Individual,
         new_individual: Individual,
         correlation_diff: float,
-        parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT,
+        parameters: dict = DEFAULT_ARGUMENT_DICT,
     ) -> float:
         """Calculates the difference of the population error
         that occurred after the replacement of the individual."""
 
-        if parameters is _DEFAULT_ARGUMENT_DICT:
-            parameters = _DEFAULT_ARGUMENT_DICT.copy()
+        if parameters is DEFAULT_ARGUMENT_DICT:
+            parameters = DEFAULT_ARGUMENT_DICT.copy()
         alpha = param_value(graph, parameters, Parameter.CONFLICT_ERR_ALPHA)
         beta = param_value(graph, parameters, Parameter.CONFLICT_ERR_BETA)
 
-        potential_delta = alpha * (
-            new_individual.conflicts_weight - old_individual.conflicts_weight
-        )
+        potential_delta = alpha * (new_individual.conflicts_weight - old_individual.conflicts_weight)
         kinetic_delta = (-1 * beta) * correlation_diff
-        _return_value = potential_delta - kinetic_delta
-        return _return_value
+        computed_return_value = potential_delta - kinetic_delta
+        return computed_return_value

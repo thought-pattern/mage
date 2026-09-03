@@ -1,12 +1,10 @@
 """Utilities for simple mlp."""
 
-from typing import List
-
 from torch import nn
 
 
 class MLP(nn.Module):
-    def __init__(self, dims: List[int]):
+    def __init__(self, dims: list[int]):
         super().__init__()
         assert len(dims) == 3
         self.fc1 = nn.Linear(dims[0], dims[1])
@@ -18,8 +16,8 @@ class MLP(nn.Module):
 
     def forward(self, data):
         h = self.act(self.fc1(data))
-        _return_value = self.fc2(h)
-        return _return_value
+        computed_return_value = self.fc2(h)
+        return computed_return_value
 
 
 class SimpleMLP(nn.Module):
@@ -34,5 +32,5 @@ class SimpleMLP(nn.Module):
 
     def forward(self, data):
         h = self.act(self.fc1(data))
-        _return_value = self.fc2(h).squeeze(dim=0)
-        return _return_value
+        computed_return_value = self.fc2(h).squeeze(dim=0)
+        return computed_return_value

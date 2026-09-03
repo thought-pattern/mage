@@ -24,14 +24,13 @@ from os import getcwd as os_getcwd
 from os import getenv as os_getenv
 from subprocess import PIPE as subprocess_PIPE
 from subprocess import run as subprocess_run
-from typing import List, Tuple
 
 from cve_bin_tool.cvedb import CVEDB
 
 CVE_DIR = os_getenv("CVE_DIR", os_getcwd())
 
 
-def get_apt_packages(container: str = "memgraph") -> List[dict]:
+def get_apt_packages(container: str = "memgraph") -> list[dict]:
     """
     Collect the list of installed apt packages within the container.
 
@@ -60,8 +59,8 @@ def get_apt_packages(container: str = "memgraph") -> List[dict]:
         stderr=subprocess_PIPE,
         text=True,  # so that stdout/stderr come back as Python strings
     )
-    # do not try to do anything clever with the result.returncode here, because
-    # it only ever returns 0 if there are 0 vulnerabilities!
+    if result.returncode != 0:
+        raise RuntimeError(f"docker package query failed with exit code {result.returncode}: {result.stderr}")
 
     output = result.stdout.strip()
     if not output:
@@ -75,7 +74,7 @@ def get_apt_packages(container: str = "memgraph") -> List[dict]:
     return packages
 
 
-def get_package_vendor_pairs(cve_db: CVEDB, packages: List[dict]) -> List[dict]:
+def get_package_vendor_pairs(cve_db: CVEDB, packages: list[dict]) -> list[dict]:
     """
     return the list of vendors for a package
 
@@ -91,13 +90,11 @@ def get_package_vendor_pairs(cve_db: CVEDB, packages: List[dict]) -> List[dict]:
     pairs: list of vendor/product/version dicts
     """
 
-    _return_value = cve_db.get_vendor_product_pairs(packages)
-    return _return_value
+    computed_return_value = cve_db.get_vendor_product_pairs(packages)
+    return computed_return_value
 
 
-def combine_vendor_product_version(
-    packages: List[dict], pairs: List[dict]
-) -> List[Tuple[str]]:
+def combine_vendor_product_version(packages: list[dict], pairs: list[dict]) -> list[tuple[str]]:
     """
     create the full list of vendor, product and version for each package
 
@@ -166,13 +163,9 @@ def run_scan() -> bool:
         "-i",
         f"{CVE_DIR}/apt-packages.csv",
     ]
-    result = subprocess_run(
-        cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True
-    )
+    result = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"cve-bin-tool failed with exit code {result.returncode}: {result.stderr}"
-        )
+        raise RuntimeError(f"cve-bin-tool failed with exit code {result.returncode}: {result.stderr}")
     return False
 
 
@@ -193,12 +186,7 @@ def main(container):
     save_apt_package_csv(package_info)
     print(f"Checking {len(package_info)} packages with cve-bin-tool...")
     run_scan()
-
-    # cve_db does unusual things when it exists, so let's catch it
-    try:
-        del cve_db
-    except Exception:
-        pass
+    del cve_db
     return False
 
 

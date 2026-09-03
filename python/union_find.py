@@ -2,7 +2,6 @@
 
 from enum import Enum
 from itertools import product
-from typing import Any, Tuple
 
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
@@ -26,11 +25,11 @@ class Mode(Enum):
 @mgp_read_proc
 def connected(
     ctx: mgp_ProcCtx,
-    nodes1: Any,
-    nodes2: Any,
+    nodes1: object,
+    nodes2: object,
     mode: str = "pairwise",
     update: bool = True,
-) -> mgp_Record(node1=mgp_Vertex, node2=mgp_Vertex, connected=bool):
+) -> list[mgp_Record]:
     """
     Returns whether two nodes (or each pair in the product of two node lists) belong to the same connected component
     of the graph.
@@ -54,20 +53,18 @@ def connected(
 
         for vertex in ctx.graph.vertices:
             for edge in vertex.out_edges:
-                disjoint_set.union(
-                    node1_id=edge.from_vertex.id, node2_id=edge.to_vertex.id
-                )
+                disjoint_set.union(node1_id=edge.from_vertex.id, node2_id=edge.to_vertex.id)
 
     if isinstance(nodes1, mgp_Vertex):
         nodes1 = tuple([nodes1])
-    elif isinstance(nodes1, Tuple):
+    elif isinstance(nodes1, tuple):
         pass
     else:
         raise TypeError("Invalid type of first argument.")
 
     if isinstance(nodes2, mgp_Vertex):
         nodes2 = tuple([nodes2])
-    elif isinstance(nodes2, Tuple):
+    elif isinstance(nodes2, tuple):
         pass
     else:
         raise TypeError("Invalid type of second argument.")
@@ -76,7 +73,7 @@ def connected(
         if len(nodes1) != len(nodes2):
             raise ValueError("Incompatible lengths of given arguments.")
 
-        _return_value = [
+        computed_return_value = [
             mgp_Record(
                 node1=node1,
                 node2=node2,
@@ -84,10 +81,10 @@ def connected(
             )
             for node1, node2 in zip(nodes1, nodes2, strict=False)
         ]
-        return _return_value
+        return computed_return_value
 
     elif mode.lower() == Mode.CARTESIAN.value:
-        _return_value = [
+        computed_return_value = [
             mgp_Record(
                 node1=node1,
                 node2=node2,
@@ -95,10 +92,9 @@ def connected(
             )
             for node1, node2 in product(nodes1, nodes2)
         ]
-        return _return_value
+        return computed_return_value
 
     error_message = (
-        f'Mode {mode} is invalid, please specify one of the following: "{Mode.PAIRWISE.value}", "'
-        f'{Mode.CARTESIAN.value}".'
+        f'Mode {mode} is invalid, please specify one of the following: "{Mode.PAIRWISE.value}", "' f'{Mode.CARTESIAN.value}".'
     )
     raise ValueError(error_message)

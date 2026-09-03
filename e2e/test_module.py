@@ -1,8 +1,7 @@
 """Utilities for test module."""
 
-from importlib import import_module as _import_module
+from importlib import import_module as imported_import_module
 from pathlib import Path
-from typing import Dict, List
 
 from gqlalchemy import Memgraph, Node, Relationship
 from gqlalchemy import Path as path_gql
@@ -18,13 +17,13 @@ from pytest import raises as pytest_raises
 from yaml import Loader as yaml_Loader
 from yaml import load as yaml_load
 
-os = _import_module("os")
+os = imported_import_module("os")
 
 
 @pytest_fixture
 def db():
-    _return_value = Memgraph()
-    return _return_value
+    computed_return_value = Memgraph()
+    return computed_return_value
 
 
 class TestConstants:
@@ -54,70 +53,56 @@ class TestConstants:
     EXPORT_TEST_SUBDIR_PREFIX = "test_export"
 
 
-def _node_to_dict(data):
-    labels = (
-        data.labels
-        if hasattr(data, "labels")
-        else (data._labels if isinstance(data, Node) else [])
-    )
-    properties = data.properties if hasattr(data, "properties") else data._properties
-    _return_value = {"labels": list(labels), "properties": properties}
-    return _return_value
+def node_to_dict(data):
+    labels = data.labels if hasattr(data, "labels") else (data.internal_labels if isinstance(data, Node) else [])
+    properties = data.properties if hasattr(data, "properties") else data.internal_properties
+    computed_return_value = {"labels": list(labels), "properties": properties}
+    return computed_return_value
 
 
-def _relationship_to_dict(data):
-    label = (
-        data.type
-        if hasattr(data, "type")
-        else (data._type if isinstance(data, Relationship) else "")
-    )
-    properties = data.properties if hasattr(data, "properties") else data._properties
+def relationship_to_dict(data):
+    label = data.type if hasattr(data, "type") else (data.internal_type if isinstance(data, Relationship) else "")
+    properties = data.properties if hasattr(data, "properties") else data.internal_properties
     return {"label": label, "properties": properties}
 
 
-def _path_to_dict(data):
-    nodes = data.nodes if hasattr(data, "nodes") else data._nodes
-    relationships = (
-        data.relationships if hasattr(data, "relationships") else data._relationships
-    )
-    _return_value = {
-        "nodes": [_node_to_dict(node) for node in nodes],
-        "relationships": [
-            _relationship_to_dict(relationship) for relationship in relationships
-        ],
+def path_to_dict(data):
+    nodes = data.nodes if hasattr(data, "nodes") else data.internal_nodes
+    relationships = data.relationships if hasattr(data, "relationships") else data._relationships
+    computed_return_value = {
+        "nodes": [node_to_dict(node) for node in nodes],
+        "relationships": [relationship_to_dict(relationship) for relationship in relationships],
     }
-    return _return_value
+    return computed_return_value
 
 
-def _replace(data, match_classes):
+def internal_replace(data, match_classes):
     if isinstance(data, dict):
-        _return_value = {k: _replace(v, match_classes) for k, v in data.items()}
-        return _return_value
+        computed_return_value = {k: internal_replace(v, match_classes) for k, v in data.items()}
+        return computed_return_value
     elif isinstance(data, list):
-        _return_value = [_replace(i, match_classes) for i in data]
-        return _return_value
+        computed_return_value = [internal_replace(i, match_classes) for i in data]
+        return computed_return_value
     elif isinstance(data, float):
-        _return_value = pytest_approx(data, abs=TestConstants.ABSOLUTE_TOLERANCE)
-        return _return_value
+        computed_return_value = pytest_approx(data, abs=TestConstants.ABSOLUTE_TOLERANCE)
+        return computed_return_value
     elif isinstance(data, node_mgclient) or isinstance(data, Node):
-        _return_value = _node_to_dict(data)
-        return _return_value
+        computed_return_value = node_to_dict(data)
+        return computed_return_value
     elif isinstance(data, relationship_mgclient) or isinstance(data, Relationship):
-        _return_value = _relationship_to_dict(data)
-        return _return_value
+        computed_return_value = relationship_to_dict(data)
+        return computed_return_value
     elif isinstance(data, path_gql):
-        _return_value = _path_to_dict(data)
-        return _return_value
+        computed_return_value = path_to_dict(data)
+        return computed_return_value
     else:
-        _return_value = _node_to_dict(data) if isinstance(data, match_classes) else data
-        return _return_value
+        computed_return_value = node_to_dict(data) if isinstance(data, match_classes) else data
+        return computed_return_value
 
 
-def _replace_filename(query: str, dir: Path):
-    _return_value = query.replace(
-        TestConstants.FILENAME_PLACEHOLDER, "/".join([str(dir), "file"])
-    )
-    return _return_value
+def replace_filename(query: str, dir: Path):
+    computed_return_value = query.replace(TestConstants.FILENAME_PLACEHOLDER, "/".join([str(dir), "file"]))
+    return computed_return_value
 
 
 def prepare_tests():
@@ -129,9 +114,7 @@ def prepare_tests():
     test_path = Path().cwd()
 
     for module_test_dir in test_path.iterdir():
-        if not module_test_dir.is_dir() or not module_test_dir.name.endswith(
-            TestConstants.TEST_MODULE_DIR_SUFFIX
-        ):
+        if not module_test_dir.is_dir() or not module_test_dir.name.endswith(TestConstants.TEST_MODULE_DIR_SUFFIX):
             continue
 
         for test_or_group_dir in module_test_dir.iterdir():
@@ -162,16 +145,16 @@ def prepare_tests():
 tests = prepare_tests()
 
 
-def _load_yaml(path: Path) -> Dict:
+def load_yaml(path: Path) -> dict:
     """
     Load YAML based file in Python dictionary.
     """
     file_handle = path.open("r")
-    _return_value = yaml_load(file_handle, Loader=yaml_Loader)
-    return _return_value
+    computed_return_value = yaml_load(file_handle, Loader=yaml_Loader)
+    return computed_return_value
 
 
-def _execute_cyphers(input_cyphers: List[str], db: Memgraph):
+def execute_cyphers(input_cyphers: list[str], db: Memgraph):
     """
     Execute commands against Memgraph
     """
@@ -180,7 +163,7 @@ def _execute_cyphers(input_cyphers: List[str], db: Memgraph):
     return False
 
 
-def _run_test(test_dict: Dict, db: Memgraph):
+def run_test(test_dict: dict, db: Memgraph):
     """
     Run queries on Memgraph and compare them to expected results stored in test_dict
     """
@@ -194,7 +177,7 @@ def _run_test(test_dict: Dict, db: Memgraph):
     if output_test:
         result_query = list(db.execute_and_fetch(test_query))
 
-        result = _replace(result_query, Node)
+        result = internal_replace(result_query, Node)
 
         expected = test_dict.get(TestConstants.OUTPUT, False)
 
@@ -206,17 +189,15 @@ def _run_test(test_dict: Dict, db: Memgraph):
     return False
 
 
-def _get_nodes_and_relationships(
-    nodes_query: str, relationships_query: str, db: Memgraph
-):
-    _return_value = (
+def get_nodes_and_relationships(nodes_query: str, relationships_query: str, db: Memgraph):
+    computed_return_value = (
         list(db.execute_and_fetch(nodes_query)),
         list(db.execute_and_fetch(relationships_query)),
     )
-    return _return_value
+    return computed_return_value
 
 
-def _test_export(test_dir: Path, db: Memgraph):
+def internal_test_export(test_dir: Path, db: Memgraph):
     """
     Testing export modules.
     """
@@ -224,30 +205,22 @@ def _test_export(test_dir: Path, db: Memgraph):
     test_name = test_dir.name
     output_file = f"{TestConstants.EXPORT_TEST_E2E_OUTPUT_FILE}_{test_name}"
 
-    input_dict = _load_yaml(test_dir.joinpath(TestConstants.INPUT_FILE))
+    input_dict = load_yaml(test_dir.joinpath(TestConstants.INPUT_FILE))
 
     queries = input_dict.get(TestConstants.EXPORT_TEST_E2E_INPUT_QUERIES, False)
     db.execute(queries)
 
     nodes_query = input_dict.get(TestConstants.EXPORT_TEST_E2E_NODES, False)
-    relationships_query = input_dict.get(
-        TestConstants.EXPORT_TEST_E2E_RELATIONSHIPS, False
-    )
+    relationships_query = input_dict.get(TestConstants.EXPORT_TEST_E2E_RELATIONSHIPS, False)
 
-    old_nodes, old_relationships = _get_nodes_and_relationships(
-        nodes_query, relationships_query, db
-    )
+    old_nodes, old_relationships = get_nodes_and_relationships(nodes_query, relationships_query, db)
 
-    test_dict = _load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
-    export_query = test_dict.get(
-        TestConstants.EXPORT_TEST_E2E_EXPORT_QUERY, ""
-    ).replace(
+    test_dict = load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
+    export_query = test_dict.get(TestConstants.EXPORT_TEST_E2E_EXPORT_QUERY, "").replace(
         TestConstants.EXPORT_TEST_E2E_PLACEHOLDER_FILENAME,
         "".join(["'", output_file, "'"]),
     )
-    import_query = test_dict.get(
-        TestConstants.EXPORT_TEST_E2E_IMPORT_QUERY, ""
-    ).replace(
+    import_query = test_dict.get(TestConstants.EXPORT_TEST_E2E_IMPORT_QUERY, "").replace(
         TestConstants.EXPORT_TEST_E2E_PLACEHOLDER_FILENAME,
         "".join(["'", output_file, "'"]),
     )
@@ -256,64 +229,52 @@ def _test_export(test_dir: Path, db: Memgraph):
     db.execute("MATCH (n) DETACH DELETE n;")
     db.execute(import_query)
 
-    new_nodes, new_relationships = _get_nodes_and_relationships(
-        nodes_query, relationships_query, db
-    )
+    new_nodes, new_relationships = get_nodes_and_relationships(nodes_query, relationships_query, db)
 
-    assert _replace(old_nodes, Node) == _replace(new_nodes, Node)
-    assert _replace(old_relationships, Relationship) == _replace(
-        new_relationships, Relationship
-    )
+    assert internal_replace(old_nodes, Node) == internal_replace(new_nodes, Node)
+    assert internal_replace(old_relationships, Relationship) == internal_replace(new_relationships, Relationship)
     return False
 
 
-def _test_static(test_dir: Path, db: Memgraph):
+def test_static(test_dir: Path, db: Memgraph):
     """
     Testing static modules.
     """
     input_cyphers = [
-        _replace_filename(query, test_dir)
-        for query in test_dir.joinpath(TestConstants.INPUT_FILE).open("r").readlines()
+        replace_filename(query, test_dir) for query in test_dir.joinpath(TestConstants.INPUT_FILE).open("r").readlines()
     ]
-    _execute_cyphers(input_cyphers, db)
+    execute_cyphers(input_cyphers, db)
 
-    test_dict = _load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
-    test_dict[TestConstants.QUERY] = _replace_filename(
-        test_dict.get(TestConstants.QUERY, False), test_dir
-    )
-    _run_test(test_dict, db)
-    return False
+    test_dict = load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
+    test_dict[TestConstants.QUERY] = replace_filename(test_dict.get(TestConstants.QUERY, False), test_dir)
+    run_test(test_dict, db)
 
 
-def _test_online(test_dir: Path, db: Memgraph):
+def internal_test_online(test_dir: Path, db: Memgraph):
     """
     Testing online modules. Checkpoint testing
     """
-    checkpoint_input = _load_yaml(test_dir.joinpath(TestConstants.INPUT_FILE))
-    checkpoint_test_dicts = _load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
+    checkpoint_input = load_yaml(test_dir.joinpath(TestConstants.INPUT_FILE))
+    checkpoint_test_dicts = load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
 
     setup_cyphers = checkpoint_input.get(TestConstants.ONLINE_TEST_E2E_SETUP, False)
-    checkpoint_input_cyphers = checkpoint_input[
-        TestConstants.ONLINE_TEST_E2E_INPUT_QUERIES
-    ]
+    checkpoint_input_cyphers = checkpoint_input[TestConstants.ONLINE_TEST_E2E_INPUT_QUERIES]
     cleanup_cyphers = checkpoint_input.get(TestConstants.ONLINE_TEST_E2E_CLEANUP, False)
 
     # Run optional setup queries
     if setup_cyphers:
-        _execute_cyphers(setup_cyphers.splitlines(), db)
+        execute_cyphers(setup_cyphers.splitlines(), db)
 
     try:
         # Execute cypher queries and compare them with results
-        for input_cyphers_raw, test_dict in zip(
-            checkpoint_input_cyphers, checkpoint_test_dicts, strict=False
-        ):
+        for input_cyphers_raw, test_dict in zip(checkpoint_input_cyphers, checkpoint_test_dicts, strict=False):
             input_cyphers = input_cyphers_raw.splitlines()
-            _execute_cyphers(input_cyphers, db)
-            _run_test(test_dict, db)
+            execute_cyphers(input_cyphers, db)
+            run_test(test_dict, db)
     finally:
         # Run optional cleanup queries
         if cleanup_cyphers:
-            _execute_cyphers(cleanup_cyphers.splitlines(), db)
+            execute_cyphers(cleanup_cyphers.splitlines(), db)
     return False
 
 
@@ -322,14 +283,13 @@ def test_end2end(test_dir: Path, db: Memgraph):
     db.drop_database()
 
     if test_dir.name.startswith(TestConstants.EXPORT_TEST_SUBDIR_PREFIX):
-        _test_export(test_dir, db)
+        internal_test_export(test_dir, db)
     elif test_dir.name.startswith(TestConstants.ONLINE_TEST_SUBDIR_PREFIX):
-        _test_online(test_dir, db)
+        internal_test_online(test_dir, db)
     else:
-        _test_static(test_dir, db)
+        test_static(test_dir, db)
 
     # Clean database once testing module is finished
     db.drop_database()
     db.drop_indexes()
     db.ensure_constraints([])
-    return False

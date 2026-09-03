@@ -1,7 +1,5 @@
 """Utilities for second order random walk."""
 
-from typing import List
-
 from numpy import random as np_random
 from utils import math_functions
 
@@ -28,7 +26,7 @@ class SecondOrderRandomWalk:
         self.num_walks = num_walks
         self.walk_length = walk_length
 
-    def sample_node_walks(self, graph: Graph) -> List[List[int]]:
+    def sample_node_walks(self, graph: Graph) -> list[list[int]]:
         """
         For each node we sample node walks for total of num_walks times
         Total length of list would be approximately: num_walks * walk_length * num_nodes
@@ -43,12 +41,12 @@ class SecondOrderRandomWalk:
         self.set_graph_transition_probs(graph)
         walks = []
         for node in graph.nodes:
-            for _i in range(self.num_walks):
+            for _ in range(self.num_walks):
                 walks.append(self.sample_walk(graph, node))
 
         return walks
 
-    def sample_walk(self, graph: Graph, start_node_id_int: int) -> List[int]:
+    def sample_walk(self, graph: Graph, start_node_id_int: int) -> list[int]:
         """
         Sampling one walk for specific node. Max walk length is self.walk_length.
         Next node in walk is determined by transition probability depending on previous node,
@@ -86,9 +84,7 @@ class SecondOrderRandomWalk:
 
             next = np_random.choice(
                 node_neighbors,
-                p=graph.get_edge_transition_probs(
-                    edge=(previous_node_id, current_node_id)
-                ),
+                p=graph.get_edge_transition_probs(edge=(previous_node_id, current_node_id)),
             )
 
             walk.append(next)
@@ -103,18 +99,13 @@ class SecondOrderRandomWalk:
         """
         for source_node_id in graph.nodes:
             unnormalized_probs = [
-                graph.get_edge_weight(source_node_id, neighbor_id)
-                for neighbor_id in graph.get_neighbors(source_node_id)
+                graph.get_edge_weight(source_node_id, neighbor_id) for neighbor_id in graph.get_neighbors(source_node_id)
             ]
 
-            graph.set_node_first_pass_transition_probs(
-                source_node_id, math_functions.normalize(unnormalized_probs)
-            )
+            graph.set_node_first_pass_transition_probs(source_node_id, math_functions.normalize(unnormalized_probs))
         return False
 
-    def calculate_edge_transition_probs(
-        self, graph: Graph, src_node_id: int, dest_node_id: int
-    ) -> List[float]:
+    def calculate_edge_transition_probs(self, graph: Graph, src_node_id: int, dest_node_id: int) -> list[float]:
         """
         Calculates edge transition probabilities. src_node_id and dest_node_id form transition from src_node_id
         to dest_node_id
@@ -145,8 +136,8 @@ class SecondOrderRandomWalk:
             else:
                 unnorm_trans_probs.append(edge_weight / self.q)
 
-        _return_value = math_functions.normalize(unnorm_trans_probs)
-        return _return_value
+        computed_return_value = math_functions.normalize(unnorm_trans_probs)
+        return computed_return_value
 
     def set_graph_transition_probs(self, graph: Graph) -> bool:
         """

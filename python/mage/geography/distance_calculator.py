@@ -5,17 +5,13 @@ from math import cos as math_cos
 from math import pi as math_pi
 from math import sin as math_sin
 from math import sqrt as math_sqrt
-from typing import Dict
-
 KM_MULTIPLIER = 0.001
 LATITUDE = "lat"
 LONGITUDE = "lng"
 VALID_METRICS = ["m", "km"]
 
 
-def calculate_distance_between_points(
-    start: Dict[str, float], end: Dict[str, float], metrics="m"
-):
+def calculate_distance_between_points(start: dict[str, float], end: dict[str, float], metrics="m"):
     """
     Returns distance based on the metrics between 2 points.
     :param start: Start node - dictionary with lat and lng
@@ -24,12 +20,7 @@ def calculate_distance_between_points(
     :return: float distance
     """
 
-    if (
-        LATITUDE not in start
-        or LONGITUDE not in start
-        or LATITUDE not in end
-        or LONGITUDE not in end
-    ):
+    if LATITUDE not in start or LONGITUDE not in start or LATITUDE not in end or LONGITUDE not in end:
         raise InvalidCoordinatesException("Latitude/longitude not specified!")
 
     lat_1_str = start.get(LATITUDE, False)
@@ -45,10 +36,8 @@ def calculate_distance_between_points(
         lat_2 = float(lat_2_str)
         lng_1 = float(lng_1_str)
         lng_2 = float(lng_2_str)
-    except ValueError as _caught_error_40:
-        raise InvalidCoordinatesException(
-            "Latitude/longitude not in numerical format!"
-        ) from _caught_error_40
+    except (TypeError, ValueError) as caught_error_40:
+        raise InvalidCoordinatesException("Latitude/longitude not in numerical format!") from caught_error_40
 
     if not isinstance(metrics, str) or metrics.lower() not in VALID_METRICS:
         raise InvalidMetricException("Invalid metric exception!")

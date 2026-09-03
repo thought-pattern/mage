@@ -1,7 +1,6 @@
 """Utilities for constants."""
 
 from datetime import datetime as datetime_datetime
-from typing import ClassVar as typing_ClassVar
 
 
 class Conversion(int):
@@ -16,8 +15,8 @@ class Epoch(datetime_datetime):
 
 
 class Units:
-    MILLISECOND: typing_ClassVar = {"ms", "milli", "millis", "milliseconds"}
-    SECOND: typing_ClassVar = {"s", "second", "seconds"}
-    MINUTE: typing_ClassVar = {"m", "minute", "minutes"}
-    HOUR: typing_ClassVar = {"h", "hour", "hours"}
-    DAY: typing_ClassVar = {"d", "day", "days"}
+    MILLISECOND: set[str] = {"ms", "milli", "millis", "milliseconds"}
+    SECOND: set[str] = {"s", "second", "seconds"}
+    MINUTE: set[str] = {"m", "minute", "minutes"}
+    HOUR: set[str] = {"h", "hour", "hours"}
+    DAY: set[str] = {"d", "day", "days"}

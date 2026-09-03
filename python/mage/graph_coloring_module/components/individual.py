@@ -1,7 +1,6 @@
 """Utilities for individual."""
 
 from random import choice
-from typing import List, Set, Tuple
 
 from mage.graph_coloring_module.exceptions import (
     IllegalColorException,
@@ -9,10 +8,6 @@ from mage.graph_coloring_module.exceptions import (
     WrongColoringException,
 )
 from mage.graph_coloring_module.graph import Graph
-
-_DEFAULT_ARGUMENT_SET = set()
-
-_DEFAULT_ARGUMENT_LIST = []
 
 
 class Individual:
@@ -27,72 +22,86 @@ class Individual:
         self,
         no_of_colors: int,
         graph: Graph,
-        chromosome: List[int] = _DEFAULT_ARGUMENT_LIST,
-        conflicts_weight: int = 0,
-        conflict_nodes: Set[int] = _DEFAULT_ARGUMENT_SET,
-        conflicts_counter: List[int] = _DEFAULT_ARGUMENT_LIST,
+        chromosome: object = False,
+        conflicts_weight: object = 0,
+        conflict_nodes: object = False,
+        conflicts_counter: object = False,
     ):
-        if chromosome is None:
-            chromosome = _DEFAULT_ARGUMENT_LIST
-        if conflict_nodes is None:
-            conflict_nodes = _DEFAULT_ARGUMENT_SET
-        if conflicts_weight is None:
-            conflicts_weight = 0
-        if conflicts_counter is _DEFAULT_ARGUMENT_LIST:
-            conflicts_counter = _DEFAULT_ARGUMENT_LIST.copy()
-        self._graph = graph
-        self._no_of_units = len(graph)
-        self._no_of_colors = no_of_colors
-        if chromosome is _DEFAULT_ARGUMENT_LIST:
-            self._chromosome = list(
-                choice(range(no_of_colors)) for _ in range(len(graph))
-            )
+        if not isinstance(no_of_colors, int) or isinstance(no_of_colors, bool) or no_of_colors <= 0:
+            raise ValueError("no_of_colors must be a positive integer")
+        if not isinstance(graph, Graph):
+            raise TypeError("graph must be a Graph")
+        if not isinstance(conflicts_weight, (int, float)) or isinstance(conflicts_weight, bool):
+            raise TypeError("conflicts_weight must be numeric")
+        self.internal_graph = graph
+        self.internal_no_of_units = len(graph)
+        self.internal_no_of_colors = no_of_colors
+        if chromosome is False:
+            self.internal_chromosome = list(choice(range(no_of_colors)) for _ in range(len(graph)))
         else:
-            self._chromosome = chromosome
+            if not isinstance(chromosome, list) or len(chromosome) != len(graph):
+                raise ValueError("chromosome must contain one color per graph node")
+            if not all(
+                isinstance(color, int) and not isinstance(color, bool) and 0 <= color < no_of_colors for color in chromosome
+            ):
+                raise ValueError("chromosome colors must be integers in the allowed color range")
+            self.internal_chromosome = list(chromosome)
 
-        self._conflicts_weight = conflicts_weight
-        self._conflicts_counter = conflicts_counter
-        self._conflict_nodes = conflict_nodes
+        self.internal_conflicts_weight = float(conflicts_weight)
+        valid_counter = (
+            isinstance(conflicts_counter, list)
+            and len(conflicts_counter) == len(graph)
+            and all(isinstance(count, int) and not isinstance(count, bool) and count >= 0 for count in conflicts_counter)
+        )
+        valid_nodes = isinstance(conflict_nodes, set) and all(
+            isinstance(node, int) and not isinstance(node, bool) and 0 <= node < len(graph) for node in conflict_nodes
+        )
+        if valid_counter and valid_nodes and isinstance(conflicts_counter, list) and isinstance(conflict_nodes, set):
+            self.internal_conflicts_counter = list(conflicts_counter)
+            self.internal_conflict_nodes = set(conflict_nodes)
+        else:
+            self.internal_conflicts_counter = []
+            self.internal_conflict_nodes = set()
 
-        if conflicts_weight == 0 or conflict_nodes is _DEFAULT_ARGUMENT_SET:
-            self._calculate_conflicts()
+        if not valid_counter or not valid_nodes:
+            self.calculate_conflicts()
 
     def __getitem__(self, index: int) -> int:
         """Returns the color stored on the given index."""
-        _return_value = self._chromosome[index]
-        return _return_value
+        computed_return_value = self.internal_chromosome[index]
+        return computed_return_value
 
     @property
-    def chromosome(self) -> List[int]:
+    def chromosome(self) -> list[int]:
         """Returns the list representing the coloring of the graph."""
-        return self._chromosome
+        return self.internal_chromosome
 
     @property
-    def conflict_nodes(self) -> Set[int]:
+    def conflict_nodes(self) -> set[int]:
         """Returns a set of conflicting nodes in the coloring
         represented by the individual.."""
-        return self._conflict_nodes
+        return self.internal_conflict_nodes
 
     @property
     def graph(self) -> Graph:
         """Returns the graph whose coloring the individual represents."""
-        return self._graph
+        return self.internal_graph
 
     @property
     def no_of_colors(self) -> int:
         """Returns the allowed number of colors."""
-        return self._no_of_colors
+        return self.internal_no_of_colors
 
     @property
     def no_of_units(self) -> int:
         """Returns the size of the chromosome."""
-        return self._no_of_units
+        return self.internal_no_of_units
 
     @property
-    def conflicts_weight(self) -> int:
+    def conflicts_weight(self) -> float:
         """Returns the sum of weights of conflicting edges
         in the coloring represented by the individual."""
-        return self._conflicts_weight
+        return self.internal_conflicts_weight
 
     def check_coloring(self) -> bool:
         """Checks that the coloring represented by the individual is correct.
@@ -110,10 +119,10 @@ class Individual:
         returns a new individual if the given arguments are correct. If the given
         color is not allowed then the IllegalColorException exception is raised.
         If the given node does not exist then the IllegalNodeException is raised."""
-        _return_value = self.replace_units([index], [color])
-        return _return_value
+        computed_return_value = self.replace_units([index], [color])
+        return computed_return_value
 
-    def replace_units(self, indices: List[int], colors: List[int]):
+    def replace_units(self, indices: list[int], colors: list[int]):
         """Sets the colors of the nodes with the corresponding indices to the given
         colors and returns a new individual if the given coloring is correct. If any
         of the given colors is not allowed then the IllegalColorException exception is
@@ -122,23 +131,19 @@ class Individual:
         then the WrongColoringException is raised."""
 
         if len(indices) != len(colors):
-            raise WrongColoringException(
-                "The number of given nodes must be equal to the number of given colors!"
-            )
+            raise WrongColoringException("The number of given nodes must be equal to the number of given colors!")
 
-        new_chromosome = self._chromosome[:]
-        conflicts_counter = self._conflicts_counter[:]
-        conflict_nodes = self._conflict_nodes.copy()
+        new_chromosome = self.internal_chromosome[:]
+        conflicts_counter = self.internal_conflicts_counter[:]
+        conflict_nodes = self.internal_conflict_nodes.copy()
         conflict_edges = self.conflicts_weight
 
         for index, color in zip(indices, colors, strict=False):
-            if not (0 <= color < self._no_of_colors):
-                raise IllegalColorException(
-                    "The given color is not in the range of allowed colors!"
-                )
+            if not (0 <= color < self.internal_no_of_colors):
+                raise IllegalColorException("The given color is not in the range of allowed colors!")
             if not (0 <= index < self.no_of_units):
                 raise IllegalNodeException("The given node does not exist!")
-            conflict_edges, conflicts_counter, conflict_nodes = self._calculate_diff(
+            conflict_edges, conflicts_counter, conflict_nodes = self.calculate_diff(
                 chromosome=new_chromosome,
                 node=index,
                 color=color,
@@ -159,15 +164,15 @@ class Individual:
 
         return new_indv
 
-    def _calculate_diff(
+    def calculate_diff(
         self,
-        chromosome: List[int],
+        chromosome: list[int],
         node: int,
         color: int,
-        conflict_edges: int,
-        conflicts_counter: List[int],
-        conflict_nodes: Set[int],
-    ) -> Tuple[int, List[int], Set[int]]:
+        conflict_edges: float,
+        conflicts_counter: list[int],
+        conflict_nodes: set[int],
+    ) -> tuple[float, list[int], set[int]]:
         diff = 0
         for neigh, weight in self.graph.weighted_neighbors(node):
             if chromosome[node] == chromosome[neigh]:
@@ -196,19 +201,19 @@ class Individual:
         conflict_edges = conflict_edges + diff
         return conflict_edges, conflicts_counter, conflict_nodes
 
-    def _calculate_conflicts(self):
-        self._conflict_nodes = set()
-        self._conflicts_counter = [0 for _ in self.graph.nodes]
-        conflicting_edges = 0
+    def calculate_conflicts(self):
+        self.internal_conflict_nodes = set()
+        self.internal_conflicts_counter = [0 for _ in self.graph.nodes]
+        conflicting_edges = 0.0
 
         for node in self.graph.nodes:
             for neigh, weight in self.graph.weighted_neighbors(node):
                 if self.chromosome[node] == self.chromosome[neigh]:
-                    self._conflicts_counter[node] += 1
+                    self.internal_conflicts_counter[node] += 1
                     conflicting_edges += weight
-                    if self._conflicts_counter[node] == 1:
-                        self._conflict_nodes.add(node)
+                    if self.internal_conflicts_counter[node] == 1:
+                        self.internal_conflict_nodes.add(node)
 
         conflicting_edges //= 2
-        self._conflicts_weight = conflicting_edges
+        self.internal_conflicts_weight = conflicting_edges
         return False

@@ -16,15 +16,15 @@ from mage.date.constants import Epoch
 def format(
     temporal: mgp_Any,
     format: str = "ISO",
-) -> mgp_Record(formatted=str):
+) -> mgp_Record:
     if not (
         isinstance(temporal, datetime_datetime)
         or isinstance(temporal, datetime_date)
         or isinstance(temporal, datetime_time)
         or isinstance(temporal, datetime_timedelta)
     ):
-        _return_value = mgp_Record(formatted=str(temporal))
-        return _return_value
+        computed_return_value = mgp_Record(formatted=str(temporal))
+        return computed_return_value
 
     if "%z" in format or "%Z" in format:
         raise Exception(
@@ -33,15 +33,13 @@ def format(
         )
 
     if format == "ISO" and (
-        isinstance(temporal, datetime_datetime)
-        or isinstance(temporal, datetime_date)
-        or isinstance(temporal, datetime_time)
+        isinstance(temporal, datetime_datetime) or isinstance(temporal, datetime_date) or isinstance(temporal, datetime_time)
     ):
-        _return_value = mgp_Record(formatted=temporal.isoformat())
-        return _return_value
+        computed_return_value = mgp_Record(formatted=temporal.isoformat())
+        return computed_return_value
 
     if isinstance(temporal, datetime_timedelta):
         temporal = Epoch.UNIX_EPOCH + temporal
 
-    _return_value = mgp_Record(formatted=temporal.strftime(format))
-    return _return_value
+    computed_return_value = mgp_Record(formatted=temporal.strftime(format))
+    return computed_return_value

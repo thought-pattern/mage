@@ -2,9 +2,8 @@
 
 from sys import stderr as sys_stderr
 from sys import version as sys_version
-from typing import Dict, List
 
-from numpy import array as np_array
+from numpy import ndarray as np_ndarray
 from numpy import zeros as np_zeros
 
 from mage.geography import calculate_distance_between_points
@@ -16,13 +15,11 @@ try:
     from networkx import eulerian_path as nx_eulerian_path
     from networkx import minimum_spanning_tree as nx_minimum_spanning_tree
 except ImportError as import_error:
-    sys_stderr.write(
-        f"NOTE: Please install networkx to be able touse graph_analyzer module. Using Python: {sys_version}"
-    )
+    sys_stderr.write(f"NOTE: Please install networkx to be able touse graph_analyzer module. Using Python: {sys_version}")
     raise import_error from import_error
 
 
-def create_distance_matrix(points: List[Dict[str, float]]):
+def create_distance_matrix(points: list[dict[str, float]]):
     """
     Creates a quadratic matrix of distances between points.
     :param points: List of dictionaries with lat and lng coordinates
@@ -41,7 +38,7 @@ def create_distance_matrix(points: List[Dict[str, float]]):
     return distance_matrix
 
 
-def solve_2_approx(dm: np_array):
+def solve_2_approx(dm: np_ndarray):
     """
     Solves the tsp_module problem with 2-approximation.
     :param dm: Distance matrix.
@@ -55,7 +52,7 @@ def solve_2_approx(dm: np_array):
     return path
 
 
-def solve_1_5_approx(dm: np_array):
+def solve_1_5_approx(dm: np_ndarray):
     """
     Solves the tsp_module problem with 1.5-approximation (Christofides algorithm).
     :param distance_matrix: Distance matrix.
@@ -75,7 +72,7 @@ def solve_1_5_approx(dm: np_array):
     return path
 
 
-def solve_greedy(dm: np_array):
+def solve_greedy(dm: np_ndarray):
     """
     Solves the tsp_module problem with greedy method of taking the closest node to the last.
     :param distance_matrix: Distance matrix.
@@ -93,11 +90,7 @@ def solve_greedy(dm: np_array):
 
         for i in range(len(dm)):
             value = dm[last][i]
-            if (
-                last != i
-                and (min_index == -1 or min_val > value)
-                and i not in visited_vert
-            ):
+            if last != i and (min_index == -1 or min_val > value) and i not in visited_vert:
                 min_index = i
                 min_val = value
 
@@ -150,15 +143,12 @@ def get_perfect_matchings(odd_matchings):
     :return: List of matched edges
     """
 
-    matched_edges = [
-        (odd_matchings[i], odd_matchings[i + 1])
-        for i in range(0, len(odd_matchings), 2)
-    ]
+    matched_edges = [(odd_matchings[i], odd_matchings[i + 1]) for i in range(0, len(odd_matchings), 2)]
 
     return matched_edges
 
 
-def get_mst(dm: np_array):
+def get_mst(dm: np_ndarray):
     """
     Creates the minimum spanning tree using nx.
     :param dm: Distance matrix

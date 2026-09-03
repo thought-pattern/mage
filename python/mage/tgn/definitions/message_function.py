@@ -10,9 +10,7 @@ class MessageFunction(nn.Module):
     This is base class for Message function implementation
     """
 
-    def __init__(
-        self, raw_message_dimension: int, message_dimension: int, device: torch_device
-    ):
+    def __init__(self, raw_message_dimension: int, message_dimension: int, device: torch_device):
         super().__init__()
         self.raw_message_dimension = raw_message_dimension
         self.message_dimension = message_dimension
@@ -20,9 +18,7 @@ class MessageFunction(nn.Module):
 
 
 class MessageFunctionMLP(MessageFunction):
-    def __init__(
-        self, raw_message_dimension: int, message_dimension: int, device: torch_device
-    ):
+    def __init__(self, raw_message_dimension: int, message_dimension: int, device: torch_device):
         super().__init__(raw_message_dimension, message_dimension, device)
 
         self.message_function_net = nn.Sequential(
@@ -32,20 +28,19 @@ class MessageFunctionMLP(MessageFunction):
         ).to(self.device)
 
     def forward(self, data):
-        _return_value = self.message_function_net(data)
-        return _return_value
+        computed_return_value = self.message_function_net(data)
+        return computed_return_value
 
 
 class MessageFunctionIdentity(MessageFunction):
-    def __init__(
-        self, raw_message_dimension: int, message_dimension: int, device: torch_device
-    ):
+    def __init__(self, raw_message_dimension: int, message_dimension: int, device: torch_device):
         super().__init__(raw_message_dimension, message_dimension, device)
-        assert raw_message_dimension == message_dimension, "Wrong!"
+        if raw_message_dimension != message_dimension:
+            raise ValueError(f"Identity message dimensions must match: {raw_message_dimension} != {message_dimension}")
 
     def forward(self, data):
         concat_message = torch_concat(data, dim=-1)
 
         # returns shape (1, message_dim) (1 row, message dim columns)
-        _return_value = concat_message.unsqueeze(0)
-        return _return_value
+        computed_return_value = concat_message.unsqueeze(0)
+        return computed_return_value

@@ -18,8 +18,8 @@ from os import getcwd as os_getcwd
 from os import getenv as os_getenv
 from os import makedirs as os_makedirs
 from os import path as os_path
-from os import system as os_system
 from os import walk as os_walk
+from shutil import copy2 as shutil_copy2
 from subprocess import PIPE as subprocess_PIPE
 from subprocess import run as subprocess_run
 
@@ -65,10 +65,10 @@ def copy_language_files(rootfs: str, langfs: str):
     language_files = find_files(rootfs)
 
     for file in language_files:
-        dir = os_path.dirname(file).replace(rootfs, langfs)
-        if not os_path.exists(dir):
-            os_makedirs(dir)
-        os_system(f"cp {file} -v {dir}")
+        destination_dir = os_path.dirname(file).replace(rootfs, langfs)
+        if not os_path.exists(destination_dir):
+            os_makedirs(destination_dir)
+        shutil_copy2(file, destination_dir)
     return False
 
 
@@ -102,9 +102,9 @@ def run_language_scan(langfs: str) -> str:
         outfile,  # Write JSON results to this file
         f"{langfs}/",
     ]
-    _ = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
-    # do not try to do anything clever with the result.returncode here, because
-    # it only ever returns 0 if there are 0 vulnerabilities!
+    completed = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
+    if not os_path.isfile(outfile):
+        raise RuntimeError(f"language CVE scan produced no result (status {completed.returncode}): {completed.stderr.strip()}")
     return outfile
 
 

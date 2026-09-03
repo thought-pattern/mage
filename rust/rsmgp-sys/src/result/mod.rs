@@ -213,9 +213,6 @@ pub enum Error {
     #[snafu(display("Unable to add return type."))]
     UnableToAddReturnType,
 
-    #[snafu(display("Unable to add deprecated return type."))]
-    UnableToAddDeprecatedReturnType,
-
     // PATH
     #[snafu(display("Unable to copy path."))]
     UnableToCopyPath,

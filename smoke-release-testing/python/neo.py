@@ -3,11 +3,9 @@
 from sys import argv as sys_argv
 
 from neo4j import GraphDatabase
-from semver import Version as semver_Version
 
-# NOTE: This assumens memgraph is up and running.
-memgrah_version = semver_Version.parse(sys_argv[1])
-memgraph_port = int(sys_argv[2])
+# This probe requires a running current Memgraph instance.
+memgraph_port = int(sys_argv[1])
 # Define correct URI and AUTH arguments (no AUTH by default)
 URI = f"bolt://localhost:{memgraph_port}"
 AUTH = ("", "")

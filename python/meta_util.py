@@ -1,18 +1,12 @@
 """Utilities for meta util."""
 
 from collections import defaultdict
-from typing import Dict, Iterator, Tuple
 
-from mgp import List as mgp_List
-from mgp import Map as mgp_Map
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
 from mgp import read_proc as mgp_read_proc
 
 from mage.meta_util.parameters import Parameter
-
-NodeKeyType = Tuple[str, ...]
-RelationshipKeyType = Tuple[NodeKeyType, str, NodeKeyType]
 
 
 class Counter:
@@ -29,7 +23,7 @@ class Counter:
         return False
 
     def to_dict(self, include_properties):
-        _return_value = (
+        computed_return_value = (
             {
                 Parameter.COUNT.value: self.total_count,
                 Parameter.PROPERTIES_COUNT.value: self.count_by_property_name,
@@ -37,13 +31,11 @@ class Counter:
             if include_properties
             else {Parameter.COUNT.value: self.total_count}
         )
-        return _return_value
+        return computed_return_value
 
 
 @mgp_read_proc
-def schema(context: mgp_ProcCtx, include_properties: bool = False) -> mgp_Record(
-    nodes=mgp_List[mgp_Map], relationships=mgp_List[mgp_Map]
-):
+def schema(context: mgp_ProcCtx, include_properties: bool = False) -> mgp_Record:
     (
         "\n    Procedure to generate the graph database schema.\n\n    Args:\n        context (mgp.ProcCt"  # Continue literal.
         "x): Reference to the context execution.\n        include_properties (bool): If set to True, t"  # Continue literal.
@@ -55,15 +47,15 @@ def schema(context: mgp_ProcCtx, include_properties: bool = False) -> mgp_Record
         "eta_util.schema(true) YIELD nodes, relationships RETURN nodes, relationships;`\n"
     )
 
-    node_count_by_labels: Dict[NodeKeyType, Counter] = {}
-    relationship_count_by_labels: Dict[RelationshipKeyType, Counter] = {}
+    node_count_by_labels: dict[tuple, Counter] = {}
+    relationship_count_by_labels: dict[tuple, Counter] = {}
 
     node_counter = 0
 
     for node in context.graph.vertices:
         node_counter += 1
         labels = tuple(sorted(label.name for label in node.labels))
-        _update_counts(
+        update_counts(
             node_count_by_labels,
             key=labels,
             obj=node,
@@ -71,11 +63,9 @@ def schema(context: mgp_ProcCtx, include_properties: bool = False) -> mgp_Record
         )
 
         for relationship in node.out_edges:
-            target_labels = tuple(
-                sorted(label.name for label in relationship.to_vertex.labels)
-            )
+            target_labels = tuple(sorted(label.name for label in relationship.to_vertex.labels))
             key = (labels, relationship.type.name, target_labels)
-            _update_counts(
+            update_counts(
                 relationship_count_by_labels,
                 key=key,
                 obj=relationship,
@@ -83,38 +73,34 @@ def schema(context: mgp_ProcCtx, include_properties: bool = False) -> mgp_Record
             )
 
     if node_counter == 0:
-        raise Exception(
-            "Can't generate a graph schema since there is no data in the database."
-        )
+        raise Exception("Can't generate a graph schema since there is no data in the database.")
 
     node_index_by_labels = {key: i for i, key in enumerate(node_count_by_labels.keys())}
-    nodes = list(
-        _iter_nodes_as_map(
-            node_count_by_labels, node_index_by_labels, include_properties
-        )
-    )
+    nodes = list(iter_nodes_as_map(node_count_by_labels, node_index_by_labels, include_properties))
     relationships = list(
-        _iter_relationships_as_map(
+        iter_relationships_as_map(
             relationship_count_by_labels,
             node_index_by_labels,
             include_properties,
         )
     )
 
-    _return_value = mgp_Record(nodes=nodes, relationships=relationships)
-    return _return_value
+    computed_return_value = mgp_Record(nodes=nodes, relationships=relationships)
+    return computed_return_value
 
 
-def _update_counts(
-    obj_count_by_key: Dict[object, Counter],
-    key: object,
-    obj: object,
+def update_counts(
+    obj_count_by_key: dict[tuple, Counter],
+    key: tuple,
+    obj,
     include_properties: bool = False,
 ) -> bool:
     if key not in obj_count_by_key:
         obj_count_by_key[key] = Counter()
 
     obj_counter = obj_count_by_key.get(key, False)
+    if not isinstance(obj_counter, Counter):
+        raise KeyError(f"Counter was not initialized for key {key!r}")
     obj_counter.increment()
 
     if include_properties:
@@ -123,11 +109,11 @@ def _update_counts(
     return False
 
 
-def _iter_nodes_as_map(
-    node_count_by_labels: Dict[NodeKeyType, Counter],
-    node_index_by_labels: Dict[NodeKeyType, int],
+def iter_nodes_as_map(
+    node_count_by_labels: dict[tuple, Counter],
+    node_index_by_labels: dict[tuple, int],
     include_properties: bool,
-) -> Iterator[mgp_Map]:
+):
     for labels, counter in node_count_by_labels.items():
         yield {
             Parameter.ID.value: node_index_by_labels.get(labels, False),
@@ -137,11 +123,11 @@ def _iter_nodes_as_map(
         }
 
 
-def _iter_relationships_as_map(
-    relationship_count_by_labels: Dict[RelationshipKeyType, Counter],
-    node_index_by_labels: Dict[NodeKeyType, int],
+def iter_relationships_as_map(
+    relationship_count_by_labels: dict[tuple, Counter],
+    node_index_by_labels: dict[tuple, int],
     include_properties: bool,
-) -> Iterator[mgp_Map]:
+):
     for i, (
         (source_label, relationship_label, target_label),
         counter,

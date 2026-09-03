@@ -23,7 +23,7 @@ def set_seed():
 
 @pytest_fixture
 def graph():
-    _return_value = Graph(
+    computed_return_value = Graph(
         [0, 1, 2, 3, 4],
         {
             0: [(1, 2), (2, 3)],
@@ -33,7 +33,7 @@ def graph():
             4: [(1, 5)],
         },
     )
-    return _return_value
+    return computed_return_value
 
 
 def test_mis_mutation(set_seed, graph):
@@ -44,7 +44,6 @@ def test_mis_mutation(set_seed, graph):
     expected_nodes = [3, 1]
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
-    return False
 
 
 def test_multiple_mutation(set_seed, graph):
@@ -59,7 +58,6 @@ def test_multiple_mutation(set_seed, graph):
     expected_nodes = [0, 0]
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
-    return False
 
 
 def test_random_mutation_no_conflict(set_seed, graph):
@@ -76,13 +74,10 @@ def test_random_mutation_no_conflict(set_seed, graph):
     expected_nodes = []
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
-    return False
 
 
 def test_random_mutation(set_seed, graph):
-    individual = Individual(
-        no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1}
-    )
+    individual = Individual(no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1})
     mutated_indv, nodes = RandomMutation().mutate(
         graph,
         individual,
@@ -95,7 +90,6 @@ def test_random_mutation(set_seed, graph):
     expected_nodes = [0]
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
-    return False
 
 
 def test_simple_no_conflict(set_seed, graph):
@@ -105,16 +99,12 @@ def test_simple_no_conflict(set_seed, graph):
     expected_nodes = []
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
-    return False
 
 
 def test_simple_mutation(set_seed, graph):
-    individual = Individual(
-        no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1}
-    )
+    individual = Individual(no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1})
     mutated_indv, nodes = SimpleMutation().mutate(graph, individual)
     expected_mutated_indv_chromosome = [0, 1, 0, 2, 0]
     expected_nodes = [0]
     assert mutated_indv.chromosome == expected_mutated_indv_chromosome
     assert sorted(nodes) == sorted(expected_nodes)
-    return False

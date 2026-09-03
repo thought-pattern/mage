@@ -7,12 +7,8 @@ from aggregate_build_tests import list_daily_release_packages
 
 # Compile regex patterns
 URL_PATTERN = re_compile(r"^(https?://[\w\-\.]+(?:/[\w\-\./?%&=]*)?)$")
-DATE_PATTERN = re_compile(
-    r"^(?P<year>\d{4})(?P<month>0[1-9]|1[0-2])(?P<day>0[1-9]|[12]\d|3[01])$"
-)
-DOCKER_PATTERN = re_compile(
-    r"^([a-z0-9]+(?:[._\-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._\-][a-z0-9]+)*)*):([A-Za-z0-9][A-Za-z0-9._\-]*)$"
-)
+DATE_PATTERN = re_compile(r"^(?P<year>\d{4})(?P<month>0[1-9]|1[0-2])(?P<day>0[1-9]|[12]\d|3[01])$")
+DOCKER_PATTERN = re_compile(r"^([a-z0-9]+(?:[._\-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._\-][a-z0-9]+)*)*):([A-Za-z0-9][A-Za-z0-9._\-]*)$")
 VERSION_PATTERN = re_compile(r"^\d+\.\d+(?:\.\d+)?$")
 
 
@@ -59,7 +55,7 @@ def get_daily_url(date: str, arch: str, malloc: bool) -> str:
     return url
 
 
-def get_version_docker(version: str, malloc: str):
+def get_version_docker(version: str, malloc: bool):
     """
     convert version number to docker image tag
 
@@ -91,8 +87,8 @@ def string_to_boolean(bool_str: str) -> bool:
     convert string to Boolean
     """
 
-    _return_value = True if bool_str.lower() == "true" else False
-    return _return_value
+    computed_return_value = True if bool_str.lower() == "true" else False
+    return computed_return_value
 
 
 def main() -> bool:

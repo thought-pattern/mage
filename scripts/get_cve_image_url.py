@@ -31,11 +31,7 @@ def main(arch: str, image_type: str) -> bool:
         arch_key = "arm64" if arch == "arm64" else "x86_64"
         url = packages.get("docker", {})[arch_key]
     elif image_type == "mage":
-        key, arch_key = (
-            ("Docker (arm64)", "arm64")
-            if arch == "arm64"
-            else ("Docker (x86_64)", "x86_64")
-        )
+        key, arch_key = ("Docker (arm64)", "arm64") if arch == "arm64" else ("Docker (x86_64)", "x86_64")
         url = packages[key][arch_key]
 
     print(url)

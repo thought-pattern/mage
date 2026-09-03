@@ -1,13 +1,12 @@
 """Utilities for vrp."""
 
-from typing import Dict, List
-
 from mgp import Nullable as mgp_Nullable
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
 from mgp import Vertex as mgp_Vertex
 from mgp import Vertices as mgp_Vertices
 from mgp import read_proc as mgp_read_proc
+from numpy import ndarray as np_ndarray
 
 from mage.constraint_programming import VRPConstraintProgrammingSolver
 from mage.geography import (
@@ -16,8 +15,8 @@ from mage.geography import (
     create_distance_matrix,
 )
 
-__distance_matrix = False
-__depot_index = -1
+internal_distance_matrix: object = False
+internal_depot_index = -1
 
 MAX_DISTANCE_MATRIX_SIZE = 100
 
@@ -26,12 +25,12 @@ def get_distance_matrix(vertices):
     """
     Assigns distance matrix global object or returns if its already there.
     """
-    global __distance_matrix
+    global internal_distance_matrix
 
-    if __distance_matrix is not False:
-        return __distance_matrix
+    if isinstance(internal_distance_matrix, np_ndarray):
+        return internal_distance_matrix
 
-    vertex_positions: List[Dict[str, float]] = []
+    vertex_positions: list[dict[str, float]] = []
     for vertex in vertices:
         vertex_positions.append(
             {
@@ -40,40 +39,41 @@ def get_distance_matrix(vertices):
             }
         )
 
-    __distance_matrix = create_distance_matrix(vertex_positions)
+    computed_matrix = create_distance_matrix(vertex_positions)
+    if not isinstance(computed_matrix, np_ndarray):
+        raise ValueError("Unable to calculate a numeric distance matrix")
+    internal_distance_matrix = computed_matrix
 
-    return __distance_matrix
+    return internal_distance_matrix
 
 
 def get_depot_index(vertices: mgp_Vertices, depot_node: mgp_Vertex):
     """
     Assigns depot index global variable or returns if its already there.
     """
-    global __depot_index
+    global internal_depot_index
 
-    if __depot_index >= 0:
-        return __depot_index
+    if internal_depot_index >= 0:
+        return internal_depot_index
 
     for i, vertex in enumerate(vertices):
         if vertex == depot_node:
-            __depot_index = i
+            internal_depot_index = i
             break
 
-    if __depot_index < 0:
+    if internal_depot_index < 0:
         raise DepotUnspecifiedException("No depot location specified!")
 
-    return __depot_index
+    return internal_depot_index
 
 
 def cleanup():
-    global __distance_matrix, __depot_index
+    global internal_distance_matrix, internal_depot_index
 
-    if (
-        __distance_matrix is not False
-        and len(__distance_matrix) >= MAX_DISTANCE_MATRIX_SIZE
-    ):
-        __distance_matrix = False
-        __depot_index = -1
+    distance_matrix = internal_distance_matrix
+    if isinstance(distance_matrix, np_ndarray) and len(distance_matrix) >= MAX_DISTANCE_MATRIX_SIZE:
+        internal_distance_matrix = False
+        internal_depot_index = -1
     return False
 
 
@@ -82,7 +82,7 @@ def route(
     context: mgp_ProcCtx,
     depot_node: mgp_Vertex,
     number_of_vehicles: mgp_Nullable[int] = False,
-) -> mgp_Record(from_vertex=mgp_Vertex, to_vertex=mgp_Vertex):
+) -> list[mgp_Record]:
     """
     The VRP routing returns 2 fields.
         * `from_vertex` represents the starting nodes out of all selected routes (edges) in the complete graph
@@ -104,20 +104,17 @@ def route(
     distance_matrix = get_distance_matrix(vertices)
     depot_index = get_depot_index(vertices, depot_node)
 
-    solver = VRPConstraintProgrammingSolver(
-        number_of_vehicles, distance_matrix, depot_index
-    )
+    solver = VRPConstraintProgrammingSolver(number_of_vehicles, distance_matrix, depot_index)
     solver.solve()
 
     result = solver.get_result()
 
     cleanup()
 
-    _return_value = [
-        mgp_Record(from_vertex=vertices[x.from_vertex], to_vertex=vertices[x.to_vertex])
-        for x in result.vrp_paths
+    computed_return_value = [
+        mgp_Record(from_vertex=vertices[x.from_vertex], to_vertex=vertices[x.to_vertex]) for x in result.vrp_paths
     ]
-    return _return_value
+    return computed_return_value
 
 
 class DepotUnspecifiedException(Exception):

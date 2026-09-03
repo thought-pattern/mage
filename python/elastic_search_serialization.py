@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from json import loads as json_loads
-from typing import Any, Dict, List, Tuple
 
 from elasticsearch import Elasticsearch as elasticsearch_Elasticsearch
 from elasticsearch import helpers as elasticsearch_helpers
@@ -23,7 +22,7 @@ ACTION = "action"
 INDEX = "index"
 ID = "_id"
 SOURCE = "source"
-_SOURCE = "_source"
+INTERNAL_SOURCE = "_source"
 SETTINGS = "settings"
 NUMBER_OF_SHARDS = "number_of_shards"
 NUMBER_OF_REPLICAS = "number_of_replicas"
@@ -53,7 +52,7 @@ MEM_TYPE_HAS_RAW = "mem_type_has_raw"
 MEM_CATEGORIES = "mem_categories"
 
 # Mappings of our data types
-meme_mapping: Dict[type, str] = {}
+meme_mapping: dict[type, str] = {}
 meme_mapping[str] = MEM_STRING
 meme_mapping[int] = MEM_NUMBER
 meme_mapping[float] = MEM_NUMBER
@@ -69,7 +68,7 @@ client: elasticsearch_Elasticsearch
 
 
 # Helper method
-def serialize_vertex(vertex: mgp_Vertex) -> Dict[str, Any]:
+def serialize_vertex(vertex: mgp_Vertex) -> dict[str, object]:
     """Serializes vertex to specified ElasticSearch schema.
     Args:
         vertex (mgp.Vertex): Reference to the vertex in Memgraph DB
@@ -82,7 +81,7 @@ def serialize_vertex(vertex: mgp_Vertex) -> Dict[str, Any]:
     return doc
 
 
-def serialize_edge(edge: mgp_Edge) -> Dict[str, Any]:
+def serialize_edge(edge: mgp_Edge) -> dict[str, object]:
     """Serializes edge to specified ElasticSearch schema.
     Args:
         edge (mgp.Edge): Reference to the edge in Memgraph DB.
@@ -95,14 +94,14 @@ def serialize_edge(edge: mgp_Edge) -> Dict[str, Any]:
     return doc
 
 
-def serialize_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
+def serialize_properties(properties: mgp_Any) -> dict[str, object]:
     """The method used to serialize properties of vertices and relationships.
     Args:
         properties (Dict[str, Any]]): Properties of nodes and relationships.
     Returns:
         Dict[str, Any]: Object that conforms ElasticSearch's schema.
     """
-    source: Dict[str, Any] = {}
+    source: dict[str, object] = {}
     for prop_key, prop_value in properties:
         if isinstance(prop_value, datetime):
             # Convert datetime to str, replace microsecond and add Z suffix(Zulu or zero offset) manually because Python doesn't
@@ -110,25 +109,23 @@ def serialize_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
             prop_value = f"{prop_value.replace(microsecond=0).isoformat()}Z"
             source[f"{prop_key}{MEM_DATE}"] = prop_value
         elif type(prop_value) in meme_mapping:
-            source[f"{prop_key}{meme_mapping.get(type(prop_value), False)}"] = (
-                prop_value
-            )
+            source[f"{prop_key}{meme_mapping.get(type(prop_value), False)}"] = prop_value
     return source
 
 
-def generate_document(context_object: Any) -> Tuple[Dict[str, Any], str]:
+def generate_document(context_object: mgp_Any) -> tuple[dict[str, object], str]:
     if context_object.get(EVENT_TYPE, False) == CREATED_VERTEX:
-        _return_value = serialize_vertex(context_object.get(VERTEX, False)), VERTEX
-        return _return_value
+        computed_return_value = serialize_vertex(context_object.get(VERTEX, False)), VERTEX
+        return computed_return_value
     elif context_object.get(EVENT_TYPE, False) == CREATED_EDGE:
-        _return_value = serialize_edge(context_object.get(EDGE, False)), EDGE
-        return _return_value
-    return ()
+        computed_return_value = serialize_edge(context_object.get(EDGE, False)), EDGE
+        return computed_return_value
+    raise ValueError(f"Unsupported trigger event: {context_object.get(EVENT_TYPE, False)}")
 
 
 def generate_documents_from_triggered_objects(
-    context_objects: List[Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    context_objects: list[mgp_Any],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     (
         "Generates vertices and edges documents for indexing and returns them as lists.\n    Args:\n   "  # Continue literal.
         "     context_objects (List[Dict[str, Any]]): Objects that are sent as parameters because of "  # Continue literal.
@@ -146,7 +143,7 @@ def generate_documents_from_triggered_objects(
 
 def generate_documents_from_db(
     context: mgp_ProcCtx,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Generates vertices and edges from the database.
     Args:
         context (mgp.ProcCtx): A reference to the context execution.
@@ -163,7 +160,7 @@ def generate_documents_from_db(
 
 
 def elastic_search_streaming_bulk(
-    objects: List[Any],
+    objects: list[mgp_Any],
     index: str,
     chunk_size: int = 500,
     max_chunk_bytes: int = 104857600,
@@ -208,7 +205,7 @@ def elastic_search_streaming_bulk(
 
 
 def elastic_search_parallel_bulk(
-    objects: List[Any],
+    objects: list[mgp_Any],
     index: str,
     thread_count: int = 8,
     chunk_size: int = 500,
@@ -251,7 +248,7 @@ def connect(
     ca_certs: str = "",
     elastic_user: str = "",
     elastic_password: str = "",
-) -> mgp_Record(connection_status=mgp_Map):
+) -> mgp_Record:
     (
         "Establishes connection with the Elasticsearch. This configuration needs to be specific to th"  # Continue literal.
         "e Elasticsearch deployment. Uses basic authentication\n    Args:\n        elastic_url (str): U"  # Continue literal.
@@ -267,8 +264,8 @@ def connect(
         basic_auth=(elastic_user, elastic_password),
     )
     logger.info(f"Client info: {client.info()}")
-    _return_value = mgp_Record(connection_status=dict(client.info()))
-    return _return_value
+    computed_return_value = mgp_Record(connection_status=dict(client.info()))
+    return computed_return_value
 
 
 @mgp_read_proc
@@ -277,7 +274,7 @@ def create_index(
     index_name: str,
     schema_path: str,
     schema_parameters: mgp_Map,
-) -> mgp_Record(response=mgp_Map):
+) -> mgp_Record:
     """Creates index with the given index name.
     Args:
         index_name (str): Name of the index that needs to be created.
@@ -295,39 +292,21 @@ def create_index(
         schema_json = json_loads(schema_file.read())
     # Update default schema if specified
     if NUMBER_OF_SHARDS in schema_parameters:
-        schema_json[SETTINGS][INDEX][NUMBER_OF_SHARDS] = schema_parameters[
-            NUMBER_OF_SHARDS
-        ]
-        logger.info(
-            f"Number of shards updated to: {schema_parameters[NUMBER_OF_SHARDS]}"
-        )
+        schema_json[SETTINGS][INDEX][NUMBER_OF_SHARDS] = schema_parameters[NUMBER_OF_SHARDS]
+        logger.info(f"Number of shards updated to: {schema_parameters[NUMBER_OF_SHARDS]}")
     if NUMBER_OF_REPLICAS in schema_parameters:
-        schema_json[SETTINGS][INDEX][NUMBER_OF_REPLICAS] = schema_parameters[
-            NUMBER_OF_REPLICAS
-        ]
-        logger.info(
-            f"Number of replicas updated to: {schema_parameters[NUMBER_OF_REPLICAS]}"
-        )
+        schema_json[SETTINGS][INDEX][NUMBER_OF_REPLICAS] = schema_parameters[NUMBER_OF_REPLICAS]
+        logger.info(f"Number of replicas updated to: {schema_parameters[NUMBER_OF_REPLICAS]}")
     if ANALYZER in schema_parameters and INDEX_TYPE in schema_parameters:
-        schema_json[MAPPINGS][DYNAMIC_TEMPLATES][1][STRING][MAPPING][ANALYZER] = (
-            schema_parameters[ANALYZER]
-        )
+        schema_json[MAPPINGS][DYNAMIC_TEMPLATES][1][STRING][MAPPING][ANALYZER] = schema_parameters[ANALYZER]
         if schema_parameters[INDEX_TYPE] == VERTEX:
-            schema_json[MAPPINGS][DYNAMIC_TEMPLATES][0][MEM_CATEGORIES_HAS_RAW][
-                MAPPING
-            ][ANALYZER] = schema_parameters[ANALYZER]
+            schema_json[MAPPINGS][DYNAMIC_TEMPLATES][0][MEM_CATEGORIES_HAS_RAW][MAPPING][ANALYZER] = schema_parameters[ANALYZER]
         else:
-            schema_json[MAPPINGS][DYNAMIC_TEMPLATES][0][MEM_TYPE_HAS_RAW][MAPPING][
-                ANALYZER
-            ] = schema_parameters[ANALYZER]
+            schema_json[MAPPINGS][DYNAMIC_TEMPLATES][0][MEM_TYPE_HAS_RAW][MAPPING][ANALYZER] = schema_parameters[ANALYZER]
         logger.info(f"Analyzer set to: {schema_parameters[ANALYZER]}")
     logger.info(f"Schema dict: {schema_json}")
-    _return_value = mgp_Record(
-        response=dict(
-            client.indices.create(index=index_name, body=schema_json, ignore=400)
-        )
-    )
-    return _return_value
+    computed_return_value = mgp_Record(response=dict(client.indices.create(index=index_name, body=schema_json, ignore=400)))
+    return computed_return_value
 
 
 @mgp_read_proc
@@ -345,7 +324,7 @@ def index_db(
     max_backoff: float = 600.0,
     yield_ok: bool = True,
     queue_size: int = 4,
-) -> mgp_Record(nodes=int, edges=int):
+) -> mgp_Record:
     # Now create iterable of documents that need to be indexed
     (
         "The method serializes all vertices and relationships that are in Memgraph DB to an ElasticSe"  # Continue literal.
@@ -422,8 +401,8 @@ def index_db(
             queue_size,
         )
 
-    _return_value = mgp_Record(nodes=len(nodes), edges=len(edges))
-    return _return_value
+    computed_return_value = mgp_Record(nodes=len(nodes), edges=len(edges))
+    return computed_return_value
 
 
 @mgp_read_proc
@@ -442,7 +421,7 @@ def index(
     max_backoff: float = 600.0,
     yield_ok: bool = True,
     queue_size: int = 4,
-) -> mgp_Record(nodes=int, edges=int):
+) -> mgp_Record:
     # Now create iterable of documents that need to be indexed
     (
         "The method serializes all vertices and relationships that came into the Memgraph DB to an El"  # Continue literal.
@@ -518,8 +497,8 @@ def index(
             raise_on_exception,
             queue_size,
         )
-    _return_value = mgp_Record(nodes=len(nodes), edges=len(edges))
-    return _return_value
+    computed_return_value = mgp_Record(nodes=len(nodes), edges=len(edges))
+    return computed_return_value
 
 
 @mgp_read_proc
@@ -531,7 +510,7 @@ def reindex(
     chunk_size: int = 500,
     scroll: str = "5m",
     op_type: mgp_Nullable[str] = False,
-) -> mgp_Record(response=str):
+) -> mgp_Record:
     (
         "Reindex all documents that satisfy a given query from one index to another, potentially (if "  # Continue literal.
         "target_client is specified) on a different cluster. If you don’t specify the query you will "  # Continue literal.
@@ -558,8 +537,8 @@ def reindex(
         scroll=scroll,
         op_type=op_type,
     )
-    _return_value = mgp_Record(response=str(response[0]))
-    return _return_value
+    computed_return_value = mgp_Record(response=str(response[0]))
+    return computed_return_value
 
 
 @mgp_read_proc
@@ -574,7 +553,7 @@ def scan(
     from_: int = 0,
     request_timeout: mgp_Nullable[float] = False,
     clear_scroll: bool = False,
-) -> mgp_Record(items=mgp_List[mgp_Map]):
+) -> mgp_Record:
     (
         "Runs a query on a index specified by the index_name.\n    Args:\n        context (mgp.ProcCtx)"  # Continue literal.
         ": Reference to the executing context.\n        index_name (str): A name of the index.\n       "  # Continue literal.
@@ -607,13 +586,13 @@ def scan(
     )
     items = []
     for item in response:
-        if _SOURCE in item and INDEX in item.get(_SOURCE, {}):
-            item[ID] = item.get(_SOURCE, {})[INDEX][ID]
-            item.get(_SOURCE, {}).pop(INDEX, False)
+        if INTERNAL_SOURCE in item and INDEX in item.get(INTERNAL_SOURCE, {}):
+            item[ID] = item.get(INTERNAL_SOURCE, {})[INDEX][ID]
+            item.get(INTERNAL_SOURCE, {}).pop(INDEX, False)
         items.append(item)
 
-    _return_value = mgp_Record(items=items)
-    return _return_value
+    computed_return_value = mgp_Record(items=items)
+    return computed_return_value
 
 
 @mgp_read_proc
@@ -625,7 +604,7 @@ def search(
     from_: int = 0,
     aggregations: mgp_Nullable[mgp_Map] = False,
     aggs: mgp_Nullable[mgp_Map] = False,
-) -> mgp_Record(result=mgp_Map):
+) -> mgp_Record:
     """Searches for all documents by specifying query and index.
     Args:
         context (mgp.ProcCtx): Reference to the executing context.
@@ -647,9 +626,9 @@ def search(
     )
     hits = []
     for hit in response[HITS][HITS]:
-        if _SOURCE in hit and INDEX in hit[_SOURCE]:
-            hit[ID] = hit[_SOURCE][INDEX][ID]
-            hit[_SOURCE].pop(INDEX, False)
+        if INTERNAL_SOURCE in hit and INDEX in hit[INTERNAL_SOURCE]:
+            hit[ID] = hit[INTERNAL_SOURCE][INDEX][ID]
+            hit[INTERNAL_SOURCE].pop(INDEX, False)
         hits.append(hit)
 
     result = {}
@@ -659,5 +638,5 @@ def search(
     else:
         result[AGGREGATIONS] = dict()
 
-    _return_value = mgp_Record(result=result)
-    return _return_value
+    computed_return_value = mgp_Record(result=result)
+    return computed_return_value

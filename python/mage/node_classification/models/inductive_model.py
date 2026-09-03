@@ -2,7 +2,7 @@
 
 from mgp import List as mgp_List
 from torch import nn as torch_nn
-from torch import tensor as torch_tensor
+from torch import Tensor as torch_Tensor
 from torch.nn import functional as F
 from torch_geometric import nn as torch_geometric_nn
 
@@ -46,7 +46,7 @@ class InductiveModel(torch_nn.Module):
         else:
             self.convs.append(conv(in_channels, out_channels, aggr=aggr))
 
-    def forward(self, x: torch_tensor, edge_index: torch_tensor) -> torch_tensor:
+    def forward(self, x: torch_Tensor, edge_index: torch_Tensor) -> torch_Tensor:
         """Forward propagation
 
         Args:

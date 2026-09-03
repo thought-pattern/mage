@@ -12,7 +12,5 @@ QUERY_PATTERNS = [
 
 
 def is_global_operation(subquery: str) -> bool:
-    _return_value = any(
-        subquery.upper().startswith(pattern) for pattern in QUERY_PATTERNS
-    )
-    return _return_value
+    computed_return_value = any(subquery.upper().startswith(pattern) for pattern in QUERY_PATTERNS)
+    return computed_return_value

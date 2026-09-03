@@ -33,5 +33,5 @@ def encode_chunk(visible_gpu: int, model_id: str, texts: list[str], batch_size: 
         normalize_embeddings=True,
         show_progress_bar=False,
     )
-    _return_value = len(texts), embs.tolist()
-    return _return_value
+    computed_return_value = len(texts), embs.tolist()
+    return computed_return_value

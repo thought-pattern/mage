@@ -17,13 +17,9 @@ class TimeEncoder(nn.Module):
         self.w = nn.Linear(1, out_dimension).to(self.device)
 
         self.w.weight = nn.Parameter(
-            (torch_from_numpy(1 / 10 ** np_linspace(0, 9, out_dimension)))
-            .float()
-            .reshape(out_dimension, -1)
+            (torch_from_numpy(1 / 10 ** np_linspace(0, 9, out_dimension))).float().reshape(out_dimension, -1)
         )
-        self.w.bias = nn.Parameter(
-            torch_zeros(out_dimension, device=self.device).float()
-        )
+        self.w.bias = nn.Parameter(torch_zeros(out_dimension, device=self.device).float())
 
     def forward(self, t):
         output = torch_cos(self.w(t))

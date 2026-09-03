@@ -21,7 +21,6 @@ def test_distance_between_points_km(points):
     result = calculate_distance_between_points(point_a, point_b, metrics="km")
 
     assert result == pytest_approx(197.56, 0.1)
-    return False
 
 
 def test_distance_between_points_m(points):
@@ -29,20 +28,17 @@ def test_distance_between_points_m(points):
     result = calculate_distance_between_points(point_a, point_b, metrics="m")
 
     assert result == pytest_approx(197568.2, 0.1)
-    return False
 
 
 def test_wrong_metrics(points):
     point_a, point_b = points
     with pytest_raises(InvalidMetricException):
         calculate_distance_between_points(point_a, point_b, metrics="r")
-    return False
 
 
 def test_wrong_keys(points):
     _, point_b = points
-    point_a = {"lat": 1}
+    point_a = {"lat": 1.0}
 
     with pytest_raises(InvalidCoordinatesException):
         calculate_distance_between_points(point_a, point_b)
-    return False

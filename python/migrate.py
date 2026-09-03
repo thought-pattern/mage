@@ -14,7 +14,6 @@ from json import dumps as json_dumps
 from json import load as json_load
 from os import getenv as os_getenv
 from re import match as re_match
-from typing import Any, Dict, List
 
 from boto3 import client as boto3_client
 from duckdb import connect as duckDB_connect
@@ -52,7 +51,7 @@ class Constants:
     USERNAME = "username"
 
 
-class _NullConnection:
+class NullConnection:
     """Stable no-op database connection used for missing cache entries."""
 
     def commit(self):
@@ -62,7 +61,7 @@ class _NullConnection:
         return False
 
 
-class _NullCursor:
+class NullCursor:
     """Stable empty cursor used for missing cache entries."""
 
     description: tuple = ()
@@ -72,13 +71,11 @@ class _NullCursor:
         return []
 
 
-_NULL_CONNECTION = _NullConnection()
-_NULL_CURSOR = _NullCursor()
+NULL_CONNECTION = NullConnection()
+NULL_CURSOR = NullCursor()
 
 
-def _get_query_hash(
-    query: str, config: mgp_Map, params: mgp_Nullable[mgp_Any] = False
-) -> str:
+def get_query_hash(query: str, config: mgp_Map, params: mgp_Nullable[mgp_Any] = False) -> str:
     """
     Create a hash from query, config, and params to use as a cache key.
 
@@ -101,8 +98,8 @@ def _get_query_hash(
             params_str = str(params)
 
     hash_input = f"{query}|{config_str}|{params_str}"
-    _return_value = hashlib_sha256(hash_input.encode("utf-8")).hexdigest()
-    return _return_value
+    computed_return_value = hashlib_sha256(hash_input.encode("utf-8")).hexdigest()
+    return computed_return_value
 
 
 # MYSQL
@@ -119,14 +116,14 @@ def init_migrate_mysql(
     global mysql_dict
 
     if params:
-        _check_params_type(params)
+        check_params_type(params)
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    if _query_is_table(table_or_sql):
+    if query_is_table(table_or_sql):
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
-    query_hash = _get_query_hash(table_or_sql, config, params)
+    query_hash = get_query_hash(table_or_sql, config, params)
 
     # check if query is already running
     if query_hash in mysql_dict:
@@ -142,9 +139,7 @@ def init_migrate_mysql(
 
     mysql_dict.get(query_hash, {})[Constants.CONNECTION] = connection
     mysql_dict.get(query_hash, {})[Constants.CURSOR] = cursor
-    mysql_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [
-        column[Constants.I_COLUMN_NAME] for column in cursor.description
-    ]
+    mysql_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [column[Constants.I_COLUMN_NAME] for column in cursor.description]
     return False
 
 
@@ -153,7 +148,7 @@ def mysql(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = False,
-) -> mgp_Record(row=mgp_Map):
+) -> list[mgp_Record]:
     """
     With migrate.mysql you can access MySQL and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -173,37 +168,33 @@ def mysql(
     global mysql_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    if _query_is_table(table_or_sql):
+    if query_is_table(table_or_sql):
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
-    query_hash = _get_query_hash(table_or_sql, config, params)
-    cursor = mysql_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    query_hash = get_query_hash(table_or_sql, config, params)
+    cursor = mysql_dict.get(query_hash, {}).get(Constants.CURSOR, NULL_CURSOR)
     column_names = mysql_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
 
     rows = cursor.fetchmany(Constants.BATCH_SIZE)
 
-    result = [mgp_Record(row=_name_row_cells_mysql(row, column_names)) for row in rows]
+    result = [mgp_Record(row=name_row_cells_mysql(row, column_names)) for row in rows]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
-        _cleanup_mysql_by_hash(query_hash)
+        cleanup_mysql_by_hash(query_hash)
 
     return result
 
 
-def _cleanup_mysql_by_hash(query_hash: str):
+def cleanup_mysql_by_hash(query_hash: str):
     """Internal cleanup function that takes a query hash."""
     global mysql_dict
 
     if query_hash in mysql_dict:
-        mysql_dict.get(query_hash, {}).get(
-            Constants.CONNECTION, _NULL_CONNECTION
-        ).commit()
-        mysql_dict.get(query_hash, {}).get(
-            Constants.CONNECTION, _NULL_CONNECTION
-        ).close()
+        mysql_dict.get(query_hash, {}).get(Constants.CONNECTION, NULL_CONNECTION).commit()
+        mysql_dict.get(query_hash, {}).get(Constants.CONNECTION, NULL_CONNECTION).close()
         mysql_dict.pop(query_hash, {})
     return False
 
@@ -229,17 +220,17 @@ def init_migrate_sql_server(
     global sql_server_dict
 
     if params:
-        _check_params_type(params, (list, tuple))
+        check_params_type(params, (list, tuple))
     else:
         params = []
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    if _query_is_table(table_or_sql):
+    if query_is_table(table_or_sql):
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
-    query_hash = _get_query_hash(table_or_sql, config, params)
+    query_hash = get_query_hash(table_or_sql, config, params)
 
     # check if query is already running
     if query_hash in sql_server_dict:
@@ -255,9 +246,7 @@ def init_migrate_sql_server(
 
     sql_server_dict.get(query_hash, {})[Constants.CONNECTION] = connection
     sql_server_dict.get(query_hash, {})[Constants.CURSOR] = cursor
-    sql_server_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [
-        column[Constants.I_COLUMN_NAME] for column in cursor.description
-    ]
+    sql_server_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [column[Constants.I_COLUMN_NAME] for column in cursor.description]
     return False
 
 
@@ -266,7 +255,7 @@ def sql_server(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = False,
-) -> mgp_Record(row=mgp_Map):
+) -> list[mgp_Record]:
     """
     With migrate.sql_server you can access SQL Server and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -288,36 +277,32 @@ def sql_server(
         params = []
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    if _query_is_table(table_or_sql):
+    if query_is_table(table_or_sql):
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
-    query_hash = _get_query_hash(table_or_sql, config, params)
-    cursor = sql_server_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    query_hash = get_query_hash(table_or_sql, config, params)
+    cursor = sql_server_dict.get(query_hash, {}).get(Constants.CURSOR, NULL_CURSOR)
     column_names = sql_server_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
     rows = cursor.fetchmany(Constants.BATCH_SIZE)
 
-    result = [mgp_Record(row=_name_row_cells(row, column_names)) for row in rows]
+    result = [mgp_Record(row=name_row_cells(row, column_names)) for row in rows]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
-        _cleanup_sql_server_by_hash(query_hash)
+        cleanup_sql_server_by_hash(query_hash)
 
     return result
 
 
-def _cleanup_sql_server_by_hash(query_hash: str):
+def cleanup_sql_server_by_hash(query_hash: str):
     """Internal cleanup function that takes a query hash."""
     global sql_server_dict
 
     if query_hash in sql_server_dict:
-        sql_server_dict.get(query_hash, {}).get(
-            Constants.CONNECTION, _NULL_CONNECTION
-        ).commit()
-        sql_server_dict.get(query_hash, {}).get(
-            Constants.CONNECTION, _NULL_CONNECTION
-        ).close()
+        sql_server_dict.get(query_hash, {}).get(Constants.CONNECTION, NULL_CONNECTION).commit()
+        sql_server_dict.get(query_hash, {}).get(Constants.CONNECTION, NULL_CONNECTION).close()
         sql_server_dict.pop(query_hash, {})
     return False
 
@@ -343,12 +328,12 @@ def init_migrate_oracle_db(
     global oracle_db_dict
 
     if params:
-        _check_params_type(params)
+        check_params_type(params)
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    if _query_is_table(table_or_sql):
+    if query_is_table(table_or_sql):
         table_or_sql = f"SELECT * FROM {table_or_sql}"
 
     if not config:
@@ -357,7 +342,7 @@ def init_migrate_oracle_db(
     # To prevent query execution from hanging
     config["disable_oob"] = True
 
-    query_hash = _get_query_hash(table_or_sql, config, params)
+    query_hash = get_query_hash(table_or_sql, config, params)
 
     # check if query is already running
     if query_hash in oracle_db_dict:
@@ -379,9 +364,7 @@ def init_migrate_oracle_db(
 
     oracle_db_dict.get(query_hash, {})[Constants.CONNECTION] = connection
     oracle_db_dict.get(query_hash, {})[Constants.CURSOR] = cursor
-    oracle_db_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [
-        column[Constants.I_COLUMN_NAME] for column in cursor.description
-    ]
+    oracle_db_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [column[Constants.I_COLUMN_NAME] for column in cursor.description]
     return False
 
 
@@ -390,7 +373,7 @@ def oracle_db(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = False,
-) -> mgp_Record(row=mgp_Map):
+) -> list[mgp_Record]:
     """
     With migrate.oracle_db you can access Oracle DB and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -410,40 +393,36 @@ def oracle_db(
     global oracle_db_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    if _query_is_table(table_or_sql):
+    if query_is_table(table_or_sql):
         table_or_sql = f"SELECT * FROM {table_or_sql}"
 
     if not config:
         config = {}
     config["disable_oob"] = True
 
-    query_hash = _get_query_hash(table_or_sql, config, params)
-    cursor = oracle_db_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    query_hash = get_query_hash(table_or_sql, config, params)
+    cursor = oracle_db_dict.get(query_hash, {}).get(Constants.CURSOR, NULL_CURSOR)
     column_names = oracle_db_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
     rows = cursor.fetchmany(Constants.BATCH_SIZE)
 
-    result = [mgp_Record(row=_name_row_cells(row, column_names)) for row in rows]
+    result = [mgp_Record(row=name_row_cells(row, column_names)) for row in rows]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
-        _cleanup_oracle_db_by_hash(query_hash)
+        cleanup_oracle_db_by_hash(query_hash)
 
     return result
 
 
-def _cleanup_oracle_db_by_hash(query_hash: str):
+def cleanup_oracle_db_by_hash(query_hash: str):
     """Internal cleanup function that takes a query hash."""
     global oracle_db_dict
 
     if query_hash in oracle_db_dict:
-        oracle_db_dict.get(query_hash, {}).get(
-            Constants.CONNECTION, _NULL_CONNECTION
-        ).commit()
-        oracle_db_dict.get(query_hash, {}).get(
-            Constants.CONNECTION, _NULL_CONNECTION
-        ).close()
+        oracle_db_dict.get(query_hash, {}).get(Constants.CONNECTION, NULL_CONNECTION).commit()
+        oracle_db_dict.get(query_hash, {}).get(Constants.CONNECTION, NULL_CONNECTION).close()
         oracle_db_dict.pop(query_hash, {})
     return False
 
@@ -469,17 +448,17 @@ def init_migrate_postgresql(
     global postgres_dict
 
     if params:
-        _check_params_type(params, (list, tuple))
+        check_params_type(params, (list, tuple))
     else:
         params = []
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    if _query_is_table(table_or_sql):
+    if query_is_table(table_or_sql):
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
-    query_hash = _get_query_hash(table_or_sql, config, params)
+    query_hash = get_query_hash(table_or_sql, config, params)
 
     # check if query is already running
     if query_hash in postgres_dict:
@@ -495,9 +474,7 @@ def init_migrate_postgresql(
 
     postgres_dict.get(query_hash, {})[Constants.CONNECTION] = connection
     postgres_dict.get(query_hash, {})[Constants.CURSOR] = cursor
-    postgres_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [
-        column.name for column in cursor.description
-    ]
+    postgres_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [column.name for column in cursor.description]
     return False
 
 
@@ -506,7 +483,7 @@ def postgresql(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = False,
-) -> mgp_Record(row=mgp_Map):
+) -> list[mgp_Record]:
     """
     With migrate.postgresql you can access PostgreSQL and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -528,37 +505,33 @@ def postgresql(
         params = []
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    if _query_is_table(table_or_sql):
+    if query_is_table(table_or_sql):
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
-    query_hash = _get_query_hash(table_or_sql, config, params)
-    cursor = postgres_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    query_hash = get_query_hash(table_or_sql, config, params)
+    cursor = postgres_dict.get(query_hash, {}).get(Constants.CURSOR, NULL_CURSOR)
     column_names = postgres_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
 
     rows = cursor.fetchmany(Constants.BATCH_SIZE)
 
-    result = [mgp_Record(row=_name_row_cells(row, column_names)) for row in rows]
+    result = [mgp_Record(row=name_row_cells(row, column_names)) for row in rows]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
-        _cleanup_postgresql_by_hash(query_hash)
+        cleanup_postgresql_by_hash(query_hash)
 
     return result
 
 
-def _cleanup_postgresql_by_hash(query_hash: str):
+def cleanup_postgresql_by_hash(query_hash: str):
     """Internal cleanup function that takes a query hash."""
     global postgres_dict
 
     if query_hash in postgres_dict:
-        postgres_dict.get(query_hash, {}).get(
-            Constants.CONNECTION, _NULL_CONNECTION
-        ).commit()
-        postgres_dict.get(query_hash, {}).get(
-            Constants.CONNECTION, _NULL_CONNECTION
-        ).close()
+        postgres_dict.get(query_hash, {}).get(Constants.CONNECTION, NULL_CONNECTION).commit()
+        postgres_dict.get(query_hash, {}).get(Constants.CONNECTION, NULL_CONNECTION).close()
         postgres_dict.pop(query_hash, {})
     return False
 
@@ -592,7 +565,7 @@ def init_migrate_s3(
     global s3_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
     # Extract S3 bucket and key
     if not file_path.startswith("s3://"):
@@ -602,7 +575,7 @@ def init_migrate_s3(
     bucket_name, *key_parts = file_path_no_protocol.split("/")
     s3_key = "/".join(key_parts)
 
-    query_hash = _get_query_hash(file_path, config)
+    query_hash = get_query_hash(file_path, config)
 
     # check if query is already running
     if query_hash in s3_dict:
@@ -613,15 +586,9 @@ def init_migrate_s3(
     # Initialize S3 client
     s3_client = boto3_client(
         "s3",
-        aws_access_key_id=config.get(
-            "aws_access_key_id", os_getenv("AWS_ACCESS_KEY_ID", False)
-        ),
-        aws_secret_access_key=config.get(
-            "aws_secret_access_key", os_getenv("AWS_SECRET_ACCESS_KEY", False)
-        ),
-        aws_session_token=config.get(
-            "aws_session_token", os_getenv("AWS_SESSION_TOKEN", False)
-        ),
+        aws_access_key_id=config.get("aws_access_key_id", os_getenv("AWS_ACCESS_KEY_ID", False)),
+        aws_secret_access_key=config.get("aws_secret_access_key", os_getenv("AWS_SECRET_ACCESS_KEY", False)),
+        aws_session_token=config.get("aws_session_token", os_getenv("AWS_SESSION_TOKEN", False)),
         region_name=config.get("region_name", os_getenv("AWS_REGION", False)),
     )
 
@@ -644,7 +611,7 @@ def s3(
     file_path: str,
     config: mgp_Map,
     config_path: str = "",
-) -> mgp_Record(row=mgp_Map):
+) -> list[mgp_Record]:
     """
     Fetch rows from an S3 CSV file in batches.
 
@@ -657,28 +624,28 @@ def s3(
     global s3_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    query_hash = _get_query_hash(file_path, config)
-    csv_reader = s3_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    query_hash = get_query_hash(file_path, config)
+    csv_reader = s3_dict.get(query_hash, {}).get(Constants.CURSOR, NULL_CURSOR)
     column_names = s3_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
 
     batch_rows = []
     for _ in range(Constants.BATCH_SIZE):
         try:
             row = next(csv_reader)
-            batch_rows.append(mgp_Record(row=_name_row_cells(row, column_names)))
+            batch_rows.append(mgp_Record(row=name_row_cells(row, column_names)))
         except StopIteration:
             break
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not batch_rows:
-        _cleanup_s3_by_hash(query_hash)
+        cleanup_s3_by_hash(query_hash)
 
     return batch_rows
 
 
-def _cleanup_s3_by_hash(query_hash: str):
+def cleanup_s3_by_hash(query_hash: str):
     """Internal cleanup function that takes a query hash."""
     global s3_dict
 
@@ -709,10 +676,10 @@ def init_migrate_neo4j(
     global neo4j_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    query = _formulate_cypher_query(label_or_rel_or_query)
-    query_hash = _get_query_hash(query, config, params)
+    query = formulate_cypher_query(label_or_rel_or_query)
+    query_hash = get_query_hash(query, config, params)
 
     # check if query is already running
     if query_hash in neo4j_dict:
@@ -720,7 +687,7 @@ def init_migrate_neo4j(
             "Migrate module with these parameters is already running. Please wait for it to finish before starting a new one."
         )
 
-    uri = _build_neo4j_uri(config)
+    uri = build_neo4j_uri(config)
     username = config.get(Constants.USERNAME, "neo4j")
     password = config.get(Constants.PASSWORD, "password")
     database = config.get(Constants.DATABASE, False)  # None means default database
@@ -735,7 +702,10 @@ def init_migrate_neo4j(
 
     # Neo4j expects params to be a dict or None
     cypher_params = params if params is not False else {}
-    result = session.run(query, parameters=cypher_params)
+    run_query = getattr(session, "run", False)
+    if not callable(run_query):
+        raise TypeError("Neo4j session must provide a callable run operation")
+    result = run_query(query, parameters=cypher_params)
 
     neo4j_dict[query_hash] = {}
     neo4j_dict.get(query_hash, {})[Constants.DRIVER] = driver
@@ -749,7 +719,7 @@ def neo4j(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = False,
-) -> mgp_Record(row=mgp_Map):
+) -> list[mgp_Record]:
     """
     Migrate data from Neo4j to Memgraph. Can migrate a specific node label, relationship type, or execute a custom Cypher query.
 
@@ -762,17 +732,17 @@ def neo4j(
     global neo4j_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    query = _formulate_cypher_query(label_or_rel_or_query)
-    query_hash = _get_query_hash(query, config, params)
+    query = formulate_cypher_query(label_or_rel_or_query)
+    query_hash = get_query_hash(query, config, params)
     result = neo4j_dict.get(query_hash, {}).get(Constants.RESULT, {})
 
     # Fetch up to BATCH_SIZE records
     batch = []
     for record in result:
         # Convert neo4j.Record to dict with proper type conversion
-        batch.append(mgp_Record(row=_convert_neo4j_record(record)))
+        batch.append(mgp_Record(row=convert_neo4j_record(record)))
 
         # Check if we've reached the batch size limit
         if len(batch) >= Constants.BATCH_SIZE:
@@ -780,12 +750,12 @@ def neo4j(
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not batch:
-        _cleanup_neo4j_by_hash(query_hash)
+        cleanup_neo4j_by_hash(query_hash)
 
     return batch
 
 
-def _cleanup_neo4j_by_hash(query_hash: str):
+def cleanup_neo4j_by_hash(query_hash: str):
     """Internal cleanup function that takes a query hash."""
     global neo4j_dict
 
@@ -820,9 +790,9 @@ def init_migrate_arrow_flight(
     global flight_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    query_hash = _get_query_hash(query, config)
+    query_hash = get_query_hash(query, config)
 
     # check if query is already running
     if query_hash in flight_dict:
@@ -843,23 +813,17 @@ def init_migrate_arrow_flight(
     client = flight.connect(f"grpc://{host}:{port}")
 
     # Authenticate
-    options = flight.FlightCallOptions(
-        headers=[(b"authorization", f"Basic {encoded_auth}".encode("utf-8"))]
-    )
+    options = flight.FlightCallOptions(headers=[(b"authorization", f"Basic {encoded_auth}".encode("utf-8"))])
 
-    flight_info = client.get_flight_info(
-        flight.FlightDescriptor.for_command(query), options
-    )
+    flight_info = client.get_flight_info(flight.FlightDescriptor.for_command(query), options)
 
     flight_dict[query_hash] = {}
     flight_dict.get(query_hash, {})[Constants.CONNECTION] = client
-    flight_dict.get(query_hash, {})[Constants.CURSOR] = iter(
-        _fetch_flight_data(client, flight_info, options)
-    )
+    flight_dict.get(query_hash, {})[Constants.CURSOR] = iter(fetch_flight_data(client, flight_info, options))
     return False
 
 
-def _fetch_flight_data(client, flight_info, options):
+def fetch_flight_data(client, flight_info, options):
     """
     Efficiently fetches data in batches from Arrow Flight using RecordBatchReader.
     This prevents high memory usage by avoiding full table loading.
@@ -875,7 +839,7 @@ def arrow_flight(
     query: str,
     config: mgp_Map,
     config_path: str = "",
-) -> mgp_Record(row=mgp_Map):
+) -> list[mgp_Record]:
     """
     Execute a SQL query on Arrow Flight and stream results into Memgraph.
 
@@ -887,26 +851,26 @@ def arrow_flight(
     global flight_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    query_hash = _get_query_hash(query, config)
-    cursor = flight_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    query_hash = get_query_hash(query, config)
+    cursor = flight_dict.get(query_hash, {}).get(Constants.CURSOR, NULL_CURSOR)
     batch = []
     for _ in range(Constants.BATCH_SIZE):
         try:
-            row = _convert_row_types(next(cursor))
+            row = convert_row_types(next(cursor))
             batch.append(mgp_Record(row=row))
         except StopIteration:
             break
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not batch:
-        _cleanup_arrow_flight_by_hash(query_hash)
+        cleanup_arrow_flight_by_hash(query_hash)
 
     return batch
 
 
-def _cleanup_arrow_flight_by_hash(query_hash: str):
+def cleanup_arrow_flight_by_hash(query_hash: str):
     """Internal cleanup function that takes a query hash."""
     global flight_dict
 
@@ -920,16 +884,14 @@ def cleanup_migrate_arrow_flight():
     return False
 
 
-mgp_add_batch_read_proc(
-    arrow_flight, init_migrate_arrow_flight, cleanup_migrate_arrow_flight
-)
+mgp_add_batch_read_proc(arrow_flight, init_migrate_arrow_flight, cleanup_migrate_arrow_flight)
 
 
 # Dictionary to store DuckDB connections and cursors per thread
 duckdb_dict = {}
 
 
-def init_migrate_duckdb(query: str, setup_queries: mgp_Nullable[List[str]] = False):
+def init_migrate_duckdb(query: str, setup_queries: mgp_Nullable[list[str]] = False):
     """
     Initialize an in-memory DuckDB connection and execute the query.
 
@@ -941,12 +903,8 @@ def init_migrate_duckdb(query: str, setup_queries: mgp_Nullable[List[str]] = Fal
     global duckdb_dict
 
     # Create hash from query and setup_queries
-    setup_queries_str = (
-        json_dumps(setup_queries, sort_keys=False) if setup_queries else ""
-    )
-    query_hash = hashlib_sha256(
-        f"{query}|{setup_queries_str}".encode("utf-8")
-    ).hexdigest()
+    setup_queries_str = json_dumps(setup_queries, sort_keys=False) if setup_queries else ""
+    query_hash = hashlib_sha256(f"{query}|{setup_queries_str}".encode("utf-8")).hexdigest()
 
     # check if query is already running
     if query_hash in duckdb_dict:
@@ -966,15 +924,11 @@ def init_migrate_duckdb(query: str, setup_queries: mgp_Nullable[List[str]] = Fal
     duckdb_dict[query_hash] = {}
     duckdb_dict.get(query_hash, {})[Constants.CONNECTION] = connection
     duckdb_dict.get(query_hash, {})[Constants.CURSOR] = cursor
-    duckdb_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [
-        desc[0] for desc in cursor.description
-    ]
+    duckdb_dict.get(query_hash, {})[Constants.COLUMN_NAMES] = [desc[0] for desc in cursor.description]
     return False
 
 
-def duckdb(query: str, setup_queries: mgp_Nullable[List[str]] = False) -> mgp_Record(
-    row=mgp_Map
-):
+def duckdb(query: str, setup_queries: mgp_Nullable[list[str]] = False) -> list[mgp_Record]:
     """
     Fetch rows from DuckDB in batches.
 
@@ -984,34 +938,28 @@ def duckdb(query: str, setup_queries: mgp_Nullable[List[str]] = False) -> mgp_Re
     """
     global duckdb_dict
 
-    setup_queries_str = (
-        json_dumps(setup_queries, sort_keys=False) if setup_queries else ""
-    )
-    query_hash = hashlib_sha256(
-        f"{query}|{setup_queries_str}".encode("utf-8")
-    ).hexdigest()
-    cursor = duckdb_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    setup_queries_str = json_dumps(setup_queries, sort_keys=False) if setup_queries else ""
+    query_hash = hashlib_sha256(f"{query}|{setup_queries_str}".encode("utf-8")).hexdigest()
+    cursor = duckdb_dict.get(query_hash, {}).get(Constants.CURSOR, NULL_CURSOR)
     column_names = duckdb_dict.get(query_hash, {}).get(Constants.COLUMN_NAMES, [])
 
     rows = cursor.fetchmany(Constants.BATCH_SIZE)
-    result = [mgp_Record(row=_name_row_cells(row, column_names)) for row in rows]
+    result = [mgp_Record(row=name_row_cells(row, column_names)) for row in rows]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
-        _cleanup_duckdb_by_hash(query_hash)
+        cleanup_duckdb_by_hash(query_hash)
 
     return result
 
 
-def _cleanup_duckdb_by_hash(query_hash: str):
+def cleanup_duckdb_by_hash(query_hash: str):
     """Internal cleanup function that takes a query hash."""
     global duckdb_dict
 
     if query_hash in duckdb_dict:
         if Constants.CONNECTION in duckdb_dict.get(query_hash, {}):
-            duckdb_dict.get(query_hash, {}).get(
-                Constants.CONNECTION, _NULL_CONNECTION
-            ).close()
+            duckdb_dict.get(query_hash, {}).get(Constants.CONNECTION, NULL_CONNECTION).close()
         duckdb_dict.pop(query_hash, False)
     return False
 
@@ -1036,10 +984,10 @@ def init_migrate_memgraph(
     global memgraph_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    query = _formulate_cypher_query(label_or_rel_or_query)
-    query_hash = _get_query_hash(query, config, params)
+    query = formulate_cypher_query(label_or_rel_or_query)
+    query_hash = get_query_hash(query, config, params)
 
     # check if query is already running
     if query_hash in memgraph_dict:
@@ -1061,7 +1009,7 @@ def memgraph(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = False,
-) -> mgp_Record(row=mgp_Map):
+) -> list[mgp_Record]:
     (
         "\n    Migrate data from Memgraph to another Memgraph instance. Can migrate a specific node la"  # Continue literal.
         "bel, relationship type, or execute a custom Cypher query.\n\n    :param label_or_rel_or_query:"  # Continue literal.
@@ -1072,34 +1020,28 @@ def memgraph(
     global memgraph_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    query = _formulate_cypher_query(label_or_rel_or_query)
-    query_hash = _get_query_hash(query, config, params)
-    cursor = memgraph_dict.get(query_hash, {}).get(Constants.CURSOR, _NULL_CURSOR)
+    query = formulate_cypher_query(label_or_rel_or_query)
+    query_hash = get_query_hash(query, config, params)
+    cursor = memgraph_dict.get(query_hash, {}).get(Constants.CURSOR, NULL_CURSOR)
 
-    result = [
-        mgp_Record(row=row)
-        for row in (next(cursor, False) for _ in range(Constants.BATCH_SIZE))
-        if row is not None
-    ]
+    result = [mgp_Record(row=row) for row in (next(cursor, False) for _ in range(Constants.BATCH_SIZE)) if row is not None]
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not result:
-        _cleanup_memgraph_by_hash(query_hash)
+        cleanup_memgraph_by_hash(query_hash)
 
     return result
 
 
-def _cleanup_memgraph_by_hash(query_hash: str):
+def cleanup_memgraph_by_hash(query_hash: str):
     """Internal cleanup function that takes a query hash."""
     global memgraph_dict
 
     if query_hash in memgraph_dict:
         if Constants.CONNECTION in memgraph_dict.get(query_hash, {}):
-            memgraph_dict.get(query_hash, {}).get(
-                Constants.CONNECTION, _NULL_CONNECTION
-            ).close()
+            memgraph_dict.get(query_hash, {}).get(Constants.CONNECTION, NULL_CONNECTION).close()
         memgraph_dict.pop(query_hash, False)
     return False
 
@@ -1132,9 +1074,9 @@ def init_migrate_servicenow(
     global servicenow_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    query_hash = _get_query_hash(endpoint, config, params)
+    query_hash = get_query_hash(endpoint, config, params)
 
     # check if query is already running
     if query_hash in servicenow_dict:
@@ -1165,7 +1107,7 @@ def servicenow(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = False,
-) -> mgp_Record(row=mgp_Map):
+) -> list[mgp_Record]:
     """
     Fetch rows from the ServiceNow REST API in batches.
 
@@ -1178,9 +1120,9 @@ def servicenow(
     global servicenow_dict
 
     if len(config_path) > 0:
-        config = _combine_config(config=config, config_path=config_path)
+        config = combine_config(config=config, config_path=config_path)
 
-    query_hash = _get_query_hash(endpoint, config, params)
+    query_hash = get_query_hash(endpoint, config, params)
     data_iter = servicenow_dict.get(query_hash, {}).get(Constants.CURSOR, {})
 
     batch_rows = []
@@ -1193,12 +1135,12 @@ def servicenow(
 
     # if results are empty, cleanup the query since cleanup doesn't accept any parameters
     if not batch_rows:
-        _cleanup_servicenow_by_hash(query_hash)
+        cleanup_servicenow_by_hash(query_hash)
 
     return batch_rows
 
 
-def _cleanup_servicenow_by_hash(query_hash: str):
+def cleanup_servicenow_by_hash(query_hash: str):
     """Internal cleanup function that takes a query hash."""
     global servicenow_dict
 
@@ -1215,12 +1157,10 @@ def cleanup_migrate_servicenow():
 mgp_add_batch_read_proc(servicenow, init_migrate_servicenow, cleanup_migrate_servicenow)
 
 
-def _formulate_cypher_query(label_or_rel_or_query: str) -> str:
+def formulate_cypher_query(label_or_rel_or_query: str) -> str:
     words = label_or_rel_or_query.split()
     if len(words) > 1:
-        return (
-            label_or_rel_or_query  # Treat it as a Cypher query if multiple words exist
-        )
+        return label_or_rel_or_query  # Treat it as a Cypher query if multiple words exist
 
     # Try to see if the syntax matches similar to (:Label) to migrate only nodes
     node_match = re_match(r"^\(\s*:(\w+)\s*\)$", label_or_rel_or_query)
@@ -1230,14 +1170,12 @@ def _formulate_cypher_query(label_or_rel_or_query: str) -> str:
 
     if node_match:
         label = node_match.group(1)
-        _return_value = (
-            f"MATCH (n:{label}) RETURN labels(n) as labels, properties(n) as properties"
-        )
-        return _return_value
+        computed_return_value = f"MATCH (n:{label}) RETURN labels(n) as labels, properties(n) as properties"
+        return computed_return_value
 
     if rel_match:
         rel_type = rel_match.group(1)
-        _return_value = f"""
+        computed_return_value = f"""
     MATCH (n)-[r:{rel_type}]->(m)
     RETURN
         labels(n) as from_labels,
@@ -1246,50 +1184,47 @@ def _formulate_cypher_query(label_or_rel_or_query: str) -> str:
         properties(r) as edge_properties,
         properties(m) as to_properties
     """
-        return _return_value
+        return computed_return_value
     return label_or_rel_or_query  # Assume it's a valid query
 
 
-def _query_is_table(table_or_sql: str) -> bool:
-    _return_value = len(table_or_sql.split()) == 1
-    return _return_value
+def query_is_table(table_or_sql: str) -> bool:
+    computed_return_value = len(table_or_sql.split()) == 1
+    return computed_return_value
 
 
-def _combine_config(config: mgp_Map, config_path: str) -> Dict[str, Any]:
+def combine_config(config: mgp_Map, config_path: str) -> dict[str, object]:
     assert len(config_path), "Path must not be empty"
 
     file_config = {}
     try:
         with open(config_path, "r") as file:
             file_config = json_load(file)
-    except Exception as _caught_error_1202:
-        raise OSError("Could not open/read file.") from _caught_error_1202
+    except Exception as caught_error_1202:
+        raise OSError("Could not open/read file.") from caught_error_1202
 
     config.update(file_config)
     return config
 
 
-def _name_row_cells(row_cells, column_names) -> Dict[str, Any]:
-    _return_value = {
+def name_row_cells(row_cells, column_names):
+    computed_return_value = {
         column: (value if not isinstance(value, Decimal) else float(value))
         for column, value in zip(column_names, row_cells, strict=False)
     }
-    return _return_value
+    return computed_return_value
 
 
-def _name_row_cells_mysql(row_cells, column_names) -> Dict[str, Any]:
+def name_row_cells_mysql(row_cells, column_names):
     """
     Convert MySQL row cells to Memgraph-compatible types.
     Handles MySQL-specific types that might cause PyObject conversion errors.
     """
-    _return_value = {
-        column: _convert_mysql_value(value)
-        for column, value in zip(column_names, row_cells, strict=False)
-    }
-    return _return_value
+    computed_return_value = {column: convert_mysql_value(value) for column, value in zip(column_names, row_cells, strict=False)}
+    return computed_return_value
 
 
-def _convert_mysql_value(value: Any) -> Any:
+def convert_mysql_value(value: object) -> object:
     """
     Convert a MySQL value to a Memgraph-compatible type.
     Returns ``False`` for unsupported types and logs a warning.
@@ -1299,37 +1234,37 @@ def _convert_mysql_value(value: Any) -> Any:
 
     # Handle Decimal types
     if isinstance(value, Decimal):
-        _return_value = float(value)
-        return _return_value
+        computed_return_value = float(value)
+        return computed_return_value
     # Handle datetime types
     if isinstance(value, (datetime_datetime, datetime_date, datetime_time)):
         # Use ISO 8601 format for consistency
         try:
-            _return_value = value.isoformat()
-            return _return_value
+            computed_return_value = value.isoformat()
+            return computed_return_value
         except Exception:
-            _return_value = str(value)
-            return _return_value
+            computed_return_value = str(value)
+            return computed_return_value
     # Handle timedelta
     if isinstance(value, datetime_timedelta):
-        _return_value = str(value)
-        return _return_value
+        computed_return_value = str(value)
+        return computed_return_value
 
     # Handle binary data (BLOB, BINARY, VARBINARY)
     if isinstance(value, (bytes, bytearray)):
         try:
             # Try to decode as UTF-8 string first
-            _return_value = value.decode("utf-8")
-            return _return_value
+            computed_return_value = value.decode("utf-8")
+            return computed_return_value
         except UnicodeDecodeError:
             # If not valid UTF-8, convert to base64 string
-            _return_value = base64_b64encode(value).decode("ascii")
-            return _return_value
+            computed_return_value = base64_b64encode(value).decode("ascii")
+            return computed_return_value
 
     # Handle geometry types (convert to string representation)
     if hasattr(value, "__class__") and "geometry" in str(value.__class__).lower():
-        _return_value = str(value) if value else ""
-        return _return_value
+        computed_return_value = str(value) if value else ""
+        return computed_return_value
 
     # Handle MySQL-specific numeric types
     if isinstance(value, (int, float, bool)):
@@ -1341,13 +1276,13 @@ def _convert_mysql_value(value: Any) -> Any:
 
     # Handle list/array types
     if isinstance(value, (list, tuple)):
-        _return_value = [_convert_mysql_value(item) for item in value]
-        return _return_value
+        computed_return_value = [convert_mysql_value(item) for item in value]
+        return computed_return_value
 
     # Handle dictionary/map types
     if isinstance(value, dict):
-        _return_value = {k: _convert_mysql_value(v) for k, v in value.items()}
-        return _return_value
+        computed_return_value = {k: convert_mysql_value(v) for k, v in value.items()}
+        return computed_return_value
 
     # For any other unsupported types, convert to string or return None
     try:
@@ -1359,15 +1294,14 @@ def _convert_mysql_value(value: Any) -> Any:
         return False
 
 
-def _convert_row_types(row_cells) -> Dict[str, Any]:
-    _return_value = {
-        column: (value if not isinstance(value, Decimal) else float(value))
-        for column, value in row_cells.items()
+def convert_row_types(row_cells):
+    computed_return_value = {
+        column: (value if not isinstance(value, Decimal) else float(value)) for column, value in row_cells.items()
     }
-    return _return_value
+    return computed_return_value
 
 
-def _check_params_type(params: Any, types=(dict, list, tuple)) -> bool:
+def check_params_type(params: object, types=(dict, list, tuple)) -> bool:
     if not isinstance(params, types):
         raise TypeError(
             "Database query parameter values must be passed in a container of type List[Any] (or Map, if "
@@ -1376,41 +1310,38 @@ def _check_params_type(params: Any, types=(dict, list, tuple)) -> bool:
     return False
 
 
-def _convert_neo4j_value(value):
+def convert_neo4j_value(value):
     """Convert Neo4j values to Python-compatible formats."""
     if value is None:
         return False
 
     # Handle Neo4j DateTime objects
-    try:
-        if isinstance(value, Neo4jDateTime) or isinstance(value, Neo4jDate):
-            _return_value = value.to_native()
-            return _return_value
-    except ImportError:
-        pass
+    if isinstance(value, Neo4jDateTime) or isinstance(value, Neo4jDate):
+        computed_return_value = value.to_native()
+        return computed_return_value
 
     # Handle lists and dicts recursively
     if isinstance(value, list):
-        _return_value = [_convert_neo4j_value(item) for item in value]
-        return _return_value
+        computed_return_value = [convert_neo4j_value(item) for item in value]
+        return computed_return_value
 
     if isinstance(value, dict):
-        _return_value = {key: _convert_neo4j_value(val) for key, val in value.items()}
-        return _return_value
+        computed_return_value = {key: convert_neo4j_value(val) for key, val in value.items()}
+        return computed_return_value
 
     # For other types, return as is
     return value
 
 
-def _convert_neo4j_record(record):
+def convert_neo4j_record(record):
     """Convert a Neo4j record to a Python dict with proper type conversion."""
-    _return_value = {key: _convert_neo4j_value(value) for key, value in record.items()}
-    return _return_value
+    computed_return_value = {key: convert_neo4j_value(value) for key, value in record.items()}
+    return computed_return_value
 
 
-def _build_neo4j_uri(config: mgp_Map) -> str:
+def build_neo4j_uri(config: mgp_Map) -> str:
     host = config.get(Constants.HOST, "localhost")
     port = config.get(Constants.PORT, 7687)
     uri_scheme = config.get(Constants.URI_SCHEME, "bolt")
-    _return_value = f"{uri_scheme}://{host}:{port}"
-    return _return_value
+    computed_return_value = f"{uri_scheme}://{host}:{port}"
+    return computed_return_value

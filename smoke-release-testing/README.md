@@ -5,12 +5,10 @@ The reasons for smoke release testing are:
 * to test packaged versions of Memgraph (e.g. Docker)
 * to test on a given deployment infrastructure (e.g. k8s)
 * to test under different infrastructure environments (e.g. k8s+GCP, k8s+Azure)
-* to test backward compatibility
 * to test Community -> Enterprise transition
 * to test Enterprise -> Community transition.
 
 NOTE: GQLAlchemy version is not fixed on purpose.
-NOTE: GQLAlchmey uses an old version of the neo client -> the neo4j version is fixed.
 
 ## Test Types
 

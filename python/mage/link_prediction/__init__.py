@@ -12,12 +12,6 @@ from mage.link_prediction.constants import (
     Predictors,  # noqa: F401
     Reindex,  # noqa: F401
 )
-from mage.link_prediction.factory import (
-    create_activation_function,  # noqa: F401
-    create_model,  # noqa: F401
-    create_optimizer,  # noqa: F401
-    create_predictor,  # noqa: F401
-)
 from mage.link_prediction.link_prediction_util import (
     add_self_loop,  # noqa: F401
     classify,  # noqa: F401

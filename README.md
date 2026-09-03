@@ -124,7 +124,6 @@ streaming graph algorithms! Drop us a message on the channels below:
   - [Algorithm proposition](#algorithm-proposition)
   - [Community](#community)
 - [Overview](#overview)
-- [Memgraph compatibility](#memgraph-compatibility)
 - [How to install MAGE?](#how-to-install-mage)
   - [1. Use MAGE with Docker](#1-use-mage-with-docker)
     - [a) Get MAGE from Docker Hub](#a-get-mage-from-docker-hub)
@@ -138,19 +137,6 @@ streaming graph algorithms! Drop us a message on the channels below:
 - [Contributing](#contributing)
 - [Code of Conduct](#code-of-conduct)
 - [Feedback](#feedback)
-
-## Memgraph compatibility
-
-With changes in Memgraph API, MAGE started to track version numbers. The table
-below lists the compatibility of MAGE with Memgraph versions.
-| MAGE version | Memgraph version |
-| ------------ | ---------------- |
-| >= 1.11.9    | >= 2.11.0        |
-| >= 1.5.1     | >= 2.5.1         |
-| >= 1.5       | >= 2.5.0         |
-| >= 1.4       | >= 2.4.0         |
-| >= 1.0 | >= 2.0.0 |
-| ^0 | >= 1.4.0 <= 1.6.1 |
 
 ## How to install MAGE?
 

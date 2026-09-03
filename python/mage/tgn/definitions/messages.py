@@ -1,6 +1,5 @@
 """Utilities for messages."""
 
-from numpy import array as np_array
 from torch import Tensor as torch_Tensor
 
 
@@ -11,34 +10,38 @@ class RawMessage:
     """
 
     def __init__(self, source: int, timestamp: int):
-        super(RawMessage, self).__init__()
+        super().__init__()
         self.source = source
         self.timestamp = timestamp
 
     def detach_memory(self) -> bool:
-        raise Exception("Not implemented")
+        raise NotImplementedError("RawMessage subclasses must implement detach_memory")
 
     def __str__(self):
-        _return_value = "{source},{timestamp}".format(
-            source=self.source, timestamp=self.timestamp
-        )
-        return _return_value
+        computed_return_value = "{source},{timestamp}".format(source=self.source, timestamp=self.timestamp)
+        return computed_return_value
 
 
 class NodeRawMessage(RawMessage):
     def __init__(
         self,
-        source_memory: np_array,
+        source_memory: torch_Tensor,
         timestamp: int,
-        node_features: np_array,
+        node_features: torch_Tensor,
         source: int,
     ):
-        super(NodeRawMessage, self).__init__(source, timestamp)
+        super().__init__(source, timestamp)
         self.source_memory = source_memory
         self.node_features = node_features
 
     def detach_memory(self) -> bool:
-        raise Exception("Not implemented")
+        if self.source_memory.grad is not None:
+            self.source_memory.detach_()
+            self.source_memory.zero_()
+        if self.node_features.grad is not None:
+            self.node_features.detach_()
+            self.node_features.zero_()
+        return False
 
 
 class InteractionRawMessage(RawMessage):

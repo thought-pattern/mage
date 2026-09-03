@@ -1,7 +1,5 @@
 """Tests for test second order random walk."""
 
-from typing import List
-
 from numpy import all as np_all
 from numpy import array as np_array
 from numpy import isclose as np_isclose
@@ -31,9 +29,9 @@ EDGES_WEIGHTS_DICT = {
 }
 
 
-def normalize(array: List[float]):
-    _return_value = np_array(array) / sum(array)
-    return _return_value
+def normalize(array: list[float]):
+    computed_return_value = np_array(array) / sum(array)
+    return computed_return_value
 
 
 UNDIRECT_GRAPH_EDGE_TRANSITION_PROBS = {
@@ -96,9 +94,7 @@ UNDIRECT_GRAPH_FIRST_PASS_TRANSITION_PROBS = {
 }
 
 DIRECT_GRAPH_FIRST_PASS_TRANSITION_PROBS = {
-    1: normalize(
-        [EDGES_WEIGHTS_DICT.get((1, 5), False), EDGES_WEIGHTS_DICT.get((1, 6), False)]
-    ),
+    1: normalize([EDGES_WEIGHTS_DICT.get((1, 5), False), EDGES_WEIGHTS_DICT.get((1, 6), False)]),
     0: normalize(
         [
             EDGES_WEIGHTS_DICT.get((0, 1), False),
@@ -111,8 +107,8 @@ DIRECT_GRAPH_FIRST_PASS_TRANSITION_PROBS = {
 
 
 def get_basic_graph(dataset, is_directed) -> GraphHolder:
-    _return_value = GraphHolder(dataset, is_directed)
-    return _return_value
+    computed_return_value = GraphHolder(dataset, is_directed)
+    return computed_return_value
 
 
 def get_transition_probs(is_directed):
@@ -127,17 +123,16 @@ def get_first_pass_transition_probs(is_directed):
     return UNDIRECT_GRAPH_FIRST_PASS_TRANSITION_PROBS
 
 
-def same_array_values(
-    array_1: List[float], array_2: List[float], absolute_tolerance=1e-5
-) -> bool:
-    _return_value = np_all(
+def same_array_values(array_1: object, array_2: object, absolute_tolerance=1e-5) -> bool:
+    computed_return_value = np_all(
         np_isclose(
-            array_1,
-            array_2,
+            np_array(array_1),
+            np_array(array_2),
             atol=absolute_tolerance,
         )
     )
-    return _return_value
+    boolean_result = bool(computed_return_value)
+    return boolean_result
 
 
 @pytest_mark.parametrize(
@@ -152,16 +147,13 @@ def test_graph_transition_probs(dataset, is_directed):
 
     graph_transition_probs = get_transition_probs(is_directed)
 
-    second_order_random_walk = SecondOrderRandomWalk(
-        p=P, q=Q, walk_length=WALK_LENGTH, num_walks=NUM_WALKS
-    )
+    second_order_random_walk = SecondOrderRandomWalk(p=P, q=Q, walk_length=WALK_LENGTH, num_walks=NUM_WALKS)
     second_order_random_walk.set_graph_transition_probs(basic_graph)
 
     for edge in graph_transition_probs:
         calculated_transition_probs = basic_graph.get_edge_transition_probs(edge)
         correct_transition_probs = graph_transition_probs.get(edge, False)
         assert same_array_values(calculated_transition_probs, correct_transition_probs)
-    return False
 
 
 @pytest_mark.parametrize(
@@ -176,18 +168,13 @@ def test_graph_first_pass_transition_probs(dataset, is_directed):
 
     graph_transition_probs = get_first_pass_transition_probs(is_directed)
 
-    second_order_random_walk = SecondOrderRandomWalk(
-        p=P, q=Q, walk_length=WALK_LENGTH, num_walks=NUM_WALKS
-    )
+    second_order_random_walk = SecondOrderRandomWalk(p=P, q=Q, walk_length=WALK_LENGTH, num_walks=NUM_WALKS)
     second_order_random_walk.set_first_pass_transition_probs(basic_graph)
 
     for node in graph_transition_probs:
-        calculated_transition_probs = basic_graph.get_node_first_pass_transition_probs(
-            node
-        )
+        calculated_transition_probs = basic_graph.get_node_first_pass_transition_probs(node)
         correct_transition_probs = graph_transition_probs.get(node, False)
         assert same_array_values(calculated_transition_probs, correct_transition_probs)
-    return False
 
 
 @pytest_mark.parametrize(
@@ -199,9 +186,7 @@ def test_graph_first_pass_transition_probs(dataset, is_directed):
 )
 def test_second_order_walks(dataset, is_directed):
     basic_graph = get_basic_graph(dataset, is_directed)
-    second_order_random_walk = SecondOrderRandomWalk(
-        p=P, q=Q, walk_length=WALK_LENGTH, num_walks=NUM_WALKS
-    )
+    second_order_random_walk = SecondOrderRandomWalk(p=P, q=Q, walk_length=WALK_LENGTH, num_walks=NUM_WALKS)
 
     walks = second_order_random_walk.sample_node_walks(basic_graph)
 
@@ -210,4 +195,3 @@ def test_second_order_walks(dataset, is_directed):
     for walk in walks:
         for i in range(1, len(walk)):
             assert basic_graph.has_edge(walk[i - 1], walk[i])
-    return False

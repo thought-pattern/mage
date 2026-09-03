@@ -1,7 +1,6 @@
 """Utilities for simple tunneling."""
 
 from random import random as random_random
-from typing import Any, Dict
 
 from mage.graph_coloring_module.components.population import Population
 from mage.graph_coloring_module.graph import Graph
@@ -12,7 +11,7 @@ from mage.graph_coloring_module.parameters import Parameter
 from mage.graph_coloring_module.utils.parameters_utils import param_value
 from mage.graph_coloring_module.utils.validation import validate
 
-_DEFAULT_ARGUMENT_DICT = {}
+DEFAULT_ARGUMENT_DICT = {}
 
 
 class SimpleTunneling(Action):
@@ -38,34 +37,21 @@ class SimpleTunneling(Action):
         self,
         graph: Graph,
         population: Population,
-        parameters: Dict[str, Any] = _DEFAULT_ARGUMENT_DICT,
+        parameters: dict = DEFAULT_ARGUMENT_DICT,
     ) -> bool:
-        if parameters is _DEFAULT_ARGUMENT_DICT:
-            parameters = _DEFAULT_ARGUMENT_DICT.copy()
-        simple_tunneling_max_attempts = param_value(
-            graph, parameters, Parameter.SIMPLE_TUNNELING_MAX_ATTEMPTS
-        )
-        simple_tunneling_mutation = param_value(
-            graph, parameters, Parameter.SIMPLE_TUNNELING_MUTATION
-        )
-        simple_tunneling_probability = param_value(
-            graph, parameters, Parameter.SIMPLE_TUNNELING_PROBABILITY
-        )
-        simple_tunneling_error_correction = param_value(
-            graph, parameters, Parameter.SIMPLE_TUNNELING_ERROR_CORRECTION
-        )
+        if parameters is DEFAULT_ARGUMENT_DICT:
+            parameters = DEFAULT_ARGUMENT_DICT.copy()
+        simple_tunneling_max_attempts = param_value(graph, parameters, Parameter.SIMPLE_TUNNELING_MAX_ATTEMPTS)
+        simple_tunneling_mutation = param_value(graph, parameters, Parameter.SIMPLE_TUNNELING_MUTATION)
+        simple_tunneling_probability = param_value(graph, parameters, Parameter.SIMPLE_TUNNELING_PROBABILITY)
+        simple_tunneling_error_correction = param_value(graph, parameters, Parameter.SIMPLE_TUNNELING_ERROR_CORRECTION)
 
         for i, old_individual in enumerate(population.individuals):
             if random_random() < simple_tunneling_probability:
                 old_individual_error = old_individual.conflicts_weight
                 for _ in range(simple_tunneling_max_attempts):
-                    new_individual, diff_nodes = simple_tunneling_mutation.mutate(
-                        graph, old_individual, parameters
-                    )
-                    if (
-                        new_individual.conflicts_weight
-                        <= simple_tunneling_error_correction * old_individual_error
-                    ):
+                    new_individual, diff_nodes = simple_tunneling_mutation.mutate(graph, old_individual, parameters)
+                    if new_individual.conflicts_weight <= simple_tunneling_error_correction * old_individual_error:
                         population.set_individual(i, new_individual, diff_nodes)
                         break
         return False

@@ -1381,15 +1381,6 @@ enum mgp_error mgp_proc_add_opt_arg(struct mgp_proc *proc, const char *name, str
 /// RETURN MGP_ERROR_LOGIC_ERROR if a result field with the same name was already added.
 enum mgp_error mgp_proc_add_result(struct mgp_proc *proc, const char *name, struct mgp_type *type);
 
-/// Add a result field to a procedure and mark it as deprecated.
-///
-/// This is the same as mgp_proc_add_result, but the result field will be marked
-/// as deprecated.
-///
-/// Return MGP_ERROR_UNABLE_TO_ALLOCATE if unable to allocate memory for an argument.
-/// Return MGP_ERROR_INVALID_ARGUMENT if `name` is not a valid result name.
-/// RETURN MGP_ERROR_LOGIC_ERROR if a result field with the same name was already added.
-enum mgp_error mgp_proc_add_deprecated_result(struct mgp_proc *proc, const char *name, struct mgp_type *type);
 ///@}
 
 /// @name Execution

@@ -2,7 +2,7 @@
 
 from mgp import List as mgp_List
 from torch import nn as torch_nn
-from torch import tensor as torch_tensor
+from torch import Tensor as torch_Tensor
 from torch.nn import functional as F
 from torch_geometric.nn import GATConv, JumpingKnowledge, Linear
 
@@ -82,14 +82,14 @@ class GATJK(torch_nn.Module):
     def reset_parameters(self):
         """Reset of parameters."""
         for conv in self.convs:
-            conv.reset_parameters()
+            getattr(conv, "reset_parameters")()
         for bn in self.bns:
-            bn.reset_parameters()
+            getattr(bn, "reset_parameters")()
         self.jump.reset_parameters()
         self.final_project.reset_parameters()
         return False
 
-    def forward(self, x: torch_tensor, edge_index: torch_tensor) -> torch_tensor:
+    def forward(self, x: torch_Tensor, edge_index: torch_Tensor) -> torch_Tensor:
         """Forward passing of GATJK model.
 
         Args:

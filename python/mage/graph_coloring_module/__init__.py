@@ -20,11 +20,9 @@ from mage.graph_coloring_module.algorithms.meta_heuristics.quantum_annealing imp
 )
 from mage.graph_coloring_module.components.chain_chunk import (
     ChainChunk,  # noqa: F401
-    ChainChunkFactory,  # noqa: F401
 )
 from mage.graph_coloring_module.components.chain_population import (
     ChainPopulation,  # noqa: F401
-    ChainPopulationFactory,  # noqa: F401
 )
 from mage.graph_coloring_module.components.correlation_population import (
     CorrelationPopulation,  # noqa: F401

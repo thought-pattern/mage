@@ -5,7 +5,6 @@ from inspect import cleandoc
 from itertools import chain, repeat
 from sys import stderr as sys_stderr
 from sys import version as sys_version
-from typing import List, Tuple
 
 from mgp import Edge as mgp_Edge
 from mgp import List as mgp_List
@@ -32,45 +31,38 @@ try:
     from networkx import subgraph_view as nx_subgraph_view
 except ImportError as import_error:
     sys_stderr.write(
-        "\nNOTE: Please install networkx to be able to use graph_analyzer module. Using Python:\n"
-        + sys_version
-        + "\n"
+        "\nNOTE: Please install networkx to be able to use graph_analyzer module. Using Python:\n" + sys_version + "\n"
     )
     raise import_error from import_error
 
 
-_MAX_LIST_SIZE = 10
+MAX_LIST_SIZE = 10
 
 
 @mgp_read_proc
-def help() -> mgp_Record(name=str, value=str):
+def help() -> list[mgp_Record]:
     """Shows manual page for graph_analyzer."""
     records = []
 
-    def make_records(name, doc):
-        _return_value = (
+    def make_records(name: str, doc: object):
+        doc_text = doc if isinstance(doc, str) else ""
+        computed_return_value = (
             mgp_Record(name=n, value=v)
-            for n, v in zip(
-                chain([name], repeat("")), cleandoc(doc).splitlines(), strict=False
-            )
+            for n, v in zip(chain([name], repeat("")), cleandoc(doc_text).splitlines(), strict=False)
         )
-        return _return_value
+        return computed_return_value
 
     for func in (help, analyze, analyze_subgraph):
-        records.extend(
-            make_records("Procedure '{}'".format(func.__name__), func.__doc__)
-        )
+        records.extend(make_records("Procedure '{}'".format(func.__name__), func.__doc__))
 
-    for m, v in _get_analysis_mapping().items():
+    for m, v in get_analysis_mapping().items():
         records.extend(make_records("Analysis '{}'".format(m), v.__doc__))
 
     return records
 
 
 @mgp_read_proc
-def analyze(
-    context: mgp_ProcCtx, analyses: mgp_Nullable[List[str]] = False
-) -> mgp_Record(name=str, value=str):
+def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = False) -> list[mgp_Record]:
     """
     Shows graph information.
 
@@ -86,9 +78,9 @@ def analyze(
         CALL graph_analyzer.analyze(['nodes', 'edges']) YIELD *;
     """
     g = MemgraphMultiDiGraph(ctx=context)
-    recs = _analyze_graph(context, g, analyses)
-    _return_value = [mgp_Record(name=name, value=value) for name, value in recs]
-    return _return_value
+    recs = analyze_graph(context, g, analyses)
+    computed_return_value = [mgp_Record(name=name, value=value) for name, value in recs]
+    return computed_return_value
 
 
 @mgp_read_proc
@@ -96,8 +88,8 @@ def analyze_subgraph(
     context: mgp_ProcCtx,
     vertices: mgp_List[mgp_Vertex],
     edges: mgp_List[mgp_Edge],
-    analyses: mgp_Nullable[List[str]] = False,
-) -> mgp_Record(name=str, value=str):
+    analyses: mgp_Nullable[list[str]] = False,
+) -> list[mgp_Record]:
     """
     Shows subgraph information.
 
@@ -124,205 +116,194 @@ def analyze_subgraph(
     vertices, edges = map(set, [vertices, edges])
     g = nx_subgraph_view(
         MemgraphMultiDiGraph(ctx=context),
-        lambda n: n in vertices,
-        lambda n1, n2, e: e in edges,
+        filter_node=lambda n: n in vertices,
+        filter_edge=lambda n1, n2, e: e in edges,
     )
-    recs = _analyze_graph(context, g, analyses)
-    _return_value = [mgp_Record(name=name, value=value) for name, value in recs]
-    return _return_value
+    recs = analyze_graph(context, g, analyses)
+    computed_return_value = [mgp_Record(name=name, value=value) for name, value in recs]
+    return computed_return_value
 
 
-def _get_analysis_mapping():
-    _return_value = OrderedDict(
+def get_analysis_mapping() -> OrderedDict[str, object]:
+    computed_return_value: OrderedDict[str, object] = OrderedDict(
         [
-            ("nodes", _number_of_nodes),
-            ("edges", _number_of_edges),
-            ("bridges", _bridges),
-            ("articulation_points", _articulation_points),
-            ("avg_degree", _avg_degree),
-            ("sorted_nodes_degree", _sorted_nodes_degree),
-            ("self_loops", _self_loops),
-            ("is_bipartite", _is_bipartite),
-            ("is_planar", _is_planar),
-            ("is_biconnected: ", _is_biconnected),
-            ("is_weakly_connected", _is_weakly_connected),
-            ("number_of_weakly_components", _weakly_components),
-            ("is_strongly_connected", _is_strongly_connected),
-            ("strongly_components", _strongly_components),
-            ("is_dag", _is_dag),
-            ("is_eulerian", _is_eulerian),
-            ("is_forest", _is_forest),
-            ("is_tree", _is_tree),
+            ("nodes", internal_number_of_nodes),
+            ("edges", internal_number_of_edges),
+            ("bridges", internal_bridges),
+            ("articulation_points", internal_articulation_points),
+            ("avg_degree", internal_avg_degree),
+            ("sorted_nodes_degree", internal_sorted_nodes_degree),
+            ("self_loops", internal_self_loops),
+            ("is_bipartite", internal_is_bipartite),
+            ("is_planar", internal_is_planar),
+            ("is_biconnected: ", internal_is_biconnected),
+            ("is_weakly_connected", internal_is_weakly_connected),
+            ("number_of_weakly_components", weakly_components),
+            ("is_strongly_connected", internal_is_strongly_connected),
+            ("strongly_components", internal_strongly_components),
+            ("is_dag", internal_is_dag),
+            ("is_eulerian", internal_is_eulerian),
+            ("is_forest", internal_is_forest),
+            ("is_tree", internal_is_tree),
         ]
     )
-    return _return_value
+    return computed_return_value
 
 
-def _get_analysis_func(name: str):
-    _name_to_proc = _get_analysis_mapping()
-    _return_value = _name_to_proc.get(name.lower(), False)
-    return _return_value
+def get_analysis_func(name: str) -> object:
+    name_to_proc = get_analysis_mapping()
+    computed_return_value = name_to_proc.get(name.lower(), False)
+    return computed_return_value
 
 
-def _get_analysis_funcs():
-    _return_value = _get_analysis_mapping().values()
-    return _return_value
+def get_analysis_funcs() -> list[object]:
+    computed_return_value = list(get_analysis_mapping().values())
+    return computed_return_value
 
 
-def _analyze_graph(
-    context: mgp_ProcCtx, g: nx_MultiDiGraph, analyses: List[str]
-) -> List[Tuple[str, str]]:
-    functions = (
-        _get_analysis_funcs()
-        if analyses is None
-        else [_get_analysis_func(name) for name in analyses]
-    )
+def analyze_graph(context: mgp_ProcCtx, g: nx_MultiDiGraph, analyses: object) -> list[tuple[str, str]]:
+    requested_analyses = analyses if isinstance(analyses, list) else []
+    functions = get_analysis_funcs() if not requested_analyses else [get_analysis_func(name) for name in requested_analyses]
 
     records = []
     for index, f in enumerate(functions):
         context.check_must_abort()
-        if f is None:
-            raise KeyError("Graph analysis is not supported: " + analyses[index])
-        name, value = f(g)
+        if not callable(f):
+            analysis_name = requested_analyses[index] if index < len(requested_analyses) else ""
+            raise KeyError("Graph analysis is not supported: " + analysis_name)
+        result = f(g)
+        if not isinstance(result, tuple) or len(result) != 2:
+            raise TypeError("graph analysis must return a name and value pair")
+        name, value = result
+        if not isinstance(name, str):
+            raise TypeError("graph analysis name must be a string")
         if isinstance(value, (list, set, tuple)):
-            value = list(value)[:_MAX_LIST_SIZE]
+            value = list(value)[:MAX_LIST_SIZE]
         records.append((name, str(value)))
 
     return records
 
 
-def _number_of_nodes(g: nx_MultiDiGraph) -> Tuple[str, int]:
+def internal_number_of_nodes(g: nx_MultiDiGraph) -> tuple[str, int]:
     """Returns number of nodes."""
-    _return_value = "Number of nodes", nx_number_of_nodes(g)
-    return _return_value
+    computed_return_value = "Number of nodes", nx_number_of_nodes(g)
+    return computed_return_value
 
 
-def _number_of_edges(g: nx_MultiDiGraph) -> Tuple[str, int]:
+def internal_number_of_edges(g: nx_MultiDiGraph) -> tuple[str, int]:
     """Returns number of edges."""
-    _return_value = "Number of edges", nx_number_of_edges(g)
-    return _return_value
+    computed_return_value = "Number of edges", nx_number_of_edges(g)
+    return computed_return_value
 
 
-def _avg_degree(g: nx_MultiDiGraph) -> Tuple[str, float]:
+def internal_avg_degree(g: nx_MultiDiGraph) -> tuple[str, float]:
     """Returns average degree."""
-    _, number_of_nodes = _number_of_nodes(g)
-    _, number_of_edges = _number_of_edges(g)
+    _, number_of_nodes = internal_number_of_nodes(g)
+    _, number_of_edges = internal_number_of_edges(g)
     avg_degree = 0 if number_of_nodes == 0 else number_of_edges / number_of_nodes
     return "Average degree", avg_degree
 
 
-def _sorted_nodes_degree(g: nx_MultiDiGraph) -> Tuple[str, List[int]]:
+def internal_sorted_nodes_degree(g: nx_MultiDiGraph) -> tuple[str, list[tuple[object, object]]]:
     """Returns list of sorted nodes degree. [(node_id, degree), ...]"""
     nodes_degree = [(n, g.degree(n)) for n in g.nodes()]
     nodes_degree.sort(key=lambda x: x[1], reverse=True)
     return "Sorted nodes degree", nodes_degree
 
 
-def _self_loops(g: nx_MultiDiGraph) -> Tuple[str, int]:
+def internal_self_loops(g: nx_MultiDiGraph) -> tuple[str, int]:
     """Returns number of self loops."""
-    _return_value = "Self loops", sum(1 if e[0] == e[1] else 0 for e in g.edges())
-    return _return_value
+    computed_return_value = "Self loops", sum(1 if e[0] == e[1] else 0 for e in g.edges())
+    return computed_return_value
 
 
-def _is_bipartite(g: nx_MultiDiGraph) -> Tuple[str, bool]:
+def internal_is_bipartite(g: nx_MultiDiGraph) -> tuple[str, bool]:
     """Checks if graph is bipartite."""
-    _, number_of_nodes = _number_of_nodes(g)
-    ret = (
-        False if number_of_nodes == 0 else nx_algorithms.bipartite.basic.is_bipartite(g)
-    )
+    _, number_of_nodes = internal_number_of_nodes(g)
+    ret = False if number_of_nodes == 0 else nx_algorithms.bipartite.is_bipartite(g)
     return "Is bipartite", ret
 
 
-def _is_planar(g: nx_MultiDiGraph) -> Tuple[str, bool]:
+def internal_is_planar(g: nx_MultiDiGraph) -> tuple[str, bool]:
     """Checks if graph is planar."""
-    _, number_of_nodes = _number_of_nodes(g)
-    ret = (
-        False if number_of_nodes == 0 else nx_algorithms.planarity.check_planarity(g)[0]
-    )
+    _, number_of_nodes = internal_number_of_nodes(g)
+    ret = False if number_of_nodes == 0 else nx_algorithms.check_planarity(g)[0]
     return "Is planar", ret
 
 
-def _is_biconnected(g: nx_MultiDiGraph) -> Tuple[str, bool]:
+def internal_is_biconnected(g: nx_MultiDiGraph) -> tuple[str, bool]:
     """Check if graph is biconnected."""
-    _, number_of_nodes = _number_of_nodes(g)
-    ret = (
-        False
-        if number_of_nodes == 0
-        else nx_is_biconnected(nx_MultiDiGraph.to_undirected(g))
-    )
+    _, number_of_nodes = internal_number_of_nodes(g)
+    ret = False if number_of_nodes == 0 else nx_is_biconnected(nx_MultiDiGraph.to_undirected(g))
     return "Is biconnected", ret
 
 
-def _is_weakly_connected(g: nx_MultiDiGraph) -> Tuple[str, bool]:
+def internal_is_weakly_connected(g: nx_MultiDiGraph) -> tuple[str, bool]:
     """Check if graph is weakly connected."""
-    _, number_of_nodes = _number_of_nodes(g)
+    _, number_of_nodes = internal_number_of_nodes(g)
     ret = False if number_of_nodes == 0 else nx_is_weakly_connected(g)
     return "Is weakly connected", ret
 
 
-def _is_strongly_connected(g: nx_MultiDiGraph) -> Tuple[str, bool]:
+def internal_is_strongly_connected(g: nx_MultiDiGraph) -> tuple[str, bool]:
     """Checks if graph is strongly connected."""
-    _, number_of_nodes = _number_of_nodes(g)
+    _, number_of_nodes = internal_number_of_nodes(g)
     ret = False if number_of_nodes == 0 else nx_is_strongly_connected(g)
     return "Is strongly connected", ret
 
 
-def _is_dag(g: nx_MultiDiGraph) -> Tuple[str, bool]:
+def internal_is_dag(g: nx_MultiDiGraph) -> tuple[str, bool]:
     """Check if graph is directed acyclic graph (DAG)"""
-    _, number_of_nodes = _number_of_nodes(g)
-    ret = (
-        False
-        if number_of_nodes == 0
-        else nx_algorithms.dag.is_directed_acyclic_graph(g)
-    )
+    _, number_of_nodes = internal_number_of_nodes(g)
+    ret = False if number_of_nodes == 0 else nx_algorithms.is_directed_acyclic_graph(g)
     return "Is DAG", ret
 
 
-def _is_eulerian(g: nx_MultiDiGraph) -> Tuple[str, bool]:
+def internal_is_eulerian(g: nx_MultiDiGraph) -> tuple[str, bool]:
     """Checks if graph is Eulerian."""
-    _, number_of_nodes = _number_of_nodes(g)
-    ret = False if number_of_nodes == 0 else nx_algorithms.euler.is_eulerian(g)
+    _, number_of_nodes = internal_number_of_nodes(g)
+    ret = False if number_of_nodes == 0 else nx_algorithms.is_eulerian(g)
     return "Is eulerian", ret
 
 
-def _is_forest(g: nx_MultiDiGraph) -> Tuple[str, bool]:
+def internal_is_forest(g: nx_MultiDiGraph) -> tuple[str, bool]:
     """Checks if graph is forest, all components must be trees."""
-    _, number_of_nodes = _number_of_nodes(g)
+    _, number_of_nodes = internal_number_of_nodes(g)
     ret = False if number_of_nodes == 0 else nx_algorithms.tree.recognition.is_forest(g)
     return "Is forest", ret
 
 
-def _is_tree(g: nx_MultiDiGraph) -> Tuple[str, bool]:
+def internal_is_tree(g: nx_MultiDiGraph) -> tuple[str, bool]:
     """Checks if graph is tree."""
-    _, number_of_nodes = _number_of_nodes(g)
+    _, number_of_nodes = internal_number_of_nodes(g)
     ret = False if number_of_nodes == 0 else nx_algorithms.tree.recognition.is_tree(g)
     return "Is tree", ret
 
 
-def _bridges(g: nx_MultiDiGraph) -> Tuple[str, int]:
+def internal_bridges(g: nx_MultiDiGraph) -> tuple[str, int]:
     """Returns number of bridges, multiple edges between same nodes are
     mapped to one edge."""
-    _return_value = "Number of bridges", sum(1 for _ in nx_bridges(nx_Graph(g)))
-    return _return_value
+    computed_return_value = "Number of bridges", sum(1 for _ in nx_bridges(nx_Graph(g)))
+    return computed_return_value
 
 
-def _articulation_points(g: nx_MultiDiGraph):
+def internal_articulation_points(g: nx_MultiDiGraph):
     """Returns number of articulation points."""
     undirected = nx_MultiDiGraph.to_undirected(g)
-    _return_value = (
+    computed_return_value = (
         "Number of articulation points",
         sum(1 for _ in nx_articulation_points(undirected)),
     )
-    return _return_value
+    return computed_return_value
 
 
-def _weakly_components(g: nx_MultiDiGraph):
+def weakly_components(g: nx_MultiDiGraph):
     """Returns number of weakly components."""
     comps = nx_algorithms.components.number_weakly_connected_components(g)
     return "Number of weakly connected components", comps
 
 
-def _strongly_components(g: nx_MultiDiGraph):
+def internal_strongly_components(g: nx_MultiDiGraph):
     """Returns number of strongly connected components."""
     comps = nx_algorithms.components.number_strongly_connected_components(g)
     return "Number of strongly connected components", comps

@@ -420,16 +420,7 @@ impl Memgraph {
 
             for result_field in result_field_types {
                 let mgp_type = resolve_mgp_type(&result_field.types);
-                if result_field.deprecated {
-                    if ffi::mgp_proc_add_deprecated_result(
-                        procedure,
-                        result_field.name.as_ptr(),
-                        mgp_type,
-                    ) != mgp_error::MGP_ERROR_NO_ERROR
-                    {
-                        return Err(Error::UnableToAddDeprecatedReturnType);
-                    }
-                } else if ffi::mgp_proc_add_result(procedure, result_field.name.as_ptr(), mgp_type)
+                if ffi::mgp_proc_add_result(procedure, result_field.name.as_ptr(), mgp_type)
                     != mgp_error::MGP_ERROR_NO_ERROR
                 {
                     return Err(Error::UnableToAddReturnType);

@@ -7,7 +7,6 @@ from os import makedirs as os_makedirs
 from os import path as os_path
 from os import remove as os_remove
 from time import time
-from typing import Dict as typing_Dict
 
 from mgp import Any as mgp_Any
 from mgp import List as mgp_List
@@ -39,7 +38,7 @@ from mage.node_classification.utils.metrics import metrics
 
 
 # parameters for the model
-_DEFAULT_ARGUMENT_DICT = {}
+DEFAULT_ARGUMENT_DICT = {}
 
 
 class ModelParams:
@@ -109,7 +108,7 @@ MODELS = {GAT_MODEL: GAT, GATV2_MODEL: GATv2, SAGE_MODEL: SAGE, GAT_WITH_JK: GAT
 global model, current_values
 
 model: mgp_Any = False
-current_values: typing_Dict = {}
+current_values: dict = {}
 
 # list for saving logged data
 logged_data: mgp_List = []
@@ -194,9 +193,7 @@ def declare_data(ctx: mgp_ProcCtx) -> HeteroData:
     global current_values
 
     # change device type to cuda if possible
-    current_values[OtherParams.DEVICE_TYPE] = torch_device(
-        "cuda:0" if torch_cuda.is_available() else "cpu"
-    )
+    current_values[OtherParams.DEVICE_TYPE] = torch_device("cuda:0" if torch_cuda.is_available() else "cpu")
 
     nodes = list(iter(ctx.graph.vertices))  # obtain nodes from context
     if not nodes:
@@ -218,17 +215,13 @@ def declare_data(ctx: mgp_ProcCtx) -> HeteroData:
         current_values.get(OtherParams.DEVICE_TYPE, False),
     )
 
-    observed_attribute_data = data.get(
-        current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False), {}
-    )
+    observed_attribute_data = data.get(current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False), {})
 
     # second parameter of shape of feature matrix is number of input channels
     current_values[ModelParams.IN_CHANNELS] = observed_attribute_data.x.size(dim=1)
 
     # number of output channels is number of classes in the dataset
-    current_values[ModelParams.OUT_CHANNELS] = len(
-        set(observed_attribute_data.y.detach().cpu().numpy())
-    )
+    current_values[ModelParams.OUT_CHANNELS] = len(set(observed_attribute_data.y.detach().cpu().numpy()))
 
     return data
 
@@ -294,9 +287,7 @@ def declare_saving_paths():
     global current_values
     # either make new folder for saving models, or use existing one with exactly this name
     try:
-        path = os_path.join(
-            os_getcwd(), current_values.get(OtherParams.MODEL_SAVING_FOLDER, False)
-        )
+        path = os_path.join(os_getcwd(), current_values.get(OtherParams.MODEL_SAVING_FOLDER, False))
         os_makedirs(path)
         print(f"New folder for saving models was created on destination {path}.")
     except FileExistsError:
@@ -312,22 +303,8 @@ def declare_saving_paths():
 
 @mgp_read_proc
 def set_model_parameters(
-    params: mgp_Any = _DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record(
-    hidden_features_size=list,
-    layer_type=str,
-    aggregator=str,
-    learning_rate=float,
-    weight_decay=float,
-    split_ratio=float,
-    metrics=mgp_Any,
-    node_id_property=str,
-    num_epochs=int,
-    console_log_freq=int,
-    checkpoint_freq=int,
-    device_type=str,
-    path_to_model=str,
-):
+    params: mgp_Any = DEFAULT_ARGUMENT_DICT,
+) -> mgp_Record:
     """The purpose of this function is to initialize all global variables.
     _You_ can change those via **params** dictionary.
     It checks if variables in **params** are defined appropriately. If so,
@@ -360,39 +337,31 @@ def set_model_parameters(
         path_to_model (str): path where model is load and saved
     )
     """
-    if params is _DEFAULT_ARGUMENT_DICT:
-        params = _DEFAULT_ARGUMENT_DICT.copy()
+    if params is DEFAULT_ARGUMENT_DICT:
+        params = DEFAULT_ARGUMENT_DICT.copy()
     global DEFINED_INPUT_TYPES, DEFAULT_VALUES, current_values
 
     # function checks if input values in dictionary are correctly typed
     def is_correctly_typed(defined_types, input_values):
         if isinstance(defined_types, dict) and isinstance(input_values, dict):
             # defined_types is a dict of types
-            _return_value = all(
+            computed_return_value = all(
                 k in input_values  # check if exists
-                and is_correctly_typed(
-                    defined_types[k], input_values[k]
-                )  # check for correct type
+                and is_correctly_typed(defined_types[k], input_values[k])  # check for correct type
                 for k in defined_types
             )
-            return _return_value
+            return computed_return_value
         elif isinstance(defined_types, type):
-            _return_value = isinstance(input_values, defined_types)
-            return _return_value
+            computed_return_value = isinstance(input_values, defined_types)
+            return computed_return_value
         else:
             return False
 
     # hidden_features_size and metrics are sometimes translated as tuples,
     # which are not hashable, but conversion to lists makes them hashable
-    if ModelParams.HIDDEN_FEATURES_SIZE in params.keys() and isinstance(
-        params[ModelParams.HIDDEN_FEATURES_SIZE], tuple
-    ):
-        params[ModelParams.HIDDEN_FEATURES_SIZE] = list(
-            params[ModelParams.HIDDEN_FEATURES_SIZE]
-        )
-    if DataParams.METRICS in params.keys() and isinstance(
-        params[DataParams.METRICS], tuple
-    ):
+    if ModelParams.HIDDEN_FEATURES_SIZE in params.keys() and isinstance(params[ModelParams.HIDDEN_FEATURES_SIZE], tuple):
+        params[ModelParams.HIDDEN_FEATURES_SIZE] = list(params[ModelParams.HIDDEN_FEATURES_SIZE])
+    if DataParams.METRICS in params.keys() and isinstance(params[DataParams.METRICS], tuple):
         params[DataParams.METRICS] = list(params[DataParams.METRICS])
 
     # override any default parameters
@@ -405,7 +374,7 @@ def set_model_parameters(
     # define paths
     declare_saving_paths()
 
-    _return_value = mgp_Record(
+    computed_return_value = mgp_Record(
         hidden_features_size=current_values.get(ModelParams.HIDDEN_FEATURES_SIZE, 0),
         layer_type=current_values.get(ModelParams.LAYER_TYPE, ""),
         aggregator=current_values.get(ModelParams.AGGREGATOR, False),
@@ -420,7 +389,7 @@ def set_model_parameters(
         device_type=current_values.get(OtherParams.DEVICE_TYPE, ""),
         path_to_model=current_values.get(OtherParams.PATH_TO_MODEL, ""),
     )
-    return _return_value
+    return computed_return_value
 
 
 ##############################
@@ -436,15 +405,11 @@ def fetch_saved_models():
         models (list): list of paths of saved models
     """
     global model
-    model_saving_folder = os_path.join(
-        current_values.get(OtherParams.MODEL_SAVING_FOLDER, False)
-    )
+    model_saving_folder = os_path.join(current_values.get(OtherParams.MODEL_SAVING_FOLDER, False))
     models = [
         f
         for f in os_listdir(model_saving_folder)
-        if os_path.isfile(os_path.join(model_saving_folder, f))
-        and f.endswith(".pt")
-        and f.startswith("model")
+        if os_path.isfile(os_path.join(model_saving_folder, f)) and f.endswith(".pt") and f.startswith("model")
     ]
 
     models.sort(reverse=True)
@@ -461,16 +426,10 @@ def save_model_to_folder() -> str:
     model_saving_folder, models = fetch_saved_models()
 
     # delete oldest models if there are more than max models to keep
-    for i in range(
-        current_values.get(TrainParams.MAX_MODELS_TO_KEEP, 0) - 1, len(models)
-    ):
+    for i in range(current_values.get(TrainParams.MAX_MODELS_TO_KEEP, 0) - 1, len(models)):
         os_remove(os_path.join(model_saving_folder, models[i]))
 
-    path_to_saved_model = (
-        current_values.get(OtherParams.PATH_TO_MODEL, 0.0)
-        + datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        + ".pt"
-    )
+    path_to_saved_model = current_values.get(OtherParams.PATH_TO_MODEL, 0.0) + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + ".pt"
     torch_save(
         model.state_dict(),
         path_to_saved_model,
@@ -480,9 +439,7 @@ def save_model_to_folder() -> str:
 
 
 @mgp_read_proc
-def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> mgp_Record(
-    epoch=int, loss=float, val_loss=float, train_log=mgp_Any, val_log=mgp_Any
-):
+def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> list[mgp_Record]:
     """This function performs training of model. It first declares data, model,
     optimizer and criterion. Then it performs training.
 
@@ -511,9 +468,7 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> mgp_Record(
 
     current_values[TrainParams.NUM_EPOCHS] = num_epochs
     num_nodes_sample = current_values.get(HeteroParams.NUM_NODES_SAMPLE, False)
-    num_iterations_sample = current_values.get(
-        HeteroParams.NUM_ITERATIONS_SAMPLE, False
-    )
+    num_iterations_sample = current_values.get(HeteroParams.NUM_ITERATIONS_SAMPLE, False)
 
     # variables for early stopping
     last_loss = float("inf")
@@ -529,31 +484,18 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> mgp_Record(
             criterion,
             current_values.get(TrainParams.BATCH_SIZE, False),
             current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False),
-            {
-                key: [num_nodes_sample] * num_iterations_sample
-                for key in data.node_types
-            },
+            {key: [num_nodes_sample] * num_iterations_sample for key in data.node_types},
         )
 
         # early stopping
         if val_loss > last_loss:
             trigger_times += 1
 
-            drop_epochs = (
-                str(trigger_times)
-                + " "
-                + ("consecutive epochs" if trigger_times > 1 else "consecutive epoch")
-            )
+            drop_epochs = str(trigger_times) + " " + ("consecutive epochs" if trigger_times > 1 else "consecutive epoch")
 
-            times_until_stopping = (
-                current_values.get(OtherParams.PATIENCE, 0.0) - trigger_times
-            )
+            times_until_stopping = current_values.get(OtherParams.PATIENCE, 0.0) - trigger_times
 
-            stop_after = (
-                str(times_until_stopping)
-                + " "
-                + ("more drops" if times_until_stopping > 1 else "more drop")
-            )
+            stop_after = str(times_until_stopping) + " " + ("more drops" if times_until_stopping > 1 else "more drop")
 
             print(f"Loss has dropped for {drop_epochs}. Stopping after {stop_after}.")
 
@@ -571,9 +513,7 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> mgp_Record(
             model.eval()
             out = model(data.x_dict, data.edge_index_dict)
             dict_train = metrics(
-                data[
-                    current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, "")
-                ].train_mask,
+                data[current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, "")].train_mask,
                 out,
                 data,
                 current_values.get(DataParams.METRICS, False),
@@ -608,13 +548,11 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> mgp_Record(
 
         # save model every checkpoint_freq epochs
         if epoch % current_values.get(TrainParams.CHECKPOINT_FREQ, 0.0) == 0:
-            if time() - last_time > current_values.get(
-                TrainParams.TIME_BETWEEN_CHECKPOINTS, 0.0
-            ):
+            if time() - last_time > current_values.get(TrainParams.TIME_BETWEEN_CHECKPOINTS, 0.0):
                 save_model_to_folder()
                 last_time = time()
 
-    _return_value = [
+    computed_return_value = [
         mgp_Record(
             epoch=data.get("epoch", False),
             loss=data.get("loss", []),
@@ -624,7 +562,7 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> mgp_Record(
         )
         for data in logged_data
     ]
-    return _return_value
+    return computed_return_value
 
 
 ##############################
@@ -633,9 +571,7 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> mgp_Record(
 
 
 @mgp_read_proc
-def get_training_data() -> mgp_Record(
-    epoch=int, loss=float, val_loss=float, train_log=mgp_Any, val_log=mgp_Any
-):
+def get_training_data() -> list[mgp_Record]:
     """This function is used so user can see what is logged data from training.
 
 
@@ -651,7 +587,7 @@ def get_training_data() -> mgp_Record(
 
     """
 
-    _return_value = [
+    computed_return_value = [
         mgp_Record(
             epoch=data.get("epoch", False),
             loss=data.get("loss", []),
@@ -661,7 +597,7 @@ def get_training_data() -> mgp_Record(
         )
         for data in logged_data
     ]
-    return _return_value
+    return computed_return_value
 
 
 ##############################
@@ -670,7 +606,7 @@ def get_training_data() -> mgp_Record(
 
 
 @mgp_read_proc
-def save_model() -> mgp_Record(path=str, status=str):
+def save_model() -> mgp_Record:
     """This function saves model to model saving folder. If there are already total
     of max_models_to_keep models in model saving folder, oldest model is deleted.
 
@@ -684,20 +620,16 @@ def save_model() -> mgp_Record(path=str, status=str):
     """
 
     if model is False:
-        raise Exception(
-            "There are no initialized or loaded models. First load or initialize a model to be able save it."
-        )
+        raise Exception("There are no initialized or loaded models. First load or initialize a model to be able save it.")
 
     path_to_saved_model = save_model_to_folder()
 
-    _return_value = mgp_Record(
-        path=path_to_saved_model, status="Model has been successfully saved."
-    )
-    return _return_value
+    computed_return_value = mgp_Record(path=path_to_saved_model, status="Model has been successfully saved.")
+    return computed_return_value
 
 
 @mgp_read_proc
-def load_model(ctx: mgp_ProcCtx, num: int = 0) -> mgp_Record(path=str, status=str):
+def load_model(ctx: mgp_ProcCtx, num: int = 0) -> mgp_Record:
     """This function loads model from defined folder for saved models.
 
     Args:
@@ -717,24 +649,18 @@ def load_model(ctx: mgp_ProcCtx, num: int = 0) -> mgp_Record(path=str, status=st
         raise Exception("There are no saved models.")
 
     if len(models) < (len(models) + num) % len(models) + 1:
-        raise Exception(
-            f"Model with number {num} does not exist. There are {len(models)} models saved."
-        )
+        raise Exception(f"Model with number {num} does not exist. There are {len(models)} models saved.")
 
     path_to_load_model = os_path.join(model_saving_folder, models[num])
 
     model.load_state_dict(torch_load(path_to_load_model))
 
-    _return_value = mgp_Record(
-        path=path_to_load_model, status="Model has been successfully loaded."
-    )
-    return _return_value
+    computed_return_value = mgp_Record(path=path_to_load_model, status="Model has been successfully loaded.")
+    return computed_return_value
 
 
 @mgp_read_proc
-def predict(ctx: mgp_ProcCtx, vertex: mgp_Vertex) -> mgp_Record(
-    predicted_class=int, status=str
-):
+def predict(ctx: mgp_ProcCtx, vertex: mgp_Vertex) -> mgp_Record:
     """This function predicts metrics on one node. It is suggested that user previously
     loads unseen test data to predict on it.
 
@@ -772,17 +698,15 @@ def predict(ctx: mgp_ProcCtx, vertex: mgp_Vertex) -> mgp_Record(
 
     predicted_class = int(pred.detach().cpu().numpy()[position])
 
-    _return_value = mgp_Record(
-        predicted_class=current_values.get(HeteroParams.INV_LABEL_REINDEXING, {})[
-            predicted_class
-        ],
+    computed_return_value = mgp_Record(
+        predicted_class=current_values.get(HeteroParams.INV_LABEL_REINDEXING, {})[predicted_class],
         status="Prediction complete.",
     )
-    return _return_value
+    return computed_return_value
 
 
 @mgp_read_proc
-def reset() -> mgp_Record(status=str):
+def reset() -> mgp_Record:
     """This function resets all variables to default values.
 
     Returns:
@@ -797,7 +721,5 @@ def reset() -> mgp_Record(status=str):
     # reinitialize current_values
     current_values = DEFAULT_VALUES
 
-    _return_value = mgp_Record(
-        status="Global parameters and logged data have been reset"
-    )
-    return _return_value
+    computed_return_value = mgp_Record(status="Global parameters and logged data have been reset")
+    return computed_return_value

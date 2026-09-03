@@ -49,8 +49,8 @@ def is_directed(request):
 
 @pytest_fixture
 def basic_graph_from_dict(is_directed) -> GraphHolder:
-    _return_value = GraphHolder(DIRECT_GRAPH_EDGES_WEIGHTS, is_directed)
-    return _return_value
+    computed_return_value = GraphHolder(DIRECT_GRAPH_EDGES_WEIGHTS, is_directed)
+    return computed_return_value
 
 
 def test_graph_edges_from_dict(basic_graph_from_dict):
@@ -62,15 +62,11 @@ def test_graph_edges_from_dict(basic_graph_from_dict):
 
     for edge in DIRECT_GRAPH_EDGES_WEIGHTS:
         assert basic_graph_from_dict.has_edge(edge[0], edge[1]) is True
-        assert (
-            basic_graph_from_dict.has_edge(edge[1], edge[0])
-            is not basic_graph_from_dict.is_directed
-        )
+        assert basic_graph_from_dict.has_edge(edge[1], edge[0]) is not basic_graph_from_dict.is_directed
 
     for node in basic_graph_from_dict.nodes:
         assert (
-            basic_graph_from_dict.get_neighbors(node)
-            == DIRECT_GRAPH_NODE_NEIGHBORS.get(node, False)
+            basic_graph_from_dict.get_neighbors(node) == DIRECT_GRAPH_NODE_NEIGHBORS.get(node, False)
             if basic_graph_from_dict.is_directed
             else UNDIRECT_GRAPH_NODE_NEIGHBORS.get(node, False)
         )
@@ -78,4 +74,3 @@ def test_graph_edges_from_dict(basic_graph_from_dict):
     if not basic_graph_from_dict.is_directed:
         assert basic_graph_from_dict.get_edge_weight(0, 1) == 0.5
         assert basic_graph_from_dict.get_edge_weight(1, 0) == 0.5
-    return False

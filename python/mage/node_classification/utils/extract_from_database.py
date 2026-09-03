@@ -1,9 +1,6 @@
 """Utilities for extract from database."""
 
 from collections import Counter, defaultdict
-from random import shuffle as random_shuffle
-from typing import Dict as typing_Dict
-from typing import Tuple as typing_Tuple
 
 from numpy import add as np_add
 from numpy import array as np_array
@@ -13,13 +10,14 @@ from torch import bool as torch_bool
 from torch import float32 as torch_float32
 from torch import long as torch_long
 from torch import tensor as torch_tensor
+from numpy.random import shuffle as np_shuffle
 from torch_geometric import transforms as T
 from torch_geometric.data import HeteroData
 
 
 def nodes_fetching(
     nodes: list, features_name: str, class_name: str, data: HeteroData
-) -> typing_Tuple[HeteroData, typing_Dict, typing_Dict, str]:
+) -> tuple[HeteroData, dict, dict, str, dict, dict]:
     """
     This procedure fetches the nodes from the database and returns
     them in HeteroData object.
@@ -73,9 +71,7 @@ def nodes_fetching(
 
     # if node_types is empty, raise error
     if not node_types:
-        raise Exception(
-            "There are no feature vectors found. Please check your database."
-        )
+        raise Exception("There are no feature vectors found. Please check your database.")
 
     # apply Counter to obtain the number of each node type
     node_types = Counter(node_types)
@@ -94,17 +90,11 @@ def nodes_fetching(
 
         # if node type is observed attribute, create other necessary tensors
         if node_type == observed_attribute:
-            data[node_type].y = torch_tensor(
-                np_zeros((num_types_node,), dtype=int), dtype=torch_long
-            )
+            data[node_type].y = torch_tensor(np_zeros((num_types_node,), dtype=int), dtype=torch_long)
 
-            data[node_type].train_mask = torch_tensor(
-                np_zeros((num_types_node,), dtype=int), dtype=torch_bool
-            )
+            data[node_type].train_mask = torch_tensor(np_zeros((num_types_node,), dtype=int), dtype=torch_bool)
 
-            data[node_type].val_mask = torch_tensor(
-                np_zeros((num_types_node,), dtype=int), dtype=torch_bool
-            )
+            data[node_type].val_mask = torch_tensor(np_zeros((num_types_node,), dtype=int), dtype=torch_bool)
 
     # now fill the tensors with the nodes from the database
     for node in nodes:
@@ -114,9 +104,7 @@ def nodes_fetching(
         if len(node.labels) == 0:
             raise Exception(f"Node {node.id} has no labels.")
 
-        node_type = node_type = "_".join(
-            node.labels[i].name for i in range(len(node.labels))
-        )
+        node_type = node_type = "_".join(node.labels[i].name for i in range(len(node.labels)))
 
         node_type_counter = append_counter.get(node_type, 0)
 
@@ -133,9 +121,7 @@ def nodes_fetching(
 
         # if node type is observed attribute, add classification label to tensor
         if node_type == observed_attribute:
-            data[node_type].y[node_type_counter] = label_reindexing.get(
-                int(node.properties.get(class_name, 0)), 0
-            )
+            data[node_type].y[node_type_counter] = label_reindexing.get(int(node.properties.get(class_name, 0)), 0)
 
         # increase append_counter by 1
         append_counter[node_type] += 1
@@ -149,9 +135,7 @@ def nodes_fetching(
     )
 
 
-def edges_fetching(
-    nodes: list, features_name: str, inv_reindexing: defaultdict, data: HeteroData
-) -> HeteroData:
+def edges_fetching(nodes: list, features_name: str, inv_reindexing: dict, data: HeteroData) -> HeteroData:
     """This procedure fetches the edges from the database and returns them in HeteroData object.
 
     Args:
@@ -180,24 +164,17 @@ def edges_fetching(
                 )
             )
 
-            if (
-                features_name not in edge.from_vertex.properties
-                or features_name not in edge.to_vertex.properties
-            ):
+            if features_name not in edge.from_vertex.properties or features_name not in edge.to_vertex.properties:
                 continue  # if from_vertex or out_vertex do not have features, skip the edge
 
             edge_types.append(edge_type)  # append edge type to list of edge types
             edges.append(edge)  # append edge to list of edges
 
-    edge_types = Counter(
-        edge_types
-    )  # apply Counter to obtain the number of each edge type
+    edge_types = Counter(edge_types)  # apply Counter to obtain the number of each edge type
 
     # set edge_index variables to empty tensors of size 2 x no_edge_type_edges
     for edge_type, no_edge_type_edges in edge_types.items():
-        data[edge_type].edge_index = torch_tensor(
-            np_zeros((2, no_edge_type_edges)), dtype=torch_long
-        )
+        data[edge_type].edge_index = torch_tensor(np_zeros((2, no_edge_type_edges)), dtype=torch_long)
 
     for edge in edges:
         (from_vertex_type, edge_name, to_vertex_type) = (
@@ -220,9 +197,7 @@ def edges_fetching(
     return data
 
 
-def generating_masks_for_X(
-    data: HeteroData, train_ratio: float, observed_attribute: str
-) -> HeteroData:
+def generating_masks_for_X(data: HeteroData, train_ratio: float, observed_attribute: str) -> HeteroData:
     """This procedure generates the masks for the nodes and edges.
 
     Args:
@@ -246,7 +221,7 @@ def generating_masks_for_X(
         ),
     )
 
-    random_shuffle(masks)
+    np_shuffle(masks)
 
     data[observed_attribute].train_mask = torch_tensor(masks, dtype=torch_bool)
 
@@ -264,7 +239,7 @@ def extract_from_database(
     features_name: str,
     class_name: str,
     device: str,
-) -> typing_Tuple[HeteroData, str, typing_Dict, typing_Dict]:
+) -> tuple[HeteroData, str, dict, dict, dict, dict]:
     """This procedure extracts the data from the database and returns them in HeteroData object.
 
     Args:

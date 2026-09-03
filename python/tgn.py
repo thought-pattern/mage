@@ -52,18 +52,17 @@ from dataclasses import dataclass as dataclasses_dataclass
 from enum import Enum as enum_Enum
 from math import ceil
 from time import time as time_time
-from typing import Any, Dict, List, Set, Tuple
 
 from mgp import Edge as mgp_Edge
 from mgp import List as mgp_List
 from mgp import Map as mgp_Map
-from mgp import Number as mgp_Number
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
 from mgp import Vertex as mgp_Vertex
 from mgp import read_proc as mgp_read_proc
 from numpy import append as np_append
 from numpy import array as np_array
+from numpy import ndarray as np_ndarray
 from numpy import concatenate as np_concatenate
 from numpy import empty as np_empty
 from numpy import ones as np_ones
@@ -155,37 +154,37 @@ class TGNMode(enum_Enum):
 
 @dataclasses_dataclass
 class QueryModuleTGN:
-    config: Dict[str, Any]
+    config: dict[str, object]
     tgn: TGN
     criterion: nn.BCELoss
     optimizer: torch_optim.Adam
     device: torch_device
-    m_loss: List[float]  # mean loss
+    m_loss: list[float]  # mean loss
     mlp: MLP
     tgn_mode: TGNMode
     learning_type: LearningType
     # used in negative sampling for self_supervised
-    all_edges: Set[Tuple[int, int]]
+    all_edges: set[tuple[int, int]]
     # to get all embeddings
-    all_embeddings: Dict[int, np_array]
-    results_per_epochs: Dict[int, List[mgp_Record]]
+    all_embeddings: dict[int, np_ndarray]
+    results_per_epochs: dict[int, list[mgp_Record]]
     current_epoch: int
     global_edge_count: int
     train_eval_index_split: int
-    memgraph_objects_properties: Dict[str, Any]
+    memgraph_objects_properties: dict[str, object]
 
 
 @dataclasses_dataclass
 class QueryModuleTGNBatch:
     current_batch_size: int
-    sources: np_array
-    destinations: np_array
-    timestamps: np_array
-    edge_idxs: np_array
-    node_features: Dict[int, torch_Tensor]
-    edge_features: Dict[int, torch_Tensor]
+    sources: np_ndarray
+    destinations: np_ndarray
+    timestamps: np_ndarray
+    edge_idxs: np_ndarray
+    node_features: dict[int, torch_Tensor]
+    edge_features: dict[int, torch_Tensor]
     batch_size: int
-    labels: np_array
+    labels: np_ndarray
 
 
 ##############################
@@ -259,10 +258,8 @@ def get_current_epoch() -> int:
 
 def get_current_batch() -> int:
     global query_module_tgn
-    _return_value = len(
-        query_module_tgn.results_per_epochs.get(query_module_tgn.current_epoch, [])
-    )
-    return _return_value
+    computed_return_value = len(query_module_tgn.results_per_epochs.get(query_module_tgn.current_epoch, []))
+    return computed_return_value
 
 
 def initialize_results_per_epoch(current_epoch: int) -> bool:
@@ -283,23 +280,19 @@ def set_current_batch_size(new_current_batch_size: int) -> int:
     return query_module_tgn_batch.current_batch_size
 
 
-def append_batch_record_curr_epoch(
-    current_epoch: int, record: mgp_Record
-) -> Dict[int, List[mgp_Record]]:
+def append_batch_record_curr_epoch(current_epoch: int, record: mgp_Record) -> dict[int, list[mgp_Record]]:
     global query_module_tgn
-    assert current_epoch in query_module_tgn.results_per_epochs, (
-        "Current epoch not defined"
-    )
+    assert current_epoch in query_module_tgn.results_per_epochs, "Current epoch not defined"
     query_module_tgn.results_per_epochs.get(current_epoch, []).append(record)
     return query_module_tgn.results_per_epochs
 
 
-def get_output_records() -> List[mgp_Record]:
+def get_output_records() -> list[mgp_Record]:
     global query_module_tgn, EPOCH_START
     output_records = []
 
     for i in range(EPOCH_START, len(query_module_tgn.results_per_epochs) + 1):
-        output_records.extend(query_module_tgn.results_per_epochs.get(i, False))
+        output_records.extend(query_module_tgn.results_per_epochs.get(i, []))
     return output_records
 
 
@@ -314,8 +307,8 @@ def get_link_score(src_tensor: torch_Tensor, dest_tensor: torch_Tensor) -> torch
     global query_module_tgn
     # along columns
     x = torch_cat([src_tensor, dest_tensor], dim=1)
-    _return_value = query_module_tgn.mlp(x).squeeze(dim=0)
-    return _return_value
+    computed_return_value = query_module_tgn.mlp(x).squeeze(dim=0)
+    return computed_return_value
 
 
 #####################################
@@ -328,9 +321,9 @@ def get_link_score(src_tensor: torch_Tensor, dest_tensor: torch_Tensor) -> torch
 def set_tgn(
     learning_type: LearningType,
     device_type: DeviceType,
-    tgn_config: Dict[str, Any],
-    optimizer_config: Dict[str, Any],
-    memgraph_objects_properties_config: Dict[str, Any],
+    tgn_config: dict,
+    optimizer_config: dict,
+    memgraph_objects_properties_config: dict,
 ) -> bool:
     global query_module_tgn, EPOCH_START
 
@@ -374,9 +367,7 @@ def set_tgn(
     return False
 
 
-def get_tgn_self_supervised(
-    config: Dict[str, Any], device: torch_device
-) -> Tuple[TGN, MLP]:
+def get_tgn_self_supervised(config: dict, device: torch_device) -> tuple[TGN, MLP]:
     """
     Set parameters for self supervised learning. Here we try to predict edges.
     """
@@ -393,17 +384,14 @@ def get_tgn_self_supervised(
     # ( https://en.wikipedia.org/wiki/Hadamard_product_(matrices) it is a fancy name for dot product)
     # of source embeddings and destination embeddings, but we went with concat since author used concatenation
     # and not Hadamard product, in original implementation
-    mlp_in_features_dim = (
-        config.get(TGNParameters.MEMORY_DIMENSION, 0.0)
-        + config.get(TGNParameters.NUM_NODE_FEATURES, 0.0)
-    ) * 2
+    mlp_in_features_dim = (config.get(TGNParameters.MEMORY_DIMENSION, 0.0) + config.get(TGNParameters.NUM_NODE_FEATURES, 0.0)) * 2
 
     mlp = MLP([mlp_in_features_dim, mlp_in_features_dim // 2, 1]).to(device=device)
 
     return tgn, mlp
 
 
-def get_tgn_supervised(config: Dict[str, Any], device: torch_device) -> Tuple[TGN, MLP]:
+def get_tgn_supervised(config: dict, device: torch_device) -> tuple[TGN, MLP]:
     """ """
 
     if config.get(TGNParameters.LAYER_TYPE, False) == TGNLayerType.GraphSumEmbedding:
@@ -411,9 +399,7 @@ def get_tgn_supervised(config: Dict[str, Any], device: torch_device) -> Tuple[TG
     else:
         tgn = TGNGraphAttentionSupervised(**config).to(device)
 
-    mlp_in_features_dim = config.get(TGNParameters.MEMORY_DIMENSION, 0.0) + config.get(
-        TGNParameters.NUM_NODE_FEATURES, 0.0
-    )
+    mlp_in_features_dim = config.get(TGNParameters.MEMORY_DIMENSION, 0.0) + config.get(TGNParameters.NUM_NODE_FEATURES, 0.0)
 
     # used as probability calculator for label
     mlp = MLP([mlp_in_features_dim, 64, 1]).to(device=device)
@@ -426,7 +412,7 @@ def get_tgn_supervised(config: Dict[str, Any], device: torch_device) -> Tuple[TG
 #
 
 
-def sample_negative(negative_num: int) -> Tuple[np_array, np_array]:
+def sample_negative(negative_num: int) -> tuple[np_ndarray, np_ndarray]:
     """
     Currently sampling of negative nodes is done in completely random fashion, and it is possible to sample
     source-dest pair that are real edges
@@ -436,17 +422,17 @@ def sample_negative(negative_num: int) -> Tuple[np_array, np_array]:
     all_src = list(set([src for src, dest in all_edges]))
     all_dest = list(set([src for src, dest in all_edges]))
 
-    _return_value = (
+    computed_return_value = (
         np_random.choice(all_src, negative_num, replace=True),
         np_random.choice(all_dest, negative_num, replace=True),
     )
-    return _return_value
+    return computed_return_value
 
 
 def unpack_tgn_batch_data():
     global query_module_tgn_batch
-    _return_value = dataclasses_astuple(query_module_tgn_batch)
-    return _return_value
+    computed_return_value = dataclasses_astuple(query_module_tgn_batch)
+    return computed_return_value
 
 
 def update_mode_reset_grads_check_dims() -> bool:
@@ -476,21 +462,16 @@ def update_mode_reset_grads_check_dims() -> bool:
         labels,
     ) = unpack_tgn_batch_data()
     assert (
-        len(sources)
-        == len(destinations)
-        == len(timestamps)
-        == len(edge_features)
-        == len(edge_idxs)
-        == len(labels)
+        len(sources) == len(destinations) == len(timestamps) == len(edge_features) == len(edge_idxs) == len(labels)
     ), "Batch size training error"
     return False
 
 
 def update_embeddings(
-    embeddings_source: np_array,
-    embeddings_dest: np_array,
-    sources: np_array,
-    destinations: np_array,
+    embeddings_source: np_ndarray,
+    embeddings_dest: np_ndarray,
+    sources: np_ndarray,
+    destinations: np_ndarray,
 ) -> bool:
     global query_module_tgn
     for i, node in enumerate(sources):
@@ -562,16 +543,12 @@ def process_batch_self_supervised() -> float:
     pos_prob, neg_prob = pos_score.sigmoid(), neg_score.sigmoid()
 
     if query_module_tgn.tgn_mode == TGNMode.Train:
-        pos_label = torch_ones(
-            current_batch_size, dtype=torch_float, device=query_module_tgn.device
-        )
-        neg_label = torch_zeros(
-            current_batch_size, dtype=torch_float, device=query_module_tgn.device
-        )
+        pos_label = torch_ones(current_batch_size, dtype=torch_float, device=query_module_tgn.device)
+        neg_label = torch_zeros(current_batch_size, dtype=torch_float, device=query_module_tgn.device)
         # use reshape to get 1 dimension in every case
-        loss = query_module_tgn.criterion(
-            pos_prob.reshape((-1,)), pos_label
-        ) + query_module_tgn.criterion(neg_prob.reshape((-1,)), neg_label)
+        loss = query_module_tgn.criterion(pos_prob.reshape((-1,)), pos_label) + query_module_tgn.criterion(
+            neg_prob.reshape((-1,)), neg_label
+        )
 
         loss.backward()
         query_module_tgn.optimizer.step()
@@ -590,16 +567,12 @@ def process_batch_self_supervised() -> float:
             neg_prob_cpu.numpy(),
         ]
     )
-    true_label = np_concatenate(
-        [np_ones(current_batch_size), np_zeros(current_batch_size)]
-    )
+    true_label = np_concatenate([np_ones(current_batch_size), np_zeros(current_batch_size)])
     # rint - round int to nearest even number
     # x = 0, x <= 0.5
     # x = 1, x > 0.5
     # sum correct labels, divide by total number of labels
-    precision = (
-        np_sum(np_rint(true_label) == np_rint(pred_score)) * 1.0 / len(true_label)
-    )
+    precision = np_sum(np_rint(true_label) == np_rint(pred_score)) * 1.0 / len(true_label)
 
     # update embeddings to the newest ones that we can return on user request
     update_embeddings(
@@ -668,9 +641,7 @@ def process_batch_supervised() -> float:
     )
     true_label = np_concatenate([np_array(labels[:, 0]), np_array(labels[:, 1])])
 
-    precision = (
-        np_sum(np_rint(true_label) == np_rint(pred_score)) * 1.0 / len(true_label)
-    )
+    precision = np_sum(np_rint(true_label) == np_rint(pred_score)) * 1.0 / len(true_label)
 
     # update embeddings to newest ones that we can return on user request
     update_embeddings(
@@ -685,16 +656,12 @@ def process_batch_supervised() -> float:
 
     # backprop only in case of training
     with torch_no_grad():
-        src_label = torch_tensor(
-            labels[:, 0], dtype=torch_float, device=query_module_tgn.device
-        )
-        dest_label = torch_tensor(
-            labels[:, 1], dtype=torch_float, device=query_module_tgn.device
-        )
+        src_label = torch_tensor(labels[:, 0], dtype=torch_float, device=query_module_tgn.device)
+        dest_label = torch_tensor(labels[:, 1], dtype=torch_float, device=query_module_tgn.device)
 
-    loss = query_module_tgn.criterion(
-        src_prob.squeeze(), src_label.squeeze()
-    ) + query_module_tgn.criterion(dest_prob.squeeze(), dest_label.squeeze())
+    loss = query_module_tgn.criterion(src_prob.squeeze(), src_label.squeeze()) + query_module_tgn.criterion(
+        dest_prob.squeeze(), dest_label.squeeze()
+    )
     loss.backward()
     query_module_tgn.optimizer.step()
     query_module_tgn.m_loss.append(loss.item())
@@ -702,20 +669,18 @@ def process_batch_supervised() -> float:
     return precision
 
 
-def create_torch_tensor(feature: Tuple, num_features: int) -> torch_Tensor:
+def create_torch_tensor(feature: tuple, num_features) -> torch_Tensor:
     if feature is None:
-        np_feature = np_random.uniform(
-            0, 1, num_features
-        )  # uniformly sample features from 0 to 1
+        np_feature = np_random.uniform(0, 1, num_features)  # uniformly sample features from 0 to 1
     else:
         np_feature = np_array(feature)
-    _return_value = torch_tensor(
+    computed_return_value = torch_tensor(
         np_feature,
         requires_grad=True,
         device=query_module_tgn.device,
         dtype=torch_float,
     )
-    return _return_value
+    return computed_return_value
 
 
 def parse_mgp_edges_into_tgn_batch(edges: mgp_List[mgp_Edge]) -> QueryModuleTGNBatch:
@@ -766,21 +731,11 @@ def parse_mgp_edges_into_tgn_batch(edges: mgp_List[mgp_Edge]) -> QueryModuleTGNB
             query_module_tgn.config.get(TGNParameters.NUM_EDGE_FEATURES, False),
         )
 
-        query_module_tgn_batch.sources = np_append(
-            query_module_tgn_batch.sources, src_id
-        )
-        query_module_tgn_batch.destinations = np_append(
-            query_module_tgn_batch.destinations, dest_id
-        )
-        query_module_tgn_batch.timestamps = np_append(
-            query_module_tgn_batch.timestamps, timestamp
-        )
-        query_module_tgn_batch.edge_idxs = np_append(
-            query_module_tgn_batch.edge_idxs, edge_idx
-        )
-        query_module_tgn_batch.labels = np_append(
-            query_module_tgn_batch.labels, np_array([[src_label, dest_label]]), axis=0
-        )
+        query_module_tgn_batch.sources = np_append(query_module_tgn_batch.sources, src_id)
+        query_module_tgn_batch.destinations = np_append(query_module_tgn_batch.destinations, dest_id)
+        query_module_tgn_batch.timestamps = np_append(query_module_tgn_batch.timestamps, timestamp)
+        query_module_tgn_batch.edge_idxs = np_append(query_module_tgn_batch.edge_idxs, edge_idx)
+        query_module_tgn_batch.labels = np_append(query_module_tgn_batch.labels, np_array([[src_label, dest_label]]), axis=0)
     return query_module_tgn_batch
 
 
@@ -836,9 +791,7 @@ def process_epoch_batch() -> mgp_Record:
     return record
 
 
-def train_eval_epochs(
-    num_epochs: int, train_edges: List[mgp_Edge], eval_edges: List[mgp_Edge]
-) -> bool:
+def train_eval_epochs(num_epochs: int, train_edges: list[mgp_Edge], eval_edges: list[mgp_Edge]) -> bool:
     global query_module_tgn, query_module_tgn_batch
 
     batch_size = query_module_tgn_batch.batch_size
@@ -849,7 +802,7 @@ def train_eval_epochs(
     num_eval_batches = ceil(num_eval_edges / batch_size)
     assert batch_size > 0
 
-    for _epoch in range(num_epochs):
+    for _ in range(num_epochs):
         # update global epoch counter
         update_epoch_counter()
 
@@ -879,9 +832,7 @@ def train_eval_epochs(
             # sample edges we need
             start_index_train_batch = i * batch_size
             end_index_train_batch = min((i + 1) * batch_size, num_train_edges)
-            current_edges_batch = train_edges[
-                start_index_train_batch:end_index_train_batch
-            ]
+            current_edges_batch = train_edges[start_index_train_batch:end_index_train_batch]
 
             # prepare batch
             parse_mgp_edges_into_tgn_batch(current_edges_batch)
@@ -899,9 +850,7 @@ def train_eval_epochs(
             # sample edges we need
             start_index_eval_batch = i * batch_size
             end_index_eval_batch = min((i + 1) * batch_size, num_eval_edges)
-            current_edges_batch = eval_edges[
-                start_index_eval_batch:end_index_eval_batch
-            ]
+            current_edges_batch = eval_edges[start_index_eval_batch:end_index_eval_batch]
             # prepare batch
             parse_mgp_edges_into_tgn_batch(current_edges_batch)
             batch_result_record = process_epoch_batch()
@@ -919,9 +868,7 @@ def train_eval_epochs(
 
 #####################################################
 @mgp_read_proc
-def predict_link_score(
-    ctx: mgp_ProcCtx, src: mgp_Vertex, dest: mgp_Vertex
-) -> mgp_Record(prediction=mgp_Number):
+def predict_link_score(ctx: mgp_ProcCtx, src: mgp_Vertex, dest: mgp_Vertex) -> mgp_Record:
     """
     If you were doing link prediction, with this function you can input some of your vertices, and get the predictions
     Be careful to input vertices in correct order (src->dest) otherwise you might get wrong prediction
@@ -933,30 +880,27 @@ def predict_link_score(
     """
     global query_module_tgn
 
-    embedding_source: List[float] = query_module_tgn.all_embeddings.get(int(src.id), [])
+    embedding_source_value = query_module_tgn.all_embeddings.get(int(src.id), [])
+    to_list = getattr(embedding_source_value, "tolist", False)
+    if callable(to_list):
+        embedding_source = to_list()
+    elif isinstance(embedding_source_value, list):
+        embedding_source = embedding_source_value
+    else:
+        raise TypeError("source embedding must be an array or list")
     embedding_dest = query_module_tgn.all_embeddings.get(int(dest.id), False)
 
-    embedding_src_torch = torch_tensor(
-        embedding_source, device=query_module_tgn.device, dtype=torch_float
-    ).reshape(1, -1)
-    embedding_dest_torch = torch_tensor(
-        embedding_dest, device=query_module_tgn.device, dtype=torch_float
-    ).reshape(1, -1)
+    embedding_src_torch = torch_tensor(embedding_source, device=query_module_tgn.device, dtype=torch_float).reshape(1, -1)
+    embedding_dest_torch = torch_tensor(embedding_dest, device=query_module_tgn.device, dtype=torch_float).reshape(1, -1)
 
     # column concatenation
     score = get_link_score(embedding_src_torch, embedding_dest_torch)
-    _return_value = mgp_Record(prediction=float(score))
-    return _return_value
+    computed_return_value = mgp_Record(prediction=float(score))
+    return computed_return_value
 
 
 @mgp_read_proc
-def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> mgp_Record(
-    epoch_num=mgp_Number,
-    batch_num=mgp_Number,
-    batch_process_time=mgp_Number,
-    precision=mgp_Number,
-    batch_type=str,
-):
+def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> list[mgp_Record]:
     """
     After calling this function from ctx we will get all edges currently in database, split them in ratio of
     train and eval edges if function set_mode("eval") was called at some point and use training edges to train
@@ -974,9 +918,7 @@ def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> mgp_Record(
     global query_module_tgn
 
     if not is_tgn_initialized():
-        raise Exception(
-            "TGN is not initialized still. Call `set_params` function in order to initialize it."
-        )
+        raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
     vertices = ctx.graph.vertices
     curr_all_edges = []
@@ -988,9 +930,7 @@ def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> mgp_Record(
     # note: if you didn't call mode switch to eval, you can't
     # still do epoch training
     if query_module_tgn.train_eval_index_split == 0:
-        raise Exception(
-            "Can't call train and eval if you didn't change TGN mode to 'eval'"
-        )
+        raise Exception("Can't call train and eval if you didn't change TGN mode to 'eval'")
 
     train_eval_epochs(
         num_epochs=num_epochs,
@@ -998,20 +938,14 @@ def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> mgp_Record(
         eval_edges=curr_all_edges[query_module_tgn.train_eval_index_split :],
     )
     # get all records for every epoch and every batch inside it as results
-    _return_value = get_output_records()
-    return _return_value
+    computed_return_value = get_output_records()
+    return computed_return_value
 
 
 @mgp_read_proc
 def get_results(
     ctx: mgp_ProcCtx,
-) -> mgp_Record(
-    epoch_num=mgp_Number,
-    batch_num=mgp_Number,
-    batch_process_time=mgp_Number,
-    precision=mgp_Number,
-    batch_type=str,
-):
+) -> list[mgp_Record]:
     """
     This method returns all results from training and evaluation on all epochs
 
@@ -1020,16 +954,14 @@ def get_results(
     """
     # get all records for every epoch and every batch inside it as results
     if not is_tgn_initialized():
-        raise Exception(
-            "TGN is not initialized still. Call `set_params` function in order to initialize it."
-        )
+        raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
-    _return_value = get_output_records()
-    return _return_value
+    computed_return_value = get_output_records()
+    return computed_return_value
 
 
 @mgp_read_proc
-def set_eval(ctx: mgp_ProcCtx) -> mgp_Record(message=str):
+def set_eval(ctx: mgp_ProcCtx) -> mgp_Record:
     """
     Purpose of this function is to switch mode from "train" to "eval" at some point during your stream.
     At that point, we will save current edge count, and this information will later be used in function
@@ -1040,49 +972,43 @@ def set_eval(ctx: mgp_ProcCtx) -> mgp_Record(message=str):
     global query_module_tgn
 
     if not is_tgn_initialized():
-        raise Exception(
-            "TGN is not initialized still. Call `set_params` function in order to initialize it."
-        )
+        raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
     query_module_tgn.train_eval_index_split = query_module_tgn.global_edge_count
     query_module_tgn.tgn_mode = TGNMode.Eval
 
-    _return_value = mgp_Record(message="TGN mode changed to 'eval'.")
-    return _return_value
+    computed_return_value = mgp_Record(message="TGN mode changed to 'eval'.")
+    return computed_return_value
 
 
 @mgp_read_proc
-def revert_from_database(ctx: mgp_ProcCtx) -> mgp_Record():
+def revert_from_database(ctx: mgp_ProcCtx) -> mgp_Record:
     """
     todo implement
     Revert from database and potential file in var/log/ to which we can save params
     """
-    raise NotImplementedError(
-        "You can check what is implemented at our docs page: https://memgraph.com/docs/mage"
-    )
+    raise NotImplementedError("You can check what is implemented at our docs page: https://memgraph.com/docs/mage")
 
 
 @mgp_read_proc
-def save_tgn_params(ctx: mgp_ProcCtx) -> mgp_Record():
+def save_tgn_params(ctx: mgp_ProcCtx) -> mgp_Record:
     """
     todo implement
     After every batch we could add saving params as checkpoints to var/log/memgraph
     This is how it is done usually in ML
     """
-    raise NotImplementedError(
-        "You can check what is implemented at our docs page: https://memgraph.com/docs/mage"
-    )
+    raise NotImplementedError("You can check what is implemented at our docs page: https://memgraph.com/docs/mage")
 
 
 @mgp_read_proc
-def reset(ctx: mgp_ProcCtx) -> mgp_Record(message=str):
+def reset(ctx: mgp_ProcCtx) -> mgp_Record:
     reset_tgn()
-    _return_value = mgp_Record(message="Reset was successful.")
-    return _return_value
+    computed_return_value = mgp_Record(message="Reset was successful.")
+    return computed_return_value
 
 
 @mgp_read_proc
-def get(ctx: mgp_ProcCtx) -> mgp_Record(node=mgp_Vertex, embedding=mgp_List[float]):
+def get(ctx: mgp_ProcCtx) -> list[mgp_Record]:
     """
     Get all embeddings of nodes created by TGN. These are final embeddings, after num_layers of processing
 
@@ -1100,24 +1026,21 @@ def get(ctx: mgp_ProcCtx) -> mgp_Record(node=mgp_Vertex, embedding=mgp_List[floa
     global query_module_tgn
 
     if not is_tgn_initialized():
-        raise Exception(
-            "TGN is not initialized still. Call `set_params` function in order to initialize it."
-        )
+        raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
     embeddings_dict = {}
 
     for node_id, embedding in query_module_tgn.all_embeddings.items():
         embeddings_dict[node_id] = [float(e) for e in embedding]
 
-    _return_value = [
-        mgp_Record(node=ctx.graph.get_vertex_by_id(node_id), embedding=embedding)
-        for node_id, embedding in embeddings_dict.items()
+    computed_return_value = [
+        mgp_Record(node=ctx.graph.get_vertex_by_id(node_id), embedding=embedding) for node_id, embedding in embeddings_dict.items()
     ]
-    return _return_value
+    return computed_return_value
 
 
 @mgp_read_proc
-def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record():
+def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record:
     (
         "\n    Purpose of following function is to process edges which are created in Memgraph, and ge"  # Continue literal.
         "t features from\n    nodes or edges if they are present and save all that data so when batch "  # Continue literal.
@@ -1145,9 +1068,7 @@ def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record():
     global query_module_tgn_batch, query_module_tgn
 
     if not is_tgn_initialized():
-        raise Exception(
-            "TGN is not initialized still. Call `set_params` function in order to initialize it."
-        )
+        raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
     num_edges = len(edges)
 
@@ -1161,8 +1082,8 @@ def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record():
     parse_mgp_edges_into_tgn_batch(edges)
     # if batch is still not full, we don't go to "train" or "eval" of TGN
     if query_module_tgn_batch.current_batch_size < query_module_tgn_batch.batch_size:
-        _return_value = mgp_Record()
-        return _return_value
+        computed_return_value = mgp_Record()
+        return computed_return_value
     # this is just check if we have initialized list to save records of batches for training or evaluation
     if get_current_epoch() not in query_module_tgn.results_per_epochs:
         initialize_results_per_epoch(get_current_epoch())
@@ -1176,15 +1097,15 @@ def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record():
     # reset for next batch
     reset_tgn_batch(batch_size=query_module_tgn_batch.batch_size)
 
-    _return_value = mgp_Record()
-    return _return_value
+    computed_return_value = mgp_Record()
+    return computed_return_value
 
 
 @mgp_read_proc
 def set_params(
     ctx: mgp_ProcCtx,
     params: mgp_Map,
-) -> mgp_Record():
+) -> mgp_Record:
     (
         "\n    With following function you can define parameters used in TGN, as well as what kind of "  # Continue literal.
         'learning you want\n    to do with TGN module.\n\n    If you set TGN to "self_supervised" mode, '  # Continue literal.
@@ -1222,26 +1143,22 @@ def set_params(
     def is_correctly_typed(defined_types, input_values):
         if isinstance(defined_types, dict) and isinstance(input_values, dict):
             # defined_types is a dict of types
-            _return_value = all(
+            computed_return_value = all(
                 k in input_values  # check if exists
-                and is_correctly_typed(
-                    defined_types[k], input_values[k]
-                )  # check for correct type
+                and is_correctly_typed(defined_types[k], input_values[k])  # check for correct type
                 for k in defined_types
             )
-            return _return_value
+            return computed_return_value
         elif isinstance(defined_types, type):
-            _return_value = isinstance(input_values, defined_types)
-            return _return_value
+            computed_return_value = isinstance(input_values, defined_types)
+            return computed_return_value
         else:
             return False
 
     params = {**DEFAULT_VALUES, **params}  # override any default parameters
     print(params)
     if not is_correctly_typed(DEFINED_INPUT_TYPES, params):
-        raise Exception(
-            f"Input dictionary is not correctly typed. Expected following types {DEFINED_INPUT_TYPES}."
-        )
+        raise Exception(f"Input dictionary is not correctly typed. Expected following types {DEFINED_INPUT_TYPES}.")
 
     learning_type: str = params.get(OtherProperties.LEARNING_TYPE, "")
     batch_size: int = params.get(OtherProperties.BATCH_SIZE, 0)
@@ -1250,62 +1167,33 @@ def set_params(
 
     tgn_config = {
         TGNParameters.NUM_OF_LAYERS: params.get(TGNParameters.NUM_OF_LAYERS, False),
-        TGNParameters.MEMORY_DIMENSION: params.get(
-            TGNParameters.MEMORY_DIMENSION, False
-        ),
+        TGNParameters.MEMORY_DIMENSION: params.get(TGNParameters.MEMORY_DIMENSION, False),
         TGNParameters.TIME_DIMENSION: params.get(TGNParameters.TIME_DIMENSION, False),
-        TGNParameters.NUM_EDGE_FEATURES: params.get(
-            TGNParameters.NUM_EDGE_FEATURES, False
-        ),
-        TGNParameters.NUM_NODE_FEATURES: params.get(
-            TGNParameters.NUM_NODE_FEATURES, False
-        ),
-        TGNParameters.MESSAGE_DIMENSION: params.get(
-            TGNParameters.MESSAGE_DIMENSION, False
-        ),
+        TGNParameters.NUM_EDGE_FEATURES: params.get(TGNParameters.NUM_EDGE_FEATURES, False),
+        TGNParameters.NUM_NODE_FEATURES: params.get(TGNParameters.NUM_NODE_FEATURES, False),
+        TGNParameters.MESSAGE_DIMENSION: params.get(TGNParameters.MESSAGE_DIMENSION, False),
         TGNParameters.NUM_NEIGHBORS: params.get(TGNParameters.NUM_NEIGHBORS, False),
-        TGNParameters.LAYER_TYPE: get_tgn_layer_enum(
-            params.get(TGNParameters.LAYER_TYPE, False)
-        ),
-        TGNParameters.EDGE_FUNCTION_TYPE: get_edge_message_function_type(
-            params.get(TGNParameters.EDGE_FUNCTION_TYPE, False)
-        ),
+        TGNParameters.LAYER_TYPE: get_tgn_layer_enum(params.get(TGNParameters.LAYER_TYPE, False)),
+        TGNParameters.EDGE_FUNCTION_TYPE: get_edge_message_function_type(params.get(TGNParameters.EDGE_FUNCTION_TYPE, False)),
         TGNParameters.MESSAGE_AGGREGATOR_TYPE: get_message_aggregator_type(
             params.get(TGNParameters.MESSAGE_AGGREGATOR_TYPE, False)
         ),
-        TGNParameters.MEMORY_UPDATER_TYPE: get_memory_updater_type(
-            params.get(TGNParameters.MEMORY_UPDATER_TYPE, False)
-        ),
+        TGNParameters.MEMORY_UPDATER_TYPE: get_memory_updater_type(params.get(TGNParameters.MEMORY_UPDATER_TYPE, False)),
     }
     memgraph_objects_property_config = {
-        MemgraphObjectsProperties.NODE_FEATURES_PROPERTY: params.get(
-            MemgraphObjectsProperties.NODE_FEATURES_PROPERTY, False
-        ),
-        MemgraphObjectsProperties.EDGE_FEATURES_PROPERTY: params.get(
-            MemgraphObjectsProperties.EDGE_FEATURES_PROPERTY, False
-        ),
-        MemgraphObjectsProperties.NODE_LABELS_PROPERTY: params.get(
-            MemgraphObjectsProperties.NODE_LABELS_PROPERTY, False
-        ),
+        MemgraphObjectsProperties.NODE_FEATURES_PROPERTY: params.get(MemgraphObjectsProperties.NODE_FEATURES_PROPERTY, False),
+        MemgraphObjectsProperties.EDGE_FEATURES_PROPERTY: params.get(MemgraphObjectsProperties.EDGE_FEATURES_PROPERTY, False),
+        MemgraphObjectsProperties.NODE_LABELS_PROPERTY: params.get(MemgraphObjectsProperties.NODE_LABELS_PROPERTY, False),
     }
 
     optimizer_config = {
-        OptimizerParameters.LEARNING_RATE: params.get(
-            OptimizerParameters.LEARNING_RATE, False
-        ),
-        OptimizerParameters.WEIGHT_DECAY: params.get(
-            OptimizerParameters.WEIGHT_DECAY, False
-        ),
+        OptimizerParameters.LEARNING_RATE: params.get(OptimizerParameters.LEARNING_RATE, False),
+        OptimizerParameters.WEIGHT_DECAY: params.get(OptimizerParameters.WEIGHT_DECAY, False),
     }
     # tgn params
 
-    if (
-        tgn_config.get(TGNParameters.LAYER_TYPE, False)
-        == TGNLayerType.GraphAttentionEmbedding
-    ):
-        tgn_config[TGNParameters.NUM_ATTENTION_HEADS] = params.get(
-            TGNParameters.NUM_ATTENTION_HEADS, 1
-        )
+    if tgn_config.get(TGNParameters.LAYER_TYPE, False) == TGNLayerType.GraphAttentionEmbedding:
+        tgn_config[TGNParameters.NUM_ATTENTION_HEADS] = params.get(TGNParameters.NUM_ATTENTION_HEADS, 1)
 
     # set learning type
     tgn_learning_type = get_learning_type(learning_type)
@@ -1319,8 +1207,8 @@ def set_params(
         memgraph_objects_property_config,
     )
 
-    _return_value = mgp_Record()
-    return _return_value
+    computed_return_value = mgp_Record()
+    return computed_return_value
 
 
 #####################################
@@ -1335,9 +1223,7 @@ def get_tgn_layer_enum(layer_type: str) -> TGNLayerType:
     elif TGNLayerType(layer_type) is TGNLayerType.GraphSumEmbedding:
         return TGNLayerType.GraphSumEmbedding
     else:
-        raise Exception(
-            f"Wrong layer type, expected {TGNLayerType.GraphAttentionEmbedding} or {TGNLayerType.GraphSumEmbedding} "
-        )
+        raise Exception(f"Wrong layer type, expected {TGNLayerType.GraphAttentionEmbedding} or {TGNLayerType.GraphSumEmbedding} ")
 
 
 def get_edge_message_function_type(message_function_type: str) -> MessageFunctionType:
@@ -1346,9 +1232,7 @@ def get_edge_message_function_type(message_function_type: str) -> MessageFunctio
     elif MessageFunctionType(message_function_type) is MessageFunctionType.MLP:
         return MessageFunctionType.MLP
     else:
-        raise Exception(
-            f"Wrong message function type, expected {MessageFunctionType.Identity} or {MessageFunctionType.MLP} "
-        )
+        raise Exception(f"Wrong message function type, expected {MessageFunctionType.Identity} or {MessageFunctionType.MLP} ")
 
 
 def get_message_aggregator_type(message_aggregator_type: str) -> MessageAggregatorType:
@@ -1357,9 +1241,7 @@ def get_message_aggregator_type(message_aggregator_type: str) -> MessageAggregat
     elif MessageAggregatorType(message_aggregator_type) is MessageAggregatorType.Last:
         return MessageAggregatorType.Last
     else:
-        raise Exception(
-            f"Wrong message aggregator type, expected {MessageAggregatorType.Last} or {MessageAggregatorType.Mean} "
-        )
+        raise Exception(f"Wrong message aggregator type, expected {MessageAggregatorType.Last} or {MessageAggregatorType.Mean} ")
 
 
 def get_memory_updater_type(memory_updater_type: str) -> MemoryUpdaterType:
@@ -1370,9 +1252,7 @@ def get_memory_updater_type(memory_updater_type: str) -> MemoryUpdaterType:
         return MemoryUpdaterType.RNN
 
     else:
-        raise Exception(
-            f"Wrong memory updater type, expected {MemoryUpdaterType.GRU} or, {MemoryUpdaterType.RNN}"
-        )
+        raise Exception(f"Wrong memory updater type, expected {MemoryUpdaterType.GRU} or, {MemoryUpdaterType.RNN}")
 
 
 def get_learning_type(learning_type: str) -> LearningType:
@@ -1383,9 +1263,7 @@ def get_learning_type(learning_type: str) -> LearningType:
         return LearningType.Supervised
 
     else:
-        raise Exception(
-            f"Wrong learning type, expected {LearningType.Supervised} or, {LearningType.SelfSupervised}"
-        )
+        raise Exception(f"Wrong learning type, expected {LearningType.Supervised} or, {LearningType.SelfSupervised}")
 
 
 def get_device_type(device_type: str) -> DeviceType:
@@ -1396,6 +1274,4 @@ def get_device_type(device_type: str) -> DeviceType:
         return DeviceType.CPU
 
     else:
-        raise Exception(
-            f"Wrong device type, expected {DeviceType.CUDA} or, {DeviceType.CPU}"
-        )
+        raise Exception(f"Wrong device type, expected {DeviceType.CUDA} or, {DeviceType.CPU}")

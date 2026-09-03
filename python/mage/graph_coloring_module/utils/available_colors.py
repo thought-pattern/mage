@@ -1,13 +1,9 @@
 """Utilities for available colors."""
 
-from typing import List
-
 from mage.graph_coloring_module.graph import Graph
 
 
-def available_colors(
-    graph: Graph, no_of_colors: int, chromosome: List[int], node: int
-) -> List[int]:
+def available_colors(graph: Graph, no_of_colors: int, chromosome: list[int], node: int) -> list[int]:
     """A function that finds colors with which we can color
     the given node without creating a conflict. Conflict occurs
     when the same color is assigned to the two nodes connected by

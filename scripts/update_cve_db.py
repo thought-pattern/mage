@@ -11,12 +11,7 @@ def main():
     cve_db = CVEDB()
     cve_db.refresh_cache_and_update_db()
     print("Done!!!")
-
-    # cve_db does unusual things when it exists, so let's catch it
-    try:
-        del cve_db
-    except Exception:
-        pass
+    del cve_db
     return False
 
 

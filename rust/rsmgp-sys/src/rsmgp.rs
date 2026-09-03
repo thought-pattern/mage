@@ -194,11 +194,9 @@ pub enum Type {
 /// The final type is deduced by processing types field from left to right. E.g., [Type::Any]
 /// means any return type, [Type::List], [Type::Int] means a list of integer values.
 ///
-/// `deprecated` is used to register deprecated result type.
 pub struct NamedType<'a> {
     pub name: &'a CStr,
     pub types: &'a [Type],
-    pub deprecated: bool,
 }
 
 /// Used to pass expected type during procedure registration for optional parameters.
@@ -226,25 +224,6 @@ macro_rules! define_type {
         NamedType {
             name: &c_str!($name),
             types: &[$($types),+],
-            deprecated: false,
-        }
-    };
-}
-
-/// Defines a deprecated type.
-///
-/// Example of defining a list of integers
-///
-/// ```no run
-/// define_deprecated_type!("name", Type::List, Type::Int);
-/// ```
-#[macro_export]
-macro_rules! define_deprecated_type {
-    ($name:literal, $($types:expr),+) => {
-        NamedType {
-            name: &c_str!($name),
-            types: &[$($types),+],
-            deprecated: true,
         }
     };
 }

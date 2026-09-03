@@ -20,8 +20,8 @@ def parse_arguments():
         type=str,
         required=False,
     )
-    _return_value = parser.parse_args()
-    return _return_value
+    computed_return_value = parser.parse_args()
+    return computed_return_value
 
 
 def main():

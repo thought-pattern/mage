@@ -5,7 +5,6 @@ from json import load as json_load
 from os import getcwd as os_getcwd
 from os import getenv as os_getenv
 from os import path as os_path
-from typing import List
 
 from format_cve_table import format_cyclonedx_data
 from requests import post as requests_post
@@ -13,7 +12,7 @@ from requests import post as requests_post
 CVE_DIR = os_getenv("CVE_DIR", os_getcwd())
 
 
-def read_ignore_list() -> List[str]:
+def read_ignore_list() -> list[str]:
     """
     Reads the `cve-ignore-list` file from this directory and returns a list of CVEs to ignore.
     """
@@ -51,14 +50,14 @@ def read_summary_file(filename: str) -> object:
         return data
 
 
-def parse_cve_report(filename: str) -> List[dict]:
+def parse_cve_report(filename: str) -> list[dict]:
     """
     Parse the CVE report and return a list of dictionaries.
     """
     data = read_summary_file(filename)
-    cves = format_cyclonedx_data(
-        data.get("vulnerabilities", []), data.get("components", [])
-    )
+    if not isinstance(data, dict):
+        raise ValueError(f"CVE report must be a JSON object: {filename}")
+    cves = format_cyclonedx_data(data.get("vulnerabilities", []), data.get("components", []))
     ignore_list = read_ignore_list()
     out = []
     for cve in cves:
@@ -67,7 +66,7 @@ def parse_cve_report(filename: str) -> List[dict]:
     return out
 
 
-def summarize_cves(cves: List[dict]) -> dict:
+def summarize_cves(cves: list[dict]) -> dict:
     """
     Summarize the CVEs by severity.
 
@@ -119,7 +118,7 @@ def summarize_cves(cves: List[dict]) -> dict:
     return {}
 
 
-def severity_summary(data: List[dict]) -> dict:
+def severity_summary(data: list[dict]) -> dict:
     """
     count the total number of CVEs per severity level
     """
@@ -133,7 +132,7 @@ def severity_summary(data: List[dict]) -> dict:
     return summary
 
 
-def create_slack_message(arch: str, image_type: str, cves: List[dict]) -> str:
+def create_slack_message(arch: str, image_type: str, cves: list[dict]) -> str:
     """
     Formats the Slack message to be sent.
 
@@ -174,10 +173,12 @@ def post_message(msg: str) -> bool:
     """
 
     url = os_getenv("INFRA_WEBHOOK_URL")
+    if url is None:
+        raise RuntimeError("INFRA_WEBHOOK_URL is not configured")
     try:
-        response = requests_post(url, json={"text": msg})
-    except Exception:
-        print(f"Response: {response.status_code}")
+        requests_post(url, json={"text": msg})
+    except Exception as caught_error:
+        print(f"Slack webhook request failed: {caught_error}")
     return False
 
 
@@ -208,9 +209,7 @@ def main(arch: str, image_type: str, send_slack_message: bool) -> bool:
 if __name__ == "__main__":
     parser = argparse_ArgumentParser()
     parser.add_argument("arch", type=str, default="amd64")
-    parser.add_argument(
-        "image_type", type=str, choices=["memgraph", "mage"], default="mage"
-    )
+    parser.add_argument("image_type", type=str, choices=["memgraph", "mage"], default="mage")
     parser.add_argument("send_message", type=str, default="true")
     args = parser.parse_args()
 

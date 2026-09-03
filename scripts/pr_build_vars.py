@@ -22,8 +22,8 @@ def extract_commit_hash(filename):
     pattern = re_compile(r"[._+~-](?P<hash>[0-9a-f]{8,12})(?=[-_\.])")
     match = pattern.search(filename)
     if match:
-        _return_value = match.group("hash")
-        return _return_value
+        computed_return_value = match.group("hash")
+        return computed_return_value
     return False
 
 
@@ -39,9 +39,14 @@ def get_memgraph_version(pr):
         capture_output=True,
         text=True,
     )
+    if p.returncode != 0:
+        raise RuntimeError(f"unable to list Memgraph PR build pr{pr}: {p.stderr.strip()}")
 
     # extract the file key found - there should only be one!
-    file = [line.split()[3] for line in p.stdout.splitlines()][0]
+    files = [line.split()[3] for line in p.stdout.splitlines() if len(line.split()) > 3]
+    if len(files) != 1:
+        raise RuntimeError(f"expected one Memgraph PR build for pr{pr}, found {len(files)}")
+    file = files[0]
 
     # remove the path, the first and last parts of the filename which should
     # always be the same to reveal the daily build version
@@ -54,6 +59,8 @@ def get_memgraph_version(pr):
 
 def pr_build_vars(payload):
     pr = payload.get("pr", False)
+    if not isinstance(pr, str) or not pr:
+        raise ValueError("PR build payload requires a non-empty pr string")
     if pr.startswith("pr"):
         pr = pr[2:]
 
@@ -65,40 +72,34 @@ def pr_build_vars(payload):
 
 
 def get_commit():
-    p = subprocess_run(
-        ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True
-    )
+    p = subprocess_run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"unable to resolve MAGE commit: {p.stderr.strip()}")
 
-    _return_value = p.stdout.strip()
-    return _return_value
+    computed_return_value = p.stdout.strip()
+    return computed_return_value
 
 
 def get_pr():
-    p = subprocess_run(
-        r"git log --pretty=%B | grep -oP '(?<=\(#)\d+(?=\))' | head -n 1",
-        shell=True,
-        capture_output=True,
-        text=True,
-    )
-
-    _return_value = p.stdout.strip()
-    return _return_value
+    p = subprocess_run(["git", "log", "--pretty=%B"], capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"unable to inspect MAGE history: {p.stderr.strip()}")
+    pattern = re_compile(r"\(#(?P<pr>\d+)\)")
+    match = pattern.search(p.stdout)
+    computed_return_value = match.group("pr") if match else ""
+    return computed_return_value
 
 
 def get_tag():
-    with urllib_request.urlopen(
-        "https://api.github.com/repos/memgraph/mage/tags"
-    ) as response:
+    with urllib_request.urlopen("https://api.github.com/repos/memgraph/mage/tags") as response:
         # Read the JSON data from GitHub
         tags = json_load(response)
 
     # Find the first tag whose name does not contain 'rc'
     try:
-        latest = next(
-            tag.get("name", "")[1:] for tag in tags if "rc" not in tag.get("name", "")
-        )
-    except StopIteration:
-        latest = "?.?.?"
+        latest = next(tag.get("name", "")[1:] for tag in tags if "rc" not in tag.get("name", ""))
+    except StopIteration as err:
+        raise RuntimeError("GitHub returned no stable MAGE tag") from err
     return latest
 
 
@@ -112,9 +113,7 @@ def get_mage_version():
 
 
 def main() -> bool:
-    parser = argparse_ArgumentParser(
-        description="Read payload from Memgraph PR build workflow"
-    )
+    parser = argparse_ArgumentParser(description="Read payload from Memgraph PR build workflow")
 
     parser.add_argument(
         "payload",

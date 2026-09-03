@@ -4,10 +4,8 @@ from datetime import datetime as datetime_datetime
 from datetime import timedelta as datetime_timedelta
 from enum import IntEnum
 from re import sub as re_sub
-from typing import ClassVar as typing_ClassVar
 from zoneinfo import ZoneInfo
 
-from mgp import List as mgp_List
 from mgp import Nullable as mgp_Nullable
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
@@ -23,28 +21,26 @@ from mage.date.unit_conversion import to_int, to_timedelta
 def getOffset(timezone, date):
     offset = pytz_timezone(timezone).utcoffset(date)
     if offset.days == 1:
-        _return_value = (
+        computed_return_value = (
             datetime_timedelta(
-                minutes=offset.seconds // Conversion.SECONDS_IN_MINUTE
-                + Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR
+                minutes=offset.seconds // Conversion.SECONDS_IN_MINUTE + Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR
             ),
             False,
         )
-        return _return_value
+        return computed_return_value
     elif offset.days == -1:
-        _return_value = (
+        computed_return_value = (
             datetime_timedelta(
-                minutes=Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR
-                - offset.seconds // Conversion.SECONDS_IN_MINUTE
+                minutes=Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR - offset.seconds // Conversion.SECONDS_IN_MINUTE
             ),
             True,
         )
-        return _return_value
-    _return_value = (
+        return computed_return_value
+    computed_return_value = (
         datetime_timedelta(minutes=offset.seconds // Conversion.SECONDS_IN_MINUTE),
         False,
     )
-    return _return_value
+    return computed_return_value
 
 
 @mgp_read_proc
@@ -53,14 +49,12 @@ def parse(
     unit: str = "ms",
     format: str = "%Y-%m-%d %H:%M:%S",
     timezone: str = "UTC",
-) -> mgp_Record(parsed=int):
+) -> mgp_Record:
     first_date = Epoch.UNIX_EPOCH
     input_date = datetime_datetime.strptime(time, format)
 
     if timezone not in pytz_all_timezones:
-        raise Exception(
-            "Timezone doesn't exist. Check documentation to see available timezones."
-        )
+        raise Exception("Timezone doesn't exist. Check documentation to see available timezones.")
 
     offset, add = getOffset(timezone, input_date)
     tz_input = input_date + offset if add else input_date - offset
@@ -78,10 +72,7 @@ def parse(
         )
     elif unit == "s":
         parsed = (
-            time_since.days
-            * Conversion.HOURS_IN_DAY
-            * Conversion.MINUTES_IN_HOUR
-            * Conversion.SECONDS_IN_MINUTE
+            time_since.days * Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR * Conversion.SECONDS_IN_MINUTE
             + time_since.seconds
         )
     elif unit == "m":
@@ -92,19 +83,15 @@ def parse(
     elif unit == "h":
         parsed = (
             time_since.days * Conversion.HOURS_IN_DAY
-            + time_since.seconds
-            // Conversion.SECONDS_IN_MINUTE
-            // Conversion.MINUTES_IN_HOUR
+            + time_since.seconds // Conversion.SECONDS_IN_MINUTE // Conversion.MINUTES_IN_HOUR
         )
     elif unit == "d":
         parsed = time_since.days
     else:
-        raise Exception(
-            "Unit doesn't exist. Check documentation to see available units."
-        )
+        raise Exception("Unit doesn't exist. Check documentation to see available units.")
 
-    _return_value = mgp_Record(parsed=parsed)
-    return _return_value
+    computed_return_value = mgp_Record(parsed=parsed)
+    return computed_return_value
 
 
 @mgp_read_proc
@@ -113,7 +100,7 @@ def format(
     unit: str = "ms",
     format: str = "%Y-%m-%d %H:%M:%S %Z",
     timezone: str = "UTC",
-) -> mgp_Record(formatted=str):
+) -> mgp_Record:
     first_date = Epoch.UNIX_EPOCH
 
     if unit == "ms":
@@ -127,21 +114,15 @@ def format(
     elif unit == "d":
         new_date = first_date + datetime_timedelta(days=time)
     else:
-        raise Exception(
-            "Unit doesn't exist. Check documentation to see available units."
-        )
+        raise Exception("Unit doesn't exist. Check documentation to see available units.")
 
     if timezone not in pytz_all_timezones:
-        raise Exception(
-            "Timezone doesn't exist. Check documentation to see available timezones."
-        )
+        raise Exception("Timezone doesn't exist. Check documentation to see available timezones.")
     offset, subtract = getOffset(timezone, new_date)
     tz_new = new_date - offset if subtract else new_date + offset
 
-    _return_value = mgp_Record(
-        formatted=pytz_timezone(timezone).localize(tz_new).strftime(format)
-    )
-    return _return_value
+    computed_return_value = mgp_Record(formatted=pytz_timezone(timezone).localize(tz_new).strftime(format))
+    return computed_return_value
 
 
 @mgp_function
@@ -151,12 +132,11 @@ def add(
     add_value: int,
     add_unit: str,
 ) -> int:
-    _return_value = to_int(
-        to_timedelta(time=time, unit=unit)
-        + to_timedelta(time=add_value, unit=add_unit),
+    computed_return_value = to_int(
+        to_timedelta(time=time, unit=unit) + to_timedelta(time=add_value, unit=add_unit),
         unit=unit,
     )
-    return _return_value
+    return computed_return_value
 
 
 # TODO(colinbarry) Code below is a copy and paste from `date.py` in the Memgraph
@@ -182,7 +162,7 @@ class DateFormatUtil:
     Utility class for converting between predefined ISO date formats using Python strftime and strptime.
     """
 
-    ISO_DATE_FORMATS: typing_ClassVar = {
+    ISO_DATE_FORMATS: dict[str, str] = {
         "basic_iso_date": "%Y%m%d",  # BASIC_ISO_DATE: '20111203'
         "iso_local_date": "%Y-%m-%d",  # ISO_LOCAL_DATE: '2011-12-03'
         "iso_offset_date": "%Y-%m-%d%z",  # ISO_OFFSET_DATE: '2011-12-03+01:00'
@@ -203,14 +183,12 @@ class DateFormatUtil:
             return "iso_zoned_date_time"
         if format_lower not in DateFormatUtil.ISO_DATE_FORMATS:
             raise ValueError(f"Unsupported date format: {format_str}")
-        _return_value = DateFormatUtil.ISO_DATE_FORMATS.get(format_lower, "")
-        return _return_value
+        computed_return_value = DateFormatUtil.ISO_DATE_FORMATS.get(format_lower, "")
+        return computed_return_value
 
 
 @mgp_function
-def convert_format(
-    temporal: mgp_Nullable[str], current_format: str, convert_to: str
-) -> mgp_Nullable[str]:
+def convert_format(temporal: mgp_Nullable[str], current_format: str, convert_to: str) -> mgp_Nullable[str]:
     """
     Converts between specified ISO date formats using Python strftime and strptime.
     Supports zoned to offset conversion by removing zone part in '[]'.
@@ -238,16 +216,10 @@ def convert_format(
             temporal_without_zone = temporal.split("[")[0]
 
             if "." in temporal_without_zone:
-                temporal_without_zone = re_sub(
-                    r"(\.\d{6})\d*", r"\1", temporal_without_zone
-                )
-                dt = datetime_datetime.strptime(
-                    temporal_without_zone, "%Y-%m-%dT%H:%M:%S.%f%z"
-                )
+                temporal_without_zone = re_sub(r"(\.\d{6})\d*", r"\1", temporal_without_zone)
+                dt = datetime_datetime.strptime(temporal_without_zone, "%Y-%m-%dT%H:%M:%S.%f%z")
             else:
-                dt = datetime_datetime.strptime(
-                    temporal_without_zone, "%Y-%m-%dT%H:%M:%S%z"
-                )
+                dt = datetime_datetime.strptime(temporal_without_zone, "%Y-%m-%dT%H:%M:%S%z")
         elif current_format.lower() == "iso_date":
             # iso_date can have optional offset, try parsing with offset first
             try:
@@ -266,11 +238,7 @@ def convert_format(
             except Exception:
                 dt = datetime_datetime.strptime(temporal, current_formatter)
 
-        if (
-            convert_to.lower()
-            in ["iso_offset_date", "iso_offset_time", "iso_offset_date_time"]
-            and dt.tzinfo is None
-        ):
+        if convert_to.lower() in ["iso_offset_date", "iso_offset_time", "iso_offset_date_time"] and dt.tzinfo is None:
             raise Exception("missing timezone")
 
         # Convert to target format
@@ -309,32 +277,36 @@ def convert_format(
                 dt = dt.replace(tzinfo=ZoneInfo("UTC"))
             # For local formats, remove timezone info
             elif not convert_to_formatter.endswith("%z") and dt.tzinfo is not None:
-                dt = dt.replace(tzinfo=False)
+                dt = datetime_datetime(
+                    dt.year,
+                    dt.month,
+                    dt.day,
+                    dt.hour,
+                    dt.minute,
+                    dt.second,
+                    dt.microsecond,
+                    fold=dt.fold,
+                )
 
             converted = dt.strftime(convert_to_formatter)
 
             # Format offset as +hh:mm for offset formats
-            if (
-                convert_to_formatter.endswith("%z")
-                and len(converted) > FormatLength.DATE
-            ):
+            if convert_to_formatter.endswith("%z") and len(converted) > FormatLength.DATE:
                 converted = f"{converted[:-2]}:{converted[-2:]}"
 
         return converted
 
     except Exception as e:
-        raise Exception(
-            f"Error converting '{temporal}' from '{current_format}' to '{convert_to}': {e}"
-        ) from e
+        raise Exception(f"Error converting '{temporal}' from '{current_format}' to '{convert_to}': {e}") from e
 
 
 @mgp_read_proc
-def get_date_formats(context: mgp_ProcCtx) -> mgp_Record(formats=mgp_List[str]):
+def get_date_formats(context: mgp_ProcCtx) -> mgp_Record:
     """
     Returns a list of supported date formats.
 
     Returns:
         formats: List of supported date formats
     """
-    _return_value = mgp_Record(formats=list(DateFormatUtil.ISO_DATE_FORMATS.keys()))
-    return _return_value
+    computed_return_value = mgp_Record(formats=list(DateFormatUtil.ISO_DATE_FORMATS.keys()))
+    return computed_return_value
