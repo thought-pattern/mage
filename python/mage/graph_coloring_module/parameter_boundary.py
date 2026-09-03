@@ -74,9 +74,7 @@ def normalize_parameters(parameters: dict) -> dict:
         error = error_names.get(error_setting, False)
     else:
         error = error_setting
-    if not callable(getattr(error, "individual_err", False)) or not callable(
-        getattr(error, "population_err", False)
-    ):
+    if not callable(getattr(error, "individual_err", False)) or not callable(getattr(error, "population_err", False)):
         raise IncorrectParametersException(f"Unknown graph-coloring error: {error_setting!r}")
 
     callback_settings = parameters.get(Parameter.ITERATION_CALLBACKS.value, [])
@@ -137,19 +135,13 @@ def normalize_parameters(parameters: dict) -> dict:
         Parameter.CONFLICT_ERR_ALPHA: parameters.get(Parameter.CONFLICT_ERR_ALPHA.value, 0.1),
         Parameter.CONFLICT_ERR_BETA: parameters.get(Parameter.CONFLICT_ERR_BETA.value, 0.001),
         Parameter.MUTATION: mutation,
-        Parameter.MULTIPLE_MUTATION_NODES_NO_OF_NODES: parameters.get(
-            Parameter.MULTIPLE_MUTATION_NODES_NO_OF_NODES.value, 2
-        ),
+        Parameter.MULTIPLE_MUTATION_NODES_NO_OF_NODES: parameters.get(Parameter.MULTIPLE_MUTATION_NODES_NO_OF_NODES.value, 2),
         Parameter.RANDOM_MUTATION_PROBABILITY: parameters.get(Parameter.RANDOM_MUTATION_PROBABILITY.value, 0.1),
         Parameter.SIMPLE_TUNNELING_MUTATION: tunneling_mutation,
         Parameter.SIMPLE_TUNNELING_PROBABILITY: parameters.get(Parameter.SIMPLE_TUNNELING_PROBABILITY.value, 0.5),
-        Parameter.SIMPLE_TUNNELING_ERROR_CORRECTION: parameters.get(
-            Parameter.SIMPLE_TUNNELING_ERROR_CORRECTION.value, 2
-        ),
+        Parameter.SIMPLE_TUNNELING_ERROR_CORRECTION: parameters.get(Parameter.SIMPLE_TUNNELING_ERROR_CORRECTION.value, 2),
         Parameter.SIMPLE_TUNNELING_MAX_ATTEMPTS: parameters.get(Parameter.SIMPLE_TUNNELING_MAX_ATTEMPTS.value, 25),
-        Parameter.CONVERGENCE_CALLBACK_TOLERANCE: parameters.get(
-            Parameter.CONVERGENCE_CALLBACK_TOLERANCE.value, 500
-        ),
+        Parameter.CONVERGENCE_CALLBACK_TOLERANCE: parameters.get(Parameter.CONVERGENCE_CALLBACK_TOLERANCE.value, 500),
         Parameter.CONVERGENCE_CALLBACK_ACTIONS: actions,
     }
 

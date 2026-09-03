@@ -5,6 +5,7 @@ from math import cos as math_cos
 from math import pi as math_pi
 from math import sin as math_sin
 from math import sqrt as math_sqrt
+
 KM_MULTIPLIER = 0.001
 LATITUDE = "lat"
 LONGITUDE = "lng"

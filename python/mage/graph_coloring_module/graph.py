@@ -1,7 +1,6 @@
 """Utilities for graph."""
 
 
-
 class Graph:
     """A data structure representing an undirected weighted graph.
 

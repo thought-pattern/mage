@@ -115,18 +115,10 @@ class VRPConstraintProgrammingSolver(VRPSolver):
 
         # Either it was a beginning node, or a vehicle has visited it in the drive.
         if len(out_vars) > 0:
-            self.internal_model.Equation(
-                self.edge_chosen_vars.get((node_index, self.SINK_INDEX), 0.0)
-                + sum(out_vars)
-                == 1
-            )
+            self.internal_model.Equation(self.edge_chosen_vars.get((node_index, self.SINK_INDEX), 0.0) + sum(out_vars) == 1)
 
         if len(in_vars) > 0:
-            self.internal_model.Equation(
-                self.edge_chosen_vars.get((self.SOURCE_INDEX, node_index), 0.0)
-                + sum(in_vars)
-                == 1
-            )
+            self.internal_model.Equation(self.edge_chosen_vars.get((self.SOURCE_INDEX, node_index), 0.0) + sum(in_vars) == 1)
         return False
 
     def add_adjacent_output_edge_variables(self, node_index: int):

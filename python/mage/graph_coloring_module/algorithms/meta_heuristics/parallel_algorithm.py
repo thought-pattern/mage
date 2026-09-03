@@ -72,11 +72,7 @@ class ParallelAlgorithm(Algorithm, ABC):
         individuals.extend(Individual(no_of_colors, graph) for _ in range(population_size - len(individuals)))
         chunk_size, remainder = divmod(population_size, no_of_processes)
         chunks = [
-            list(
-                individuals[
-                    pid * chunk_size + min(pid, remainder) : (pid + 1) * chunk_size + min(pid + 1, remainder)
-                ]
-            )
+            list(individuals[pid * chunk_size + min(pid, remainder) : (pid + 1) * chunk_size + min(pid + 1, remainder)])
             for pid in range(no_of_processes)
         ]
         populations = [
@@ -90,13 +86,9 @@ class ParallelAlgorithm(Algorithm, ABC):
         ]
 
         initial_best_solutions = {
-            pid: population.best_individual(individual_error_value)
-            for pid, population in enumerate(populations)
+            pid: population.best_individual(individual_error_value) for pid, population in enumerate(populations)
         }
-        if any(
-            individual_error_value(graph, individual) < 1e-5
-            for individual in initial_best_solutions.values()
-        ):
+        if any(individual_error_value(graph, individual) < 1e-5 for individual in initial_best_solutions.values()):
             best_individual = min(
                 initial_best_solutions.values(),
                 key=lambda individual: individual_error_value(graph, individual),
@@ -150,11 +142,7 @@ class ParallelAlgorithm(Algorithm, ABC):
             for process in started_processes:
                 process.join()
 
-            failed_processes = [
-                process.pid
-                for process in started_processes
-                if process.exitcode != 0
-            ]
+            failed_processes = [process.pid for process in started_processes if process.exitcode != 0]
             if failed_processes:
                 raise RuntimeError(f"Graph-coloring workers failed: {failed_processes}")
 

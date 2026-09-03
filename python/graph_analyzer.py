@@ -47,8 +47,7 @@ def help() -> list[mgp_Record]:
     def make_records(name: str, doc: object):
         doc_text = doc if isinstance(doc, str) else ""
         computed_return_value = (
-            mgp_Record(name=n, value=v)
-            for n, v in zip(chain([name], repeat("")), cleandoc(doc_text).splitlines(), strict=False)
+            mgp_Record(name=n, value=v) for n, v in zip(chain([name], repeat("")), cleandoc(doc_text).splitlines(), strict=False)
         )
         return computed_return_value
 
