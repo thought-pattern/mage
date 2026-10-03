@@ -122,48 +122,46 @@ def choose_severity(
 def format_cyclonedx_data(vulnerabilities: list[dict], components: list[dict]) -> list[dict]:
     cves = []
     for item in vulnerabilities:
+        vulnerability_id = item.get("id", "")
         cves.append(
             {
                 "affects": [x.get("ref", "") for x in item.get("affects", [])],
-                "cve": item.get("id", ""),
+                "cve": vulnerability_id,
                 "severity": choose_severity(
                     item.get("ratings", []),
+                    vulnerability_id=vulnerability_id,
                     data_source=get_source_name(item.get("source", {})),
                 ),
             }
         )
+
+    # An affected reference may name a component by either its purl or its bom-ref; a component whose two
+    # references are equal is indexed once, and each reference keeps its components in report order.
+    components_by_ref: dict[str, list[dict]] = {}
+    for component in components:
+        for ref in {component.get("purl", ""), component.get("bom-ref", "")}:
+            components_by_ref.setdefault(ref, []).append(component)
+
+    # deduplicate by package, version and vulnerabilityID, keeping the first occurrence
     out = []
+    seen_keys = set()
     for cve in cves:
         for affect in cve.get("affects", []):
-            for component in components:
-                if affect in [
-                    component.get("purl", ""),
-                    component.get("bom-ref", ""),
-                ]:
-                    out.append(
-                        {
-                            "type": component.get("type", ""),
-                            "vulnerabilityID": cve.get("cve", ""),
-                            "severity": cve.get("severity", ""),
-                            "package": component.get("name", ""),
-                            "version": component.get("version", ""),
-                            "purl": component.get("purl", ""),
-                        }
-                    )
-
-    # deduplicate by package, version and vulnerabilityID
-    keep_inds = []
-    keys = []
-    for i, item in enumerate(out):
-        key = (
-            item.get("package", ""),
-            item.get("version", ""),
-            item.get("vulnerabilityID", ""),
-        )
-        if key not in keys:
-            keys.append(key)
-            keep_inds.append(i)
-    out = [out[i] for i in keep_inds]
+            for component in components_by_ref.get(affect, []):
+                key = (component.get("name", ""), component.get("version", ""), cve.get("cve", ""))
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                out.append(
+                    {
+                        "type": component.get("type", ""),
+                        "vulnerabilityID": cve.get("cve", ""),
+                        "severity": cve.get("severity", ""),
+                        "package": component.get("name", ""),
+                        "version": component.get("version", ""),
+                        "purl": component.get("purl", ""),
+                    }
+                )
 
     # sort items by type, then package name
     out.sort(key=lambda x: (x.get("type", ""), x.get("package", "")))

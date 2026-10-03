@@ -35,12 +35,10 @@ class NodeRawMessage(RawMessage):
         self.node_features = node_features
 
     def detach_memory(self) -> bool:
-        if self.source_memory.grad is not None:
-            self.source_memory.detach_()
-            self.source_memory.zero_()
-        if self.node_features.grad is not None:
-            self.node_features.detach_()
-            self.node_features.zero_()
+        # Replace the owned references with detached views of the same values. The originals may be shared with
+        # stored node features or memory, so they are neither modified in place nor zeroed.
+        self.source_memory = self.source_memory.detach()
+        self.node_features = self.node_features.detach()
         return False
 
 
@@ -69,16 +67,10 @@ class InteractionRawMessage(RawMessage):
         self.edge_features = edge_features
 
     def detach_memory(self) -> bool:
-        if self.source_memory.grad is not None:
-            self.source_memory.detach_()
-            self.source_memory.zero_()
-        if self.dest_memory.grad is not None:
-            self.dest_memory.detach_()
-            self.dest_memory.zero_()
-        if self.delta_time.grad is not None:
-            self.delta_time.detach_()
-            self.delta_time.zero_()
-        if self.edge_features.grad is not None:
-            self.edge_features.detach_()
-            self.edge_features.zero_()
+        # Replace the owned references with detached views of the same values. The originals may be shared with
+        # stored edge features or memory, so they are neither modified in place nor zeroed.
+        self.source_memory = self.source_memory.detach()
+        self.dest_memory = self.dest_memory.detach()
+        self.delta_time = self.delta_time.detach()
+        self.edge_features = self.edge_features.detach()
         return False

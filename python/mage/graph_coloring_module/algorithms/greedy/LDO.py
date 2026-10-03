@@ -3,7 +3,7 @@
 from random import choice as random_choice
 from random import randint as random_randint
 
-from mage.graph_coloring_module.algorithms.algorithm import Algorithm
+from mage.graph_coloring_module.algorithms.algorithm import Algorithm, no_host_abort
 from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.graph import Graph
 from mage.graph_coloring_module.parameters import Parameter
@@ -24,7 +24,7 @@ class LDO(Algorithm):
         return "LDO"
 
     @validate(Parameter.NO_OF_COLORS)
-    def run(self, graph: Graph, parameters: dict = DEFAULT_ARGUMENT_DICT) -> Individual:
+    def run(self, graph: Graph, parameters: dict = DEFAULT_ARGUMENT_DICT, abort_check=no_host_abort) -> Individual:
         """Returns the individual that represents the result of the LDO algorithm."""
 
         if parameters is DEFAULT_ARGUMENT_DICT:
@@ -35,6 +35,7 @@ class LDO(Algorithm):
         sorted_nodes = sorted(list(graph.nodes), key=lambda node: graph.degree(node), reverse=True)
 
         for node in sorted_nodes:
+            abort_check()
             colors = available_colors(graph, no_of_colors, chromosome, node)
             if len(colors) > 0:
                 color = random_choice(colors)

@@ -214,6 +214,8 @@ class Individual:
                     if self.internal_conflicts_counter[node] == 1:
                         self.internal_conflict_nodes.add(node)
 
-        conflicting_edges //= 2
+        # Each edge was summed from both endpoints. Halving keeps the exact (possibly fractional) total that
+        # calculate_diff later adjusts by whole edge weights, so full and incremental metrics agree.
+        conflicting_edges /= 2
         self.internal_conflicts_weight = conflicting_edges
         return False

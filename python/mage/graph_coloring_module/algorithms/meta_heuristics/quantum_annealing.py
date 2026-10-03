@@ -2,7 +2,6 @@
 
 from logging import getLogger as logging_getLogger
 from math import exp as math_exp
-from math import fabs as math_fabs
 from random import random as random_random
 
 from mage.graph_coloring_module.algorithms.meta_heuristics.parallel_algorithm import (
@@ -67,7 +66,13 @@ class QA(ParallelAlgorithm):
             ):
                 best_solutions[pid] = best_individual
 
-            if math_fabs(error.individual_err(graph, best_individual, parameters)) < 1e-5:
+            solved = [
+                individual
+                for individual in population.individuals
+                if self.is_solution(individual, error.individual_err(graph, individual, parameters))
+            ]
+            if solved:
+                best_solutions[pid] = solved[0]
                 with running_flag.get_lock():
                     running_flag.value = 0
                 return False

@@ -26,25 +26,25 @@ def parse_arguments():
         "-k",
         help="Filter what tests you want to run",
         type=str,
-        required=False,
+        default="",
     )
     parser.add_argument(
         "--memgraph-port",
         help="Set the port that Memgraph is listening on",
         type=int,
-        required=False,
+        default=ConfigConstants.MEMGRAPH_PORT,
     )
     parser.add_argument(
         "--neo4j-port",
         help="Set the port that Neo4j is listening on",
         type=int,
-        required=False,
+        default=ConfigConstants.NEO4J_PORT,
     )
     parser.add_argument(
         "--neo4j-container",
         help="Set the Neo4j container name",
         type=str,
-        required=False,
+        default=ConfigConstants.NEO4J_CONTAINER_NAME,
     )
     args = parser.parse_args()
     return args
@@ -81,21 +81,10 @@ def main(
 
 if __name__ == "__main__":
     args = parse_arguments()
-    test_filter = args.k
-    memgraph_port = args.memgraph_port
-    neo4j_port = args.neo4j_port
-    neo4j_container = args.neo4j_container
-
-    if memgraph_port:
-        memgraph_port = str(memgraph_port)
-    if neo4j_port:
-        neo4j_port = str(neo4j_port)
-    if args.neo4j_container:
-        neo4j_container = args.neo4j_container
 
     main(
-        test_filter=test_filter,
-        memgraph_port=memgraph_port,
-        neo4j_port=neo4j_port,
-        neo4j_container=neo4j_container,
+        test_filter=args.k,
+        memgraph_port=str(args.memgraph_port),
+        neo4j_port=str(args.neo4j_port),
+        neo4j_container=args.neo4j_container,
     )

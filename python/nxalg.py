@@ -123,12 +123,18 @@ except ImportError as import_error:
     raise import_error from import_error
 
 
+# Optional nullable procedure arguments default to Cypher null, the only default Memgraph admits for a nullable
+# argument (a vertex default is forbidden and a Boolean does not satisfy int, str or list). Null is also NetworkX's
+# own "option absent" value, so an omitted option reaches NetworkX exactly as if the caller had not supplied it,
+# while explicit zero depths/cutoffs and other concrete values are forwarded unchanged.
+
+
 # networkx.algorithms.approximation.connectivity.node_connectivity
 @mgp_read_proc
 def node_connectivity(
     ctx: mgp_ProcCtx,
-    source: mgp_Nullable[mgp_Vertex] = False,
-    target: mgp_Nullable[mgp_Vertex] = False,
+    source: mgp_Nullable[mgp_Vertex] = None,
+    target: mgp_Nullable[mgp_Vertex] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(connectivity=nx_node_connectivity(MemgraphMultiDiGraph(ctx=ctx), source, target))
     return computed_return_value
@@ -140,8 +146,8 @@ def degree_assortativity_coefficient(
     ctx: mgp_ProcCtx,
     x: str = "out",
     y: str = "in",
-    weight: mgp_Nullable[str] = False,
-    nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = False,
+    weight: mgp_Nullable[str] = None,
+    nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(
         assortativity=nx_degree_assortativity_coefficient(MemgraphMultiDiGraph(ctx=ctx), x, y, weight, nodes)
@@ -168,7 +174,7 @@ def is_bipartite(ctx: mgp_ProcCtx) -> mgp_Record:
 def node_boundary(
     ctx: mgp_ProcCtx,
     nbunch1: mgp_List[mgp_Vertex],
-    nbunch2: mgp_Nullable[mgp_List[mgp_Vertex]] = False,
+    nbunch2: mgp_Nullable[mgp_List[mgp_Vertex]] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(boundary=list(nx_node_boundary(MemgraphMultiDiGraph(ctx=ctx), nbunch1, nbunch2)))
     return computed_return_value
@@ -176,7 +182,7 @@ def node_boundary(
 
 # networkx.algorithms.bridges.bridges
 @mgp_read_proc
-def bridges(ctx: mgp_ProcCtx, root: mgp_Nullable[mgp_Vertex] = False) -> mgp_Record:
+def bridges(ctx: mgp_ProcCtx, root: mgp_Nullable[mgp_Vertex] = None) -> mgp_Record:
     g = MemgraphMultiGraph(ctx=ctx)
     computed_return_value = mgp_Record(bridges=[next(iter(g[u][v])) for u, v in nx_bridges(MemgraphGraph(ctx=ctx), root=root)])
     return computed_return_value
@@ -186,11 +192,11 @@ def bridges(ctx: mgp_ProcCtx, root: mgp_Nullable[mgp_Vertex] = False) -> mgp_Rec
 @mgp_read_proc
 def betweenness_centrality(
     ctx: mgp_ProcCtx,
-    k: mgp_Nullable[int] = False,
+    k: mgp_Nullable[int] = None,
     normalized: bool = True,
-    weight: mgp_Nullable[str] = False,
+    weight: mgp_Nullable[str] = None,
     endpoints: bool = False,
-    seed: mgp_Nullable[int] = False,
+    seed: mgp_Nullable[int] = None,
 ) -> list[mgp_Record]:
     computed_return_value = [
         mgp_Record(node=n, betweenness=b)
@@ -208,7 +214,7 @@ def betweenness_centrality(
 
 # networkx.algorithms.chains.chain_decomposition
 @mgp_read_proc
-def chain_decomposition(ctx: mgp_ProcCtx, root: mgp_Nullable[mgp_Vertex] = False) -> mgp_Record:
+def chain_decomposition(ctx: mgp_ProcCtx, root: mgp_Nullable[mgp_Vertex] = None) -> mgp_Record:
     g = MemgraphMultiGraph(ctx=ctx)
     computed_return_value = mgp_Record(
         chains=[[next(iter(g[u][v])) for u, v in d] for d in nx_chain_decomposition(MemgraphGraph(ctx=ctx), root=root)]
@@ -236,8 +242,8 @@ def find_cliques(
 @mgp_read_proc
 def clustering(
     ctx: mgp_ProcCtx,
-    nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = False,
-    weight: mgp_Nullable[str] = False,
+    nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = None,
+    weight: mgp_Nullable[str] = None,
 ) -> list[mgp_Record]:
     clustering_values = nx_clustering(MemgraphDiGraph(ctx=ctx), nodes=nodes, weight=weight)
     if isinstance(clustering_values, dict):
@@ -274,7 +280,7 @@ def communicability(
 def k_clique_communities(
     ctx: mgp_ProcCtx,
     k: int,
-    cliques: mgp_Nullable[mgp_List[mgp_List[mgp_Vertex]]] = False,
+    cliques: mgp_Nullable[mgp_List[mgp_List[mgp_Vertex]]] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(
         communities=[list(s) for s in nx_community.k_clique_communities(MemgraphMultiGraph(ctx=ctx), k, cliques)]
@@ -341,8 +347,8 @@ def is_edge_cover(ctx: mgp_ProcCtx, cover: mgp_List[mgp_Edge]) -> mgp_Record:
 @mgp_read_proc
 def find_cycle(
     ctx: mgp_ProcCtx,
-    source: mgp_Nullable[mgp_List[mgp_Vertex]] = False,
-    orientation: mgp_Nullable[str] = False,
+    source: mgp_Nullable[mgp_List[mgp_Vertex]] = None,
+    orientation: mgp_Nullable[str] = None,
 ) -> mgp_Record:
     try:
         computed_return_value = mgp_Record(
@@ -500,7 +506,7 @@ def has_eulerian_path(ctx: mgp_ProcCtx) -> mgp_Record:
 
 # networkx.algorithms.hierarchy.flow_hierarchy
 @mgp_read_proc
-def flow_hierarchy(ctx: mgp_ProcCtx, weight: mgp_Nullable[str] = False) -> mgp_Record:
+def flow_hierarchy(ctx: mgp_ProcCtx, weight: mgp_Nullable[str] = None) -> mgp_Record:
     computed_return_value = mgp_Record(flow_hierarchy=nx_flow_hierarchy(MemgraphMultiDiGraph(ctx=ctx), weight=weight))
     return computed_return_value
 
@@ -541,12 +547,12 @@ def is_isomorphic(
 def pagerank(
     ctx: mgp_ProcCtx,
     alpha: mgp_Number = 0.85,
-    personalization: mgp_Nullable[str] = False,
+    personalization: mgp_Nullable[str] = None,
     max_iter: int = 100,
     tol: mgp_Number = 1e-06,
-    nstart: mgp_Nullable[str] = False,
+    nstart: mgp_Nullable[str] = None,
     weight: mgp_Nullable[str] = "weight",
-    dangling: mgp_Nullable[str] = False,
+    dangling: mgp_Nullable[str] = None,
 ) -> list[mgp_Record]:
     pagerank_arguments = dict(alpha=alpha, max_iter=max_iter, tol=tol, weight=weight)
     if isinstance(personalization, str) and personalization:
@@ -564,7 +570,7 @@ def pagerank(
 
 # networkx.algorithms.link_prediction.jaccard_coefficient
 @mgp_read_proc
-def jaccard_coefficient(ctx: mgp_ProcCtx, ebunch: mgp_Nullable[mgp_List[mgp_List[mgp_Vertex]]] = False) -> list[mgp_Record]:
+def jaccard_coefficient(ctx: mgp_ProcCtx, ebunch: mgp_Nullable[mgp_List[mgp_List[mgp_Vertex]]] = None) -> list[mgp_Record]:
     computed_return_value = [mgp_Record(u=u, v=v, coef=c) for u, v, c in nx_jaccard_coefficient(MemgraphGraph(ctx=ctx), ebunch)]
     return computed_return_value
 
@@ -579,8 +585,12 @@ def lowest_common_ancestor(ctx: mgp_ProcCtx, node1: mgp_Vertex, node2: mgp_Verte
 # networkx.algorithms.matching.maximal_matching
 @mgp_read_proc
 def maximal_matching(ctx: mgp_ProcCtx) -> mgp_Record:
-    g = MemgraphMultiDiGraph(ctx=ctx)
-    computed_return_value = mgp_Record(edges=list(next(iter(g[u][v])) for u, v in nx_maximal_matching(g)))
+    # Matching is defined on the undirected simple graph: parallel edges and both directions of a vertex pair are one
+    # candidate pair. Each matched pair is mapped back to one original host edge through the undirected multigraph
+    # view, whose adjacency holds every host edge between the pair in either direction.
+    matching = nx_maximal_matching(MemgraphGraph(ctx=ctx))
+    host_edges = MemgraphMultiGraph(ctx=ctx)
+    computed_return_value = mgp_Record(edges=[next(iter(host_edges[u][v])) for u, v in matching])
     return computed_return_value
 
 
@@ -595,7 +605,7 @@ def check_planarity(ctx: mgp_ProcCtx) -> mgp_Record:
 
 # networkx.algorithms.non_randomness.non_randomness
 @mgp_read_proc
-def non_randomness(ctx: mgp_ProcCtx, k: mgp_Nullable[int] = False) -> mgp_Record:
+def non_randomness(ctx: mgp_ProcCtx, k: mgp_Nullable[int] = None) -> mgp_Record:
     nn, rnn = nx_non_randomness(MemgraphGraph(ctx=ctx), k=k)
     computed_return_value = mgp_Record(non_randomness=nn, relative_non_randomness=rnn)
     return computed_return_value
@@ -603,9 +613,9 @@ def non_randomness(ctx: mgp_ProcCtx, k: mgp_Nullable[int] = False) -> mgp_Record
 
 # networkx.algorithms.reciprocity.reciprocity
 @mgp_read_proc
-def reciprocity(ctx: mgp_ProcCtx, nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = False) -> list[mgp_Record]:
+def reciprocity(ctx: mgp_ProcCtx, nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = None) -> list[mgp_Record]:
     rp = nx_reciprocity(MemgraphMultiDiGraph(ctx=ctx), nodes=nodes)
-    if nodes is False:
+    if nodes is None:
         computed_return_value = [mgp_Record(node=False, reciprocity=rp)]
         return computed_return_value
     else:
@@ -619,9 +629,9 @@ def reciprocity(ctx: mgp_ProcCtx, nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = Fa
 @mgp_read_proc
 def shortest_path(
     ctx: mgp_ProcCtx,
-    source: mgp_Nullable[mgp_Vertex] = False,
-    target: mgp_Nullable[mgp_Vertex] = False,
-    weight: mgp_Nullable[str] = False,
+    source: mgp_Nullable[mgp_Vertex] = None,
+    target: mgp_Nullable[mgp_Vertex] = None,
+    weight: mgp_Nullable[str] = None,
     method: str = "dijkstra",
 ) -> list[mgp_Record]:
     sp = nx_shortest_path(
@@ -632,12 +642,16 @@ def shortest_path(
         method=method,
     )
 
-    if source and target:
+    has_source = source is not None
+    has_target = target is not None
+    if has_source and has_target:
         sp = {source: {target: sp}}
-    elif source and not target:
+    elif has_source:
         sp = {source: sp}
-    elif not source and target:
-        sp = {source: {target: p} for source, p in sp.items()}
+    elif has_target:
+        sp = {s: {target: p} for s, p in sp.items()}
+    else:
+        sp = dict(sp)
 
     computed_return_value = [mgp_Record(source=s, target=t, path=p) for s, d in sp.items() for t, p in d.items()]
     return computed_return_value
@@ -647,9 +661,9 @@ def shortest_path(
 @mgp_read_proc
 def shortest_path_length(
     ctx: mgp_ProcCtx,
-    source: mgp_Nullable[mgp_Vertex] = False,
-    target: mgp_Nullable[mgp_Vertex] = False,
-    weight: mgp_Nullable[str] = False,
+    source: mgp_Nullable[mgp_Vertex] = None,
+    target: mgp_Nullable[mgp_Vertex] = None,
+    weight: mgp_Nullable[str] = None,
     method: str = "dijkstra",
 ) -> list[mgp_Record]:
     sp = nx_shortest_path_length(
@@ -660,12 +674,14 @@ def shortest_path_length(
         method=method,
     )
 
-    if source and target:
+    has_source = source is not None
+    has_target = target is not None
+    if has_source and has_target:
         sp = {source: {target: sp}}
-    elif source and not target:
+    elif has_source:
         sp = {source: sp}
-    elif not source and target:
-        sp = {source: {target: local_element} for source, local_element in sp.items()}
+    elif has_target:
+        sp = {s: {target: local_element} for s, local_element in sp.items()}
     else:
         sp = dict(sp)
 
@@ -681,7 +697,7 @@ def all_shortest_paths(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
     target: mgp_Vertex,
-    weight: mgp_Nullable[str] = False,
+    weight: mgp_Nullable[str] = None,
     method: str = "dijkstra",
 ) -> mgp_Record:
     computed_return_value = mgp_Record(
@@ -710,7 +726,7 @@ def has_path(ctx: mgp_ProcCtx, source: mgp_Vertex, target: mgp_Vertex) -> mgp_Re
 def multi_source_dijkstra_path(
     ctx: mgp_ProcCtx,
     sources: mgp_List[mgp_Vertex],
-    cutoff: mgp_Nullable[int] = False,
+    cutoff: mgp_Nullable[int] = None,
     weight: str = "weight",
 ) -> list[mgp_Record]:
     computed_return_value = [
@@ -725,7 +741,7 @@ def multi_source_dijkstra_path(
 def multi_source_dijkstra_path_length(
     ctx: mgp_ProcCtx,
     sources: mgp_List[mgp_Vertex],
-    cutoff: mgp_Nullable[int] = False,
+    cutoff: mgp_Nullable[int] = None,
     weight: str = "weight",
 ) -> list[mgp_Record]:
     computed_return_value = [
@@ -750,7 +766,7 @@ def all_simple_paths(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
     target: mgp_Vertex,
-    cutoff: mgp_Nullable[int] = False,
+    cutoff: mgp_Nullable[int] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(
         paths=list(nx_all_simple_paths(MemgraphMultiDiGraph(ctx=ctx), source, target, cutoff=cutoff))
@@ -771,7 +787,7 @@ def bfs_edges(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
     reverse: bool = False,
-    depth_limit: mgp_Nullable[int] = False,
+    depth_limit: mgp_Nullable[int] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(
         edges=list(
@@ -792,7 +808,7 @@ def bfs_tree(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
     reverse: bool = False,
-    depth_limit: mgp_Nullable[int] = False,
+    depth_limit: mgp_Nullable[int] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(
         tree=list(
@@ -809,7 +825,7 @@ def bfs_tree(
 
 # networkx.algorithms.traversal.breadth_first_search.bfs_predecessors
 @mgp_read_proc
-def bfs_predecessors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = False) -> list[mgp_Record]:
+def bfs_predecessors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = None) -> list[mgp_Record]:
     computed_return_value = [
         mgp_Record(node=n, predecessor=p)
         for n, p in nx_bfs_predecessors(MemgraphMultiDiGraph(ctx=ctx), source, depth_limit=depth_limit)
@@ -819,7 +835,7 @@ def bfs_predecessors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Null
 
 # networkx.algorithms.traversal.breadth_first_search.bfs_successors
 @mgp_read_proc
-def bfs_successors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = False) -> list[mgp_Record]:
+def bfs_successors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = None) -> list[mgp_Record]:
     computed_return_value = [
         mgp_Record(node=n, successors=s)
         for n, s in nx_bfs_successors(MemgraphMultiDiGraph(ctx=ctx), source, depth_limit=depth_limit)
@@ -829,14 +845,14 @@ def bfs_successors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullab
 
 # networkx.algorithms.traversal.depth_first_search.dfs_tree
 @mgp_read_proc
-def dfs_tree(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = False) -> mgp_Record:
+def dfs_tree(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = None) -> mgp_Record:
     computed_return_value = mgp_Record(tree=list(nx_dfs_tree(MemgraphMultiDiGraph(ctx=ctx), source, depth_limit=depth_limit)))
     return computed_return_value
 
 
 # networkx.algorithms.traversal.depth_first_search.dfs_predecessors
 @mgp_read_proc
-def dfs_predecessors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = False) -> list[mgp_Record]:
+def dfs_predecessors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = None) -> list[mgp_Record]:
     computed_return_value = [
         mgp_Record(node=n, predecessor=p)
         for n, p in nx_dfs_predecessors(MemgraphMultiDiGraph(ctx=ctx), source, depth_limit=depth_limit).items()
@@ -846,7 +862,7 @@ def dfs_predecessors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Null
 
 # networkx.algorithms.traversal.depth_first_search.dfs_successors
 @mgp_read_proc
-def dfs_successors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = False) -> list[mgp_Record]:
+def dfs_successors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = None) -> list[mgp_Record]:
     computed_return_value = [
         mgp_Record(node=n, successors=s)
         for n, s in nx_dfs_successors(MemgraphMultiDiGraph(ctx=ctx), source, depth_limit=depth_limit).items()
@@ -856,7 +872,7 @@ def dfs_successors(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullab
 
 # networkx.algorithms.traversal.depth_first_search.dfs_preorder_nodes
 @mgp_read_proc
-def dfs_preorder_nodes(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = False) -> mgp_Record:
+def dfs_preorder_nodes(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = None) -> mgp_Record:
     computed_return_value = mgp_Record(
         nodes=list(nx_dfs_preorder_nodes(MemgraphMultiDiGraph(ctx=ctx), source, depth_limit=depth_limit))
     )
@@ -865,7 +881,7 @@ def dfs_preorder_nodes(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nu
 
 # networkx.algorithms.traversal.depth_first_search.dfs_postorder_nodes
 @mgp_read_proc
-def dfs_postorder_nodes(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = False) -> mgp_Record:
+def dfs_postorder_nodes(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_Nullable[int] = None) -> mgp_Record:
     computed_return_value = mgp_Record(
         nodes=list(nx_dfs_postorder_nodes(MemgraphMultiDiGraph(ctx=ctx), source, depth_limit=depth_limit))
     )
@@ -876,8 +892,8 @@ def dfs_postorder_nodes(ctx: mgp_ProcCtx, source: mgp_Vertex, depth_limit: mgp_N
 @mgp_read_proc
 def edge_bfs(
     ctx: mgp_ProcCtx,
-    source: mgp_Nullable[mgp_Vertex] = False,
-    orientation: mgp_Nullable[str] = False,
+    source: mgp_Nullable[mgp_Vertex] = None,
+    orientation: mgp_Nullable[str] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(
         edges=list(e for _, _, e in nx_edge_bfs(MemgraphMultiDiGraph(ctx=ctx), source=source, orientation=orientation))
@@ -889,8 +905,8 @@ def edge_bfs(
 @mgp_read_proc
 def edge_dfs(
     ctx: mgp_ProcCtx,
-    source: mgp_Nullable[mgp_Vertex] = False,
-    orientation: mgp_Nullable[str] = False,
+    source: mgp_Nullable[mgp_Vertex] = None,
+    orientation: mgp_Nullable[str] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(
         edges=list(e for _, _, e in nx_edge_dfs(MemgraphMultiDiGraph(ctx=ctx), source=source, orientation=orientation))
@@ -958,7 +974,7 @@ def voronoi_cells(ctx: mgp_ProcCtx, center_nodes: mgp_List[mgp_Vertex], weight: 
 
 # networkx.algorithms.wiener.wiener_index
 @mgp_read_proc
-def wiener_index(ctx: mgp_ProcCtx, weight: mgp_Nullable[str] = False) -> mgp_Record:
+def wiener_index(ctx: mgp_ProcCtx, weight: mgp_Nullable[str] = None) -> mgp_Record:
     computed_return_value = mgp_Record(wiener_index=nx_wiener_index(MemgraphMultiDiGraph(ctx=ctx), weight=weight))
     return computed_return_value
 

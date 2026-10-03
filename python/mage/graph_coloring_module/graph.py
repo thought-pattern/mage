@@ -1,8 +1,15 @@
 """Utilities for graph."""
 
+from math import isfinite as math_isfinite
+
 
 class Graph:
     """A data structure representing an undirected weighted graph.
+
+    Edge semantics for coloring: every edge between two distinct nodes is a coloring constraint, and its finite
+    weight is the penalty a conflict on it adds to the weighted error. A zero weight keeps the constraint (a coloring
+    with that conflict is still invalid) while adding nothing to the error. A self-loop relates a node to itself,
+    which no coloring can separate and which constrains no pair of distinct nodes, so it is not stored.
 
     :param nodes: a list containing the labels of all nodes in the graph
     :param adjacency_list: a dictionary that associates each node with a list of its neighbors
@@ -26,7 +33,7 @@ class Graph:
         self.weights: list[float] = []
         self.internal_name = name
 
-        for label in self.indices_to_labels:
+        for node_index, label in enumerate(self.indices_to_labels):
             neighbors = adjacency_list.get(label, [])
             if not isinstance(neighbors, list):
                 raise TypeError(f"adjacency entries for {label!r} must be lists")
@@ -39,6 +46,10 @@ class Graph:
                 weight = neighbor[1]
                 if not isinstance(weight, (int, float)) or isinstance(weight, bool):
                     raise TypeError(f"edge weight for {label!r} -> {neighbor[0]!r} must be numeric")
+                if not math_isfinite(weight):
+                    raise ValueError(f"edge weight for {label!r} -> {neighbor[0]!r} must be finite")
+                if neighbor_index == node_index:
+                    continue
                 self.internal_neighbors.append(neighbor_index)
                 self.weights.append(float(weight))
             self.neighbors_positions.append(len(self.internal_neighbors))

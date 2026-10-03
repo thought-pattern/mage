@@ -72,15 +72,15 @@ class MLPPredictor(torch_nn.Module):
                         return computed_return_value
         raise ValueError("DGL did not return scores for the requested edge relation")
 
-    def forward_pred(self, src_embedding: torch_Tensor, dest_embedding: torch_Tensor) -> float:
-        """Efficient implementation for predict method of DotPredictor.
+    def forward_pred(self, src_embedding: torch_Tensor, dest_embedding: torch_Tensor) -> torch_Tensor:
+        """Efficient implementation for predict method of MLPPredictor.
 
         Args:
             src_embedding (torch.Tensor): Embedding of the source node.
             dest_embedding (torch.Tensor): Embedding of the destination node.
 
         Returns:
-            float: Edge score computed.
+            torch.Tensor: Edge score computed (a one-element tensor).
         """
         h = torch_cat([src_embedding, dest_embedding])
         computed_return_value = self.W2(F.relu(self.W1(h)))

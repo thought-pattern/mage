@@ -141,7 +141,8 @@ class SecondOrderRandomWalk:
 
     def set_graph_transition_probs(self, graph: Graph) -> bool:
         """
-        Sets first graph transition probs in graph.
+        Sets second-order transition probs for every oriented edge. The graph's get_edges already yields each
+        oriented edge once (both orientations of an undirected edge), so each transition is calculated once.
 
         Args:
             graph (Graph): Graph for which to set first pass transition probs
@@ -150,12 +151,5 @@ class SecondOrderRandomWalk:
             graph.set_edge_transition_probs(
                 (node_from, node_to),
                 self.calculate_edge_transition_probs(graph, node_from, node_to),
-            )
-            if graph.is_directed:
-                continue
-
-            graph.set_edge_transition_probs(
-                (node_to, node_from),
-                self.calculate_edge_transition_probs(graph, node_to, node_from),
             )
         return False

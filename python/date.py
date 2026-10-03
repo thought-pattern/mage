@@ -2,6 +2,7 @@
 
 from datetime import datetime as datetime_datetime
 from datetime import timedelta as datetime_timedelta
+from datetime import timezone as datetime_timezone
 from enum import IntEnum
 from re import sub as re_sub
 from zoneinfo import ZoneInfo
@@ -14,33 +15,8 @@ from mgp import read_proc as mgp_read_proc
 from pytz import all_timezones as pytz_all_timezones
 from pytz import timezone as pytz_timezone
 
-from mage.date.constants import Conversion, Epoch
+from mage.date.constants import Epoch
 from mage.date.unit_conversion import to_int, to_timedelta
-
-
-def getOffset(timezone, date):
-    offset = pytz_timezone(timezone).utcoffset(date)
-    if offset.days == 1:
-        computed_return_value = (
-            datetime_timedelta(
-                minutes=offset.seconds // Conversion.SECONDS_IN_MINUTE + Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR
-            ),
-            False,
-        )
-        return computed_return_value
-    elif offset.days == -1:
-        computed_return_value = (
-            datetime_timedelta(
-                minutes=Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR - offset.seconds // Conversion.SECONDS_IN_MINUTE
-            ),
-            True,
-        )
-        return computed_return_value
-    computed_return_value = (
-        datetime_timedelta(minutes=offset.seconds // Conversion.SECONDS_IN_MINUTE),
-        False,
-    )
-    return computed_return_value
 
 
 @mgp_read_proc
@@ -50,43 +26,31 @@ def parse(
     format: str = "%Y-%m-%d %H:%M:%S",
     timezone: str = "UTC",
 ) -> mgp_Record:
-    first_date = Epoch.UNIX_EPOCH
+    first_date = Epoch.UNIX_EPOCH.replace(tzinfo=datetime_timezone.utc)
     input_date = datetime_datetime.strptime(time, format)
 
     if timezone not in pytz_all_timezones:
         raise Exception("Timezone doesn't exist. Check documentation to see available timezones.")
 
-    offset, add = getOffset(timezone, input_date)
-    tz_input = input_date + offset if add else input_date - offset
+    # A format carrying %z fixes its own instant. A naive wall time is placed in the named zone; a repeated (fall-back)
+    # or skipped (spring-forward) wall time resolves to the zone's standard-time offset.
+    if input_date.tzinfo is None:
+        input_date = pytz_timezone(timezone).localize(input_date, is_dst=False)
 
-    time_since = tz_input - first_date
+    # Floor division over the complete duration keeps sub-unit precision (including microseconds) until the final
+    # rounding, and floors instants before the epoch toward the past for every unit.
+    time_since = input_date - first_date
 
     if unit == "ms":
-        parsed = (
-            time_since.days
-            * Conversion.HOURS_IN_DAY
-            * Conversion.MINUTES_IN_HOUR
-            * Conversion.SECONDS_IN_MINUTE
-            * Conversion.MILLISECONDS_IN_SECOND
-            + time_since.seconds * Conversion.MILLISECONDS_IN_SECOND
-        )
+        parsed = time_since // datetime_timedelta(milliseconds=1)
     elif unit == "s":
-        parsed = (
-            time_since.days * Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR * Conversion.SECONDS_IN_MINUTE
-            + time_since.seconds
-        )
+        parsed = time_since // datetime_timedelta(seconds=1)
     elif unit == "m":
-        parsed = (
-            time_since.days * Conversion.HOURS_IN_DAY * Conversion.MINUTES_IN_HOUR
-            + time_since.seconds // Conversion.SECONDS_IN_MINUTE
-        )
+        parsed = time_since // datetime_timedelta(minutes=1)
     elif unit == "h":
-        parsed = (
-            time_since.days * Conversion.HOURS_IN_DAY
-            + time_since.seconds // Conversion.SECONDS_IN_MINUTE // Conversion.MINUTES_IN_HOUR
-        )
+        parsed = time_since // datetime_timedelta(hours=1)
     elif unit == "d":
-        parsed = time_since.days
+        parsed = time_since // datetime_timedelta(days=1)
     else:
         raise Exception("Unit doesn't exist. Check documentation to see available units.")
 
@@ -101,7 +65,7 @@ def format(
     format: str = "%Y-%m-%d %H:%M:%S %Z",
     timezone: str = "UTC",
 ) -> mgp_Record:
-    first_date = Epoch.UNIX_EPOCH
+    first_date = Epoch.UNIX_EPOCH.replace(tzinfo=datetime_timezone.utc)
 
     if unit == "ms":
         new_date = first_date + datetime_timedelta(milliseconds=time)
@@ -118,10 +82,10 @@ def format(
 
     if timezone not in pytz_all_timezones:
         raise Exception("Timezone doesn't exist. Check documentation to see available timezones.")
-    offset, subtract = getOffset(timezone, new_date)
-    tz_new = new_date - offset if subtract else new_date + offset
+    # The epoch offset is a UTC instant, so one UTC-to-zone conversion selects the offset in force at that instant.
+    local_date = new_date.astimezone(pytz_timezone(timezone))
 
-    computed_return_value = mgp_Record(formatted=pytz_timezone(timezone).localize(tz_new).strftime(format))
+    computed_return_value = mgp_Record(formatted=local_date.strftime(format))
     return computed_return_value
 
 
@@ -201,10 +165,11 @@ def convert_format(temporal: mgp_Nullable[str], current_format: str, convert_to:
         convert_to: The target format to convert to
 
     Returns:
-        output: The converted datetime string, or ``False`` if input is absent or empty
+        output: The converted datetime string, or null if input is absent or empty
     """
+    # Absent or blank input maps to Python None, which the host returns as Cypher null for this Nullable[str] function.
     if temporal is None or temporal.strip() == "":
-        return False
+        return None
 
     try:
         current_formatter = DateFormatUtil.get_format(current_format)

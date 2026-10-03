@@ -10,7 +10,6 @@ from mgclient import Node as node_mgclient
 from mgclient import Relationship as relationship_mgclient
 from pytest import approx as pytest_approx
 from pytest import fail as pytest_fail
-from pytest import fixture as pytest_fixture
 from pytest import mark as pytest_mark
 from pytest import param as pytest_param
 from pytest import raises as pytest_raises
@@ -18,12 +17,6 @@ from yaml import Loader as yaml_Loader
 from yaml import load as yaml_load
 
 os = imported_import_module("os")
-
-
-@pytest_fixture
-def db():
-    computed_return_value = Memgraph()
-    return computed_return_value
 
 
 class TestConstants:
@@ -53,22 +46,29 @@ class TestConstants:
     EXPORT_TEST_SUBDIR_PREFIX = "test_export"
 
 
+# GQLAlchemy 1.8 models keep converted driver fields only under its own underscore names,
+# while mgclient objects expose them publicly; each accessor below is that library's own.
 def node_to_dict(data):
-    labels = data.labels if hasattr(data, "labels") else (data.internal_labels if isinstance(data, Node) else [])
-    properties = data.properties if hasattr(data, "properties") else data.internal_properties
+    if isinstance(data, Node):
+        labels, properties = data._labels, data._properties
+    else:
+        labels, properties = data.labels, data.properties
     computed_return_value = {"labels": list(labels), "properties": properties}
     return computed_return_value
 
 
 def relationship_to_dict(data):
-    label = data.type if hasattr(data, "type") else (data.internal_type if isinstance(data, Relationship) else "")
-    properties = data.properties if hasattr(data, "properties") else data.internal_properties
-    return {"label": label, "properties": properties}
+    if isinstance(data, Relationship):
+        label, properties = data._type, data._properties
+    else:
+        label, properties = data.type, data.properties
+    computed_return_value = {"label": label, "properties": properties}
+    return computed_return_value
 
 
 def path_to_dict(data):
-    nodes = data.nodes if hasattr(data, "nodes") else data.internal_nodes
-    relationships = data.relationships if hasattr(data, "relationships") else data._relationships
+    # Memgraph paths reach this harness only as GQLAlchemy paths; it converts mgclient paths.
+    nodes, relationships = data._nodes, data._relationships
     computed_return_value = {
         "nodes": [node_to_dict(node) for node in nodes],
         "relationships": [relationship_to_dict(relationship) for relationship in relationships],
@@ -179,7 +179,7 @@ def run_test(test_dict: dict, db: Memgraph):
 
         result = internal_replace(result_query, Node)
 
-        expected = test_dict.get(TestConstants.OUTPUT, False)
+        expected = test_dict.get(TestConstants.OUTPUT, [])
 
         assert result == expected
 
@@ -206,16 +206,28 @@ def internal_test_export(test_dir: Path, db: Memgraph):
     output_file = f"{TestConstants.EXPORT_TEST_E2E_OUTPUT_FILE}_{test_name}"
 
     input_dict = load_yaml(test_dir.joinpath(TestConstants.INPUT_FILE))
+    required_input = (
+        TestConstants.EXPORT_TEST_E2E_INPUT_QUERIES,
+        TestConstants.EXPORT_TEST_E2E_NODES,
+        TestConstants.EXPORT_TEST_E2E_RELATIONSHIPS,
+    )
+    missing_input = [key for key in required_input if key not in input_dict]
+    if missing_input:
+        pytest_fail(f"Export test input declares no {', '.join(missing_input)} query.")
 
-    queries = input_dict.get(TestConstants.EXPORT_TEST_E2E_INPUT_QUERIES, False)
+    queries = input_dict.get(TestConstants.EXPORT_TEST_E2E_INPUT_QUERIES, "")
     db.execute(queries)
 
-    nodes_query = input_dict.get(TestConstants.EXPORT_TEST_E2E_NODES, False)
-    relationships_query = input_dict.get(TestConstants.EXPORT_TEST_E2E_RELATIONSHIPS, False)
+    nodes_query = input_dict.get(TestConstants.EXPORT_TEST_E2E_NODES, "")
+    relationships_query = input_dict.get(TestConstants.EXPORT_TEST_E2E_RELATIONSHIPS, "")
 
     old_nodes, old_relationships = get_nodes_and_relationships(nodes_query, relationships_query, db)
 
     test_dict = load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
+    required_test = (TestConstants.EXPORT_TEST_E2E_EXPORT_QUERY, TestConstants.EXPORT_TEST_E2E_IMPORT_QUERY)
+    missing_test = [key for key in required_test if key not in test_dict]
+    if missing_test:
+        pytest_fail(f"Export test file declares no {', '.join(missing_test)} query.")
     export_query = test_dict.get(TestConstants.EXPORT_TEST_E2E_EXPORT_QUERY, "").replace(
         TestConstants.EXPORT_TEST_E2E_PLACEHOLDER_FILENAME,
         "".join(["'", output_file, "'"]),
@@ -236,7 +248,7 @@ def internal_test_export(test_dir: Path, db: Memgraph):
     return False
 
 
-def test_static(test_dir: Path, db: Memgraph):
+def internal_test_static(test_dir: Path, db: Memgraph):
     """
     Testing static modules.
     """
@@ -246,8 +258,29 @@ def test_static(test_dir: Path, db: Memgraph):
     execute_cyphers(input_cyphers, db)
 
     test_dict = load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
-    test_dict[TestConstants.QUERY] = replace_filename(test_dict.get(TestConstants.QUERY, False), test_dir)
+    if TestConstants.QUERY not in test_dict:
+        pytest_fail("Test file declares no query.")
+    test_dict[TestConstants.QUERY] = replace_filename(test_dict.get(TestConstants.QUERY, ""), test_dir)
     run_test(test_dict, db)
+
+
+def checkpoint_pairs(checkpoint_input_cyphers, checkpoint_test_dicts) -> list:
+    """
+    Pair each checkpoint's input queries with its test, failing on a malformed checkpoint contract.
+    A checkpoint that needs no new input declares an empty string, so no unmatched input or test is skipped.
+    """
+    if not isinstance(checkpoint_input_cyphers, list) or not all(isinstance(value, str) for value in checkpoint_input_cyphers):
+        pytest_fail("Online test queries must be a list of checkpoint query strings.")
+    if not isinstance(checkpoint_test_dicts, list) or not all(isinstance(value, dict) for value in checkpoint_test_dicts):
+        pytest_fail("Online test file must be a list of checkpoint tests.")
+    if not checkpoint_test_dicts:
+        pytest_fail("Online test declares no checkpoints.")
+    if len(checkpoint_input_cyphers) != len(checkpoint_test_dicts):
+        pytest_fail(
+            f"Online test has {len(checkpoint_input_cyphers)} checkpoint inputs but {len(checkpoint_test_dicts)} checkpoint tests."
+        )
+    computed_return_value = list(zip(checkpoint_input_cyphers, checkpoint_test_dicts, strict=True))
+    return computed_return_value
 
 
 def internal_test_online(test_dir: Path, db: Memgraph):
@@ -257,9 +290,10 @@ def internal_test_online(test_dir: Path, db: Memgraph):
     checkpoint_input = load_yaml(test_dir.joinpath(TestConstants.INPUT_FILE))
     checkpoint_test_dicts = load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
 
-    setup_cyphers = checkpoint_input.get(TestConstants.ONLINE_TEST_E2E_SETUP, False)
-    checkpoint_input_cyphers = checkpoint_input[TestConstants.ONLINE_TEST_E2E_INPUT_QUERIES]
-    cleanup_cyphers = checkpoint_input.get(TestConstants.ONLINE_TEST_E2E_CLEANUP, False)
+    setup_cyphers = checkpoint_input.get(TestConstants.ONLINE_TEST_E2E_SETUP, "")
+    checkpoint_input_cyphers = checkpoint_input.get(TestConstants.ONLINE_TEST_E2E_INPUT_QUERIES, [])
+    cleanup_cyphers = checkpoint_input.get(TestConstants.ONLINE_TEST_E2E_CLEANUP, "")
+    checkpoints = checkpoint_pairs(checkpoint_input_cyphers, checkpoint_test_dicts)
 
     # Run optional setup queries
     if setup_cyphers:
@@ -267,7 +301,7 @@ def internal_test_online(test_dir: Path, db: Memgraph):
 
     try:
         # Execute cypher queries and compare them with results
-        for input_cyphers_raw, test_dict in zip(checkpoint_input_cyphers, checkpoint_test_dicts, strict=False):
+        for input_cyphers_raw, test_dict in checkpoints:
             input_cyphers = input_cyphers_raw.splitlines()
             execute_cyphers(input_cyphers, db)
             run_test(test_dict, db)
@@ -279,7 +313,8 @@ def internal_test_online(test_dir: Path, db: Memgraph):
 
 
 @pytest_mark.parametrize("test_dir", tests)
-def test_end2end(test_dir: Path, db: Memgraph):
+def test_end2end(test_dir: Path):
+    db = Memgraph()
     db.drop_database()
 
     if test_dir.name.startswith(TestConstants.EXPORT_TEST_SUBDIR_PREFIX):
@@ -287,7 +322,7 @@ def test_end2end(test_dir: Path, db: Memgraph):
     elif test_dir.name.startswith(TestConstants.ONLINE_TEST_SUBDIR_PREFIX):
         internal_test_online(test_dir, db)
     else:
-        test_static(test_dir, db)
+        internal_test_static(test_dir, db)
 
     # Clean database once testing module is finished
     db.drop_database()

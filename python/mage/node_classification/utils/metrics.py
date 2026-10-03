@@ -35,7 +35,10 @@ def metrics(
 
     pred = out[observed_attribute].argmax(dim=1)  # Use the class with highest probability.
 
-    data = data.get(observed_attribute, {})
+    # node stores are selected by subscription; HeteroData.get reads the global store
+    if observed_attribute not in data.node_types:
+        raise KeyError(f"Data has no node type {observed_attribute!r}")
+    data = data[observed_attribute]
 
     ret = {}
 

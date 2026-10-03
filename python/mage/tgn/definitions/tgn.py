@@ -8,8 +8,8 @@ from torch import Tensor as torch_Tensor
 from torch import concat as torch_concat
 from torch import device as torch_device
 from torch import flatten as torch_flatten
+from torch import float32 as torch_float32
 from torch import nn
-from torch import rand as torch_rand
 from torch import tensor as torch_tensor
 from torch import zeros as torch_zeros
 
@@ -225,7 +225,16 @@ class TGN(nn.Module):
             processed_messages=processed_messages,
         )
 
-        self.update_memory(aggregated_messages)
+        # a node's memory now reflects its messages up to the latest of their timestamps
+        update_timestamps = {
+            node: max(message.timestamp for message in messages) for node, messages in raw_messages.items() if messages
+        }
+
+        self.update_memory(aggregated_messages, update_timestamps)
+
+        # Every pending message has been applied to memory exactly once, so the store is consumed; the next batch
+        # starts from the updated memory instead of replaying the same interactions.
+        self.raw_message_store.init_message_store()
         return False
 
     def update_raw_message_store_current_batch(
@@ -250,6 +259,8 @@ class TGN(nn.Module):
             node_events.extend(interaction_node_events)
             events[node] = node_events
 
+        self.admit_event_chronology(events)
+
         raw_messages: dict[int, list[RawMessage]] = self.create_raw_messages(
             events=events,
             edge_features=edge_features,
@@ -257,6 +268,22 @@ class TGN(nn.Module):
         )
 
         self.raw_message_store.update_messages(raw_messages)
+        return False
+
+    def admit_event_chronology(self, events: dict[int, list[Event]]) -> bool:
+        """
+        Rejects the batch before any message is stored when an event precedes the last memory update of a node it
+        touches. Message delta times are measured from that update, and memory updates must move forward in time.
+        """
+        for node_events in events.values():
+            for event in node_events:
+                event_nodes = [event.source]
+                if isinstance(event, InteractionEvent):
+                    event_nodes.append(event.dest)
+                for node in event_nodes:
+                    last_update = float(self.memory.get_last_node_update(node).detach().item())
+                    if float(event.timestamp) < last_update:
+                        raise ValueError(f"Event at time {event.timestamp} precedes node {node}'s last memory update {last_update}")
         return False
 
     def create_node_events(
@@ -376,13 +403,22 @@ class TGN(nn.Module):
             aggregated_messages[node] = self.message_aggregator(messages)
         return aggregated_messages
 
-    def update_memory(self, messages: dict[int, torch_Tensor]) -> bool:
+    def update_memory(self, messages: dict[int, torch_Tensor], update_timestamps: dict[int, int]) -> bool:
+        updates: dict[int, tuple[torch_Tensor, torch_Tensor]] = {}
         for node, message in messages.items():
+            if node not in update_timestamps:
+                raise KeyError(f"No update timestamp for node {node}")
             updated_memory = self.memory_updater((message, self.memory.get_node_memory(node)))
 
             # here we use flatten to get shape (memory_dim,)
             updated_memory = torch_flatten(updated_memory)
+            update_time = torch_tensor([float(update_timestamps.get(node, 0))], dtype=torch_float32, device=self.device)
+            updates[node] = (updated_memory, update_time)
+
+        # memory and last-update time change together, only after every node's update has been computed
+        for node, (updated_memory, update_time) in updates.items():
             self.memory.set_node_memory(node, updated_memory)
+            self.memory.set_last_node_update(node, update_time)
         return False
 
     def form_computation_graph(self, nodes: np_ndarray, timestamps: np_ndarray) -> tuple[
@@ -420,6 +456,10 @@ class TGN(nn.Module):
                 as reference point for indexing.
                 At index 0 we have a list of all edge_indexes of edges connecting given node at node_layers[0] to
                 temporal neighbors we have at global_neighbors[0]
+
+                Every row holds only sampled interactions, at most num_neighbors of them; a node with fewer
+                earlier interactions has a shorter row. Sample validity is therefore carried by the row itself and
+                never by a placeholder node or edge identity, so host node and edge zero remain ordinary identities.
             global_timestamps: List[List[int]] -  node_layers[0] contains all nodes at fixed timestamp
                 needed to calculate embeddings for given nodes. This way we can use node_layers[0]
                 as reference point for indexing.
@@ -498,15 +538,14 @@ class TGN(nn.Module):
         )
 
     def get_edge_features(self, edge_idx: int) -> torch_Tensor:
-        computed_return_value = (
-            self.edge_features.get(edge_idx, torch_zeros(self.num_edge_features, device=self.device))
-            if edge_idx in self.edge_features
-            else torch_rand(self.num_edge_features, requires_grad=True, device=self.device)
-        )
+        # Sampled interactions come from processed batches, which store the features of every edge they admit.
+        if edge_idx not in self.edge_features:
+            raise KeyError(f"Edge {edge_idx} was sampled from the temporal neighborhood but has no stored features")
+        computed_return_value = self.edge_features.get(edge_idx, torch_zeros(self.num_edge_features, device=self.device))
         return computed_return_value
 
     def get_edges_features(self, edge_idxs: list[int]) -> torch_Tensor:
-        edges_features = torch_zeros(self.num_neighbors, self.num_edge_features, device=self.device)
+        edges_features = torch_zeros(len(edge_idxs), self.num_edge_features, device=self.device)
         for i, edge_idx in enumerate(edge_idxs):
             edges_features[i, :] = self.get_edge_features(edge_idx)
         return edges_features
@@ -515,7 +554,9 @@ class TGN(nn.Module):
         graph_data_tuple = self.get_graph_sum_data(nodes, timestamps)
         if self.layer_type == TGNLayerType.GraphSumEmbedding:
             return graph_data_tuple
-        graph_attn_zeros: torch_Tensor = self.time_encoder(torch_zeros(1, 1, device=self.device)).unsqueeze(0)
+        # encoding of time difference zero for the query nodes, shape (1, time_dimension); the attention layer
+        # repeats it once per query node
+        graph_attn_zeros: torch_Tensor = self.time_encoder(torch_zeros(1, 1, device=self.device))
 
         computed_return_value = graph_data_tuple + (graph_attn_zeros,)
         return computed_return_value
@@ -548,10 +589,9 @@ class TGN(nn.Module):
                 if node in self.node_features
                 else torch_zeros(self.num_node_features, requires_grad=True, device=self.device)
             )
-            node_memory = torch_tensor(
-                self.memory.get_node_memory(node).cpu().detach().numpy(),
-                device=self.device,
-            )
+            # current memory keeps its autograd history so the loss trains the message function and memory
+            # updater; history is truncated only at the batch boundary (Memory.detach_tensor_grads)
+            node_memory = self.memory.get_node_memory(node)
             node_features[i, :] = torch_concat((node_memory, node_feature))
 
         edge_features = [self.get_edges_features(node_neighbors) for node_neighbors in global_edge_indexes]

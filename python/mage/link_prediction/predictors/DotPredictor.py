@@ -55,7 +55,7 @@ class DotPredictor(nn.Module):
                         return computed_return_value
         raise ValueError("DGL did not return scores for the requested edge relation")
 
-    def forward_pred(self, src_embedding: torch_Tensor, dest_embedding: torch_Tensor) -> float:
+    def forward_pred(self, src_embedding: torch_Tensor, dest_embedding: torch_Tensor) -> torch_Tensor:
         """Efficient implementation for predict method of DotPredictor.
 
         Args:
@@ -63,7 +63,8 @@ class DotPredictor(nn.Module):
             dest_embedding (torch.Tensor): Embedding of the destination node.
 
         Returns:
-            float: Edge score.
+            torch.Tensor: Edge score (a scalar tensor). Pair scores stay tensors, as for MLPPredictor, so the caller
+            applies the same probability transform to every predictor.
         """
-        computed_return_value = float(torch_dot(src_embedding, dest_embedding).item())
+        computed_return_value = torch_dot(src_embedding, dest_embedding)
         return computed_return_value

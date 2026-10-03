@@ -10,7 +10,6 @@ from pathlib import Path
 
 from gqlalchemy import Memgraph
 from pytest import fail as pytest_fail
-from pytest import fixture as pytest_fixture
 from pytest import mark as pytest_mark
 from pytest import param as pytest_param
 from yaml import safe_load as yaml_safe_load
@@ -76,15 +75,10 @@ logger = logging_getLogger("e2e_migration")
 logger.setLevel(logging_INFO)
 
 
-@pytest_fixture
-def db():
-    """Fixture to provide Memgraph database connection."""
-    computed_return_value = Memgraph()
-    return computed_return_value
-
-
 @pytest_mark.parametrize("test_dir,test_file", migration_tests)
-def test_migration(test_dir: str, test_file: str, db: Memgraph):
+def test_migration(test_dir: str, test_file: str):
+    db = Memgraph()
+
     # Load test configuration
     script_dir = Path(__file__).parent
     test_config_path = script_dir / test_dir / test_file

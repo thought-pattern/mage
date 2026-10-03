@@ -1,5 +1,7 @@
 """External parameter normalization for graph-coloring procedures."""
 
+from math import isfinite as math_isfinite
+
 from mage.graph_coloring_module.algorithms.greedy.LDO import LDO
 from mage.graph_coloring_module.algorithms.greedy.random import Random
 from mage.graph_coloring_module.algorithms.greedy.SDO import SDO
@@ -162,11 +164,13 @@ def normalize_parameters(parameters: dict) -> dict:
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise IncorrectParametersException(f"{parameter.value} must be a positive integer")
 
+    # Real-valued settings feed energy comparisons and acceptance probabilities, where NaN defeats every comparison
+    # and infinity makes the differences undefined, so each must be finite before any population or process exists.
     positive_number_parameters = (Parameter.QA_TEMPERATURE,)
     for parameter in positive_number_parameters:
         value = normalized.get(parameter, False)
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
-            raise IncorrectParametersException(f"{parameter.value} must be positive")
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math_isfinite(value) or value <= 0:
+            raise IncorrectParametersException(f"{parameter.value} must be a finite positive number")
 
     probability_parameters = (
         Parameter.RANDOM_MUTATION_PROBABILITY,
@@ -184,7 +188,7 @@ def normalize_parameters(parameters: dict) -> dict:
     )
     for parameter in numeric_parameters:
         value = normalized.get(parameter, False)
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise IncorrectParametersException(f"{parameter.value} must be numeric")
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math_isfinite(value):
+            raise IncorrectParametersException(f"{parameter.value} must be a finite number")
 
     return normalized

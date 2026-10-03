@@ -1,18 +1,24 @@
 """Utilities for import util."""
 
-from ast import literal_eval as ast_literal_eval
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from json import load as js_load
+from json import loads as js_loads
+from re import compile as re_compile
 
 from defusedxml import ElementTree as ET
-from gqlalchemy import Memgraph as gqlalchemy_Memgraph
+from gqlalchemy.memgraph_constants import MG_ENCRYPTED, MG_HOST, MG_PASSWORD, MG_PORT, MG_USERNAME
+from mgclient import MG_SSLMODE_DISABLE, MG_SSLMODE_REQUIRE
+from mgclient import Error as mgclient_Error
+from mgclient import connect as mgclient_connect
 from mgp import EdgeType as mgp_EdgeType
 from mgp import Map as mgp_Map
+from mgp import Nullable as mgp_Nullable
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
 from mgp import write_proc as mgp_write_proc
 
+from mage.export_import_util.duration import to_duration_iso_format
 from mage.export_import_util.parameters import Parameter
 
 DEFAULT_ARGUMENT_DICT = {
@@ -20,6 +26,25 @@ DEFAULT_ARGUMENT_DICT = {
     "leaveOutLabels": False,
     "leaveOutProperties": False,
 }
+
+# Exact body of str(timedelta), which convert_to_isoformat writes inside duration(...): "[-]D day[s], H:MM:SS[.ffffff]".
+TIMEDELTA_TEXT = re_compile(r"(?:(-?\d+) days?, )?(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{6}))?")
+
+DEFAULT_CYPHER_IMPORT_CONFIG = {}
+
+# Admitted cypher import settings. The target keys mirror gqlalchemy.Memgraph's connection arguments.
+CYPHER_IMPORT_CONFIG_TYPES = {
+    "host": str,
+    "port": int,
+    "username": str,
+    "password": str,
+    "encrypted": bool,
+    "startLine": int,
+}
+
+# GraphML boolean data: the XML Schema lexical forms plus the exporter's str(bool) spelling.
+GRAPHML_TRUE_TOKENS = {"true", "True", "1"}
+GRAPHML_FALSE_TOKENS = {"false", "False", "0"}
 
 
 @dataclass
@@ -126,38 +151,9 @@ def convert_to_isoformat(property: object):
         return property
 
 
-def to_duration_isoformat(value: timedelta) -> str:
-    """Converts timedelta to ISO-8601 duration: P<date>T<time>"""
-    date_parts: list[str] = []
-    time_parts: list[str] = []
-
-    if value.days != 0:
-        date_parts.append(f"{abs(value.days)}D")
-
-    if value.seconds != 0 or value.microseconds != 0:
-        abs_seconds = abs(value.seconds)
-        minutes, seconds = divmod(abs_seconds, 60)
-        hours, minutes = divmod(minutes, 60)
-        microseconds = value.microseconds
-
-        if hours > 0:
-            time_parts.append(f"{hours}H")
-        if minutes > 0:
-            time_parts.append(f"{minutes}M")
-        if seconds > 0 or microseconds > 0:
-            microseconds_part = f".{abs(value.microseconds)}" if value.microseconds != 0 else ""
-            time_parts.append(f"{seconds}{microseconds_part}S")
-
-    date_duration_str = "".join(date_parts)
-    time_duration_str = f"T{''.join(time_parts)}" if time_parts else ""
-
-    computed_return_value = f"P{date_duration_str}{time_duration_str}"
-    return computed_return_value
-
-
 def convert_to_isoformat_graphML(property: object):
     if isinstance(property, timedelta):
-        computed_return_value = to_duration_isoformat(property)
+        computed_return_value = to_duration_iso_format(property)
         return computed_return_value
 
     if isinstance(property, (time, date, datetime)):
@@ -197,7 +193,9 @@ def get_graph(
         nodes.append(Node(vertex.id, labels, properties).get_dict())
 
         for edge in vertex.out_edges:
-            if not config.get("leaveOutProperties", []):
+            if config.get("graphML", False) and not config.get("leaveOutProperties", []):
+                properties = {key: convert_to_isoformat_graphML(edge.properties.get(key, False)) for key in edge.properties.keys()}
+            elif not config.get("leaveOutProperties", []):
                 properties = {key: convert_to_isoformat(edge.properties.get(key, False)) for key in edge.properties.keys()}
 
             relationships.append(
@@ -214,34 +212,43 @@ def get_graph(
     return computed_return_value
 
 
-def convert_from_isoformat(property: object):
-    if not isinstance(property, str):
-        return property
+def parse_timedelta_text(text: str) -> timedelta:
+    """Inverse of str(timedelta): signed days, whole seconds, zero and fractions all round-trip."""
+    match = TIMEDELTA_TEXT.fullmatch(text)
+    if not match:
+        raise ValueError(f"not a duration body: {text!r}")
+    days, hours, minutes, seconds, microseconds = (int(group) for group in match.groups(default="0"))
+    value = timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds, microseconds=microseconds)
+    return value
 
-    if str.startswith(property, Parameter.DURATION.value):
-        duration_iso = property.split("(")[-1].split(")")[0]
-        parsed_time = datetime.strptime(duration_iso, "%H:%M:%S.%f")
-        computed_return_value = timedelta(
-            hours=parsed_time.hour,
-            minutes=parsed_time.minute,
-            seconds=parsed_time.second,
-            microseconds=parsed_time.microsecond,
-        )
-        return computed_return_value
-    elif str.startswith(property, Parameter.LOCALTIME.value):
-        local_time_iso = property.split("(")[-1].split(")")[0]
-        computed_return_value = time.fromisoformat(local_time_iso)
-        return computed_return_value
-    elif str.startswith(property, Parameter.LOCALDATETIME.value):
-        local_datetime_iso = property.split("(")[-1].split(")")[0]
-        computed_return_value = datetime.fromisoformat(local_datetime_iso)
-        return computed_return_value
-    elif str.startswith(property, Parameter.DATE.value):
-        date_iso = property.split("(")[-1].split(")")[0]
-        computed_return_value = date.fromisoformat(date_iso)
-        return computed_return_value
-    else:
+
+TEMPORAL_DECODERS = (
+    (Parameter.DURATION.value, parse_timedelta_text),
+    (Parameter.LOCALTIME.value, time.fromisoformat),
+    (Parameter.LOCALDATETIME.value, datetime.fromisoformat),
+    (Parameter.DATE.value, date.fromisoformat),
+)
+
+
+def convert_from_isoformat(property: object):
+    """
+    Decodes the typed temporal wrappers convert_to_isoformat writes. A value is decoded only when re-encoding it
+    reproduces the string exactly; any other string, including one that merely starts with a wrapper name, stays an
+    ordinary string.
+    """
+    if not isinstance(property, str) or not property.endswith(")"):
         return property
+    for prefix, decode in TEMPORAL_DECODERS:
+        if not property.startswith(prefix):
+            continue
+        try:
+            value = decode(property[len(prefix) : -1])
+        except ValueError:
+            return property
+        if convert_to_isoformat(value) != property:
+            return property
+        return value
+    return property
 
 
 def create_vertex(ctx: mgp_ProcCtx, properties: dict[str, object], labels: list[str]):
@@ -265,8 +272,16 @@ def create_edge(
     type: str,
     vertex_ids: dict[object, int],
 ):
-    vertex_from = ctx.graph.get_vertex_by_id(vertex_ids.get(start_node_id, False))
-    vertex_to = ctx.graph.get_vertex_by_id(vertex_ids.get(end_node_id, False))
+    # Memgraph vertex ids are non-negative, so -1 marks an endpoint this import never resolved; it must not
+    # fall through to a real vertex such as id 0.
+    start_vertex_id = vertex_ids.get(start_node_id, -1)
+    end_vertex_id = vertex_ids.get(end_node_id, -1)
+    if start_vertex_id < 0 or end_vertex_id < 0:
+        endpoints = ((start_node_id, start_vertex_id), (end_node_id, end_vertex_id))
+        unresolved = [node_id for node_id, vertex_id in endpoints if vertex_id < 0]
+        raise KeyError(f"Relationship endpoint(s) {unresolved!r} do not identify an imported or explicitly matched node")
+    vertex_from = ctx.graph.get_vertex_by_id(start_vertex_id)
+    vertex_to = ctx.graph.get_vertex_by_id(end_vertex_id)
     edge = ctx.graph.create_edge(vertex_from, vertex_to, mgp_EdgeType(type))
     edge_properties = edge.properties
 
@@ -275,29 +290,99 @@ def create_edge(
     return False
 
 
-@mgp_write_proc
-def cypher(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
+def admit_cypher_import_config(config: mgp_Map) -> dict:
     """
-    Procedure to import the Cypher created by the export_util.json procedure.
+    Validates the cypher import target and resume line. An omitted target is GQLAlchemy's environment-configured
+    endpoint (MG_HOST, MG_PORT, MG_USERNAME, MG_PASSWORD, MG_ENCRYPT), the same one export_util.cypher_all reads.
+    """
+    settings = {
+        "host": MG_HOST,
+        "port": MG_PORT,
+        "username": MG_USERNAME,
+        "password": MG_PASSWORD,
+        "encrypted": MG_ENCRYPTED,
+        "startLine": 1,
+    }
+    for key, value in dict(config).items():
+        expected_type = CYPHER_IMPORT_CONFIG_TYPES.get(key, False)
+        if not expected_type:
+            raise KeyError(f"Unknown cypher import config key {key!r}; expected one of {sorted(CYPHER_IMPORT_CONFIG_TYPES)}.")
+        if not isinstance(value, expected_type) or (expected_type is int and isinstance(value, bool)):
+            raise TypeError(f"Cypher import config {key!r} must be {expected_type.__name__}, received {value!r}.")
+        settings[key] = value
+    if not settings.get("host", ""):
+        raise ValueError("Cypher import config 'host' must name the Memgraph instance that receives the statements.")
+    if not 0 < settings.get("port", 0) < 65536:
+        raise ValueError(f"Cypher import config 'port' must be a TCP port, received {settings.get('port', 0)!r}.")
+    if settings.get("startLine", 1) < 1:
+        raise ValueError(f"Cypher import config 'startLine' must be at least 1, received {settings.get('startLine', 1)!r}.")
+    return settings
+
+
+@mgp_write_proc
+def cypher(ctx: mgp_ProcCtx, path: str, config: mgp_Map = DEFAULT_CYPHER_IMPORT_CONFIG) -> mgp_Record:
+    """
+    Procedure to import the one-statement-per-line Cypher created by export_util.cypher_all.
     The lab import feature should be prefered.
+
+    A procedure cannot run Cypher inside its calling transaction, so the statements run on a separate Bolt connection
+    to the configured target and each commits on its own (index, constraint and trigger statements cannot share a
+    transaction with data). The calling transaction does not own or roll back those writes. If a statement fails, the
+    error reports how many statements were committed and the line to resume from; the connection is always closed.
 
     Parameters
     ----------
     path : str
-        Path to the JSON file that is being imported.
+        Path to the Cypher file that is being imported.
+    config : Map
+        host, port, username, password, encrypted: the receiving Memgraph instance; omitted keys use GQLAlchemy's
+            MG_HOST/MG_PORT/MG_USERNAME/MG_PASSWORD/MG_ENCRYPT environment configuration.
+        startLine (int) = 1: first file line to execute, for resuming after a reported failure.
     """
+    if config is DEFAULT_CYPHER_IMPORT_CONFIG:
+        config = DEFAULT_CYPHER_IMPORT_CONFIG.copy()
+    settings = admit_cypher_import_config(config)
+    target = f"{settings.get('host', '')}:{settings.get('port', 0)}"
+    start_line = settings.get("startLine", 1)
 
-    memgraph = gqlalchemy_Memgraph()
     try:
         with open(path, "r") as file:
-            for query in file.readlines():
-                stripped_query = query.strip()
-                if stripped_query:
-                    memgraph.execute(stripped_query)
-    except OSError as caught_error_296:
-        raise OSError("Could not open/read file.") from caught_error_296
-    except Exception as caught_error_298:
-        raise Exception("Unable to execute the given queries") from caught_error_298
+            lines = file.readlines()
+    except OSError as err:
+        raise OSError("Could not open/read file.") from err
+
+    try:
+        connection = mgclient_connect(
+            host=settings.get("host", ""),
+            port=settings.get("port", 0),
+            username=settings.get("username", ""),
+            password=settings.get("password", ""),
+            sslmode=MG_SSLMODE_REQUIRE if settings.get("encrypted", False) else MG_SSLMODE_DISABLE,
+        )
+    except mgclient_Error as err:
+        raise ConnectionError(f"Cypher import could not connect to {target}: {err}") from err
+
+    committed = 0
+    try:
+        connection.autocommit = True
+        for line_number, line in enumerate(lines, start=1):
+            statement = line.strip()
+            if line_number < start_line or not statement:
+                continue
+            ctx.check_must_abort()
+            cursor = connection.cursor()
+            try:
+                cursor.execute(statement)
+                cursor.fetchall()
+            except mgclient_Error as err:
+                raise RuntimeError(
+                    f"Cypher import into {target} failed at line {line_number}: {err}. {committed} statement(s) from line "
+                    f"{start_line} were already committed and remain; fix the statement and rerun with config "
+                    f"{{startLine: {line_number}}} to resume."
+                ) from err
+            committed += 1
+    finally:
+        connection.close()
 
     computed_return_value = mgp_Record()
     return computed_return_value
@@ -345,6 +430,8 @@ def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
             else:
                 raise KeyError("Each node object needs to have 'labels' key.")
 
+            if id_value in vertex_ids:
+                raise ValueError(f"Node id {id_value!r} appears more than once, so relationships to it are ambiguous.")
             vertex_ids[id_value] = create_vertex(ctx, properties_value, labels_value)
 
         elif type_value == Parameter.RELATIONSHIP.value:
@@ -381,14 +468,39 @@ def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
 
 
 def find_node(ctx: mgp_ProcCtx, label: str, prop_key: str, prop_value: object) -> int:
-    for vertex in ctx.graph.vertices:
-        if (
-            label in [label.name for label in vertex.labels]
-            and prop_key in vertex.properties.keys()
-            and str(convert_to_isoformat_graphML(vertex.properties.get(prop_key, False))) == prop_value
-        ):
-            return vertex.id
-    return 0
+    """Returns the id of the one existing vertex with `label` whose `prop_key` renders as `prop_value`."""
+    matches = [
+        vertex.id
+        for vertex in ctx.graph.vertices
+        if label in [vertex_label.name for vertex_label in vertex.labels]
+        and prop_key in vertex.properties.keys()
+        and str(convert_to_isoformat_graphML(vertex.properties.get(prop_key, False))) == prop_value
+    ]
+    if len(matches) != 1:
+        raise KeyError(
+            f"GraphML edge endpoint {prop_value!r} matches {len(matches)} vertices labelled {label!r} by property "
+            f"{prop_key!r}; exactly one is required."
+        )
+    vertex_id = matches[0]
+    return vertex_id
+
+
+def resolve_graphml_endpoint(ctx: mgp_ProcCtx, endpoint: str, lookup: dict, real_ids: dict) -> int:
+    """
+    Resolves a GraphML edge endpoint to a Memgraph vertex id: a node of this document, else the one existing vertex
+    the configured source/target lookup selects, else (no lookup configured) an explicitly written internal vertex id.
+    """
+    vertex_id = real_ids.get(endpoint, -1)
+    if vertex_id >= 0:
+        return vertex_id
+    if lookup:
+        vertex_id = find_node(ctx, lookup.get("label", ""), lookup.get("id", "id"), endpoint)
+    elif endpoint.isascii() and endpoint.isdigit():
+        vertex_id = int(endpoint)
+    else:
+        raise KeyError(f"GraphML edge endpoint {endpoint!r} is neither a node of this document nor an internal vertex id.")
+    real_ids[endpoint] = vertex_id
+    return vertex_id
 
 
 def cast_element(text: str, type: str) -> object:
@@ -401,8 +513,12 @@ def cast_element(text: str, type: str) -> object:
         computed_return_value = int(text)
         return computed_return_value
     if type == "boolean":
-        computed_return_value = bool(text)
-        return computed_return_value
+        token = text.strip()
+        if token in GRAPHML_TRUE_TOKENS:
+            return True
+        if token in GRAPHML_FALSE_TOKENS:
+            return False
+        raise ValueError(f"GraphML boolean data must be true, false, 1 or 0, received {text!r}")
     if type == "float" or type == "double":
         computed_return_value = float(text)
         return computed_return_value
@@ -411,11 +527,32 @@ def cast_element(text: str, type: str) -> object:
     return False
 
 
+def cast_list_member(value: object, type: str) -> object:
+    """Admits one decoded JSON array member against the key's declared GraphML element type."""
+    if type in ("string", "") and isinstance(value, str):
+        return value
+    if type == "boolean" and isinstance(value, bool):
+        return value
+    if type in ("int", "long") and isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if type in ("float", "double") and isinstance(value, (int, float)) and not isinstance(value, bool):
+        member = float(value)
+        return member
+    if type == "" and isinstance(value, (bool, int, float)):
+        return value
+    raise ValueError(f"GraphML list member {value!r} does not match the declared element type {type!r}")
+
+
 def cast(text: str, type: str, is_list: bool) -> object:
     if is_list:
-        casted_list = list()
-        for element in ast_literal_eval(text):
-            casted_list.append(cast_element(element, type))
+        # export_util writes list data as a JSON array (get_value_string), so it is decoded as JSON, not Python.
+        try:
+            values = js_loads(text)
+        except (ValueError, RecursionError) as err:
+            raise ValueError(f"GraphML list data is not a JSON array: {text!r}") from err
+        if not isinstance(values, list):
+            raise ValueError(f"GraphML list data is not a JSON array: {text!r}")
+        casted_list = [cast_list_member(value, type) for value in values]
         return casted_list
     computed_return_value = cast_element(text, type)
     return computed_return_value
@@ -469,7 +606,7 @@ def set_default_config(config: mgp_Map) -> mgp_Map:
 def graphml(
     ctx: mgp_ProcCtx,
     path: str = "",
-    config: mgp_Map = False,
+    config: mgp_Nullable[mgp_Map] = None,
 ) -> mgp_Record:
     """
     Procedure to export the whole database to a graphML file.
@@ -543,7 +680,10 @@ def graphml(
                     }
                 )
 
-        real_ids.update({node.attrib.get("id", ""): create_vertex(ctx, properties, labels)})
+        node_id = node.attrib.get("id", "")
+        if node_id in real_ids:
+            raise ValueError(f"GraphML node id {node_id!r} appears more than once, so edges to it are ambiguous.")
+        real_ids[node_id] = create_vertex(ctx, properties, labels)
 
     for rel in root.findall(".//graphml:edge", namespace):
         if "label" in rel.attrib.keys():
@@ -569,43 +709,16 @@ def graphml(
                     }
                 )
 
-        if rel.attrib.get("source", "") not in real_ids:
-            if not config.get("source", ""):
-                # without source/target config, we try with the internal id
-                real_ids.update({rel.attrib.get("source", ""): int(rel.attrib.get("source", 0))})
-            else:
-                source_config = config.get("source", "")
-                if "id" not in source_config.keys():
-                    source_config.update({"id": "id"})
-                node_id = find_node(
-                    ctx,
-                    source_config.get("label", ""),
-                    source_config.get("id", ""),
-                    rel.attrib.get("source", ""),
-                )
-                real_ids.update({rel.attrib.get("source", ""): node_id})
-
-        if rel.attrib.get("target", False) not in real_ids:
-            if not config.get("target", False):
-                # without source/target config, we look for the internal id
-                real_ids.update({rel.attrib.get("target", False): int(rel.attrib.get("target", 0))})
-            else:
-                target_config = config.get("target", False)
-                if "id" not in target_config.keys():
-                    target_config.update({"id": "id"})
-                node_id = find_node(
-                    ctx,
-                    target_config.get("label", ""),
-                    target_config.get("id", ""),
-                    rel.attrib.get("target", False),
-                )
-                real_ids.update({rel.attrib.get("target", False): node_id})
+        source = rel.attrib.get("source", "")
+        target = rel.attrib.get("target", "")
+        resolve_graphml_endpoint(ctx, source, config.get("source", {}), real_ids)
+        resolve_graphml_endpoint(ctx, target, config.get("target", {}), real_ids)
 
         create_edge(
             ctx,
             properties,
-            rel.attrib.get("source", ""),
-            rel.attrib.get("target", False),
+            source,
+            target,
             rel_type,
             real_ids,
         )

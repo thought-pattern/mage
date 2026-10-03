@@ -1,12 +1,12 @@
 """Utilities for json util."""
 
 from datetime import date, datetime, time, timedelta
-from io import TextIOWrapper
+from io import DEFAULT_BUFFER_SIZE, TextIOWrapper
 from json import dumps as json_dumps
 from json import load as json_load
 from json import loads as json_loads
 from pathlib import Path
-from urllib.error import URLError
+from time import monotonic as time_monotonic
 from urllib.request import Request, urlopen
 
 from mgp import Edge as mgp_Edge
@@ -17,6 +17,12 @@ from mgp import Record as mgp_Record
 from mgp import Vertex as mgp_Vertex
 from mgp import function as mgp_function
 from mgp import read_proc as mgp_read_proc
+
+# A URL source is remote and unsized until it is read. These bounds own its acquisition: the whole fetch must finish
+# within the deadline (each blocking socket operation also times out at it), and the body may not exceed the byte
+# allowance. JSON parsing is linear in the admitted body, so the allowance bounds it too.
+JSON_URL_TIMEOUT_SECONDS = 60.0
+JSON_URL_MAX_BYTES = 64 * 1024 * 1024
 
 
 def convert_value_to_json_compatible(value: object) -> object:
@@ -90,7 +96,8 @@ def to_json(value: object):
 @mgp_function
 def from_json_list(json_str: mgp_Nullable[str]):
     if json_str is None:
-        return False
+        # External null stays Cypher null; the host maps Python None back to null.
+        return json_str
 
     value = json_loads(json_str)
     if not isinstance(value, list):
@@ -129,16 +136,39 @@ def load_from_str(ctx: mgp_ProcCtx, json_str: str) -> mgp_Record:
     return computed_return_value
 
 
+def fetch_json_bytes(ctx: mgp_ProcCtx, url: str) -> bytes:
+    """
+    Fetches a JSON document within JSON_URL_TIMEOUT_SECONDS and JSON_URL_MAX_BYTES, closing the response on every
+    path. read1 performs at most one blocking read per call, so the deadline and host abort are checked between reads.
+    """
+    request = Request(url, headers={"User-Agent": "MAGE module"})
+    deadline = time_monotonic() + JSON_URL_TIMEOUT_SECONDS
+    chunks: list[bytes] = []
+    received_bytes = 0
+    try:
+        with urlopen(request, timeout=JSON_URL_TIMEOUT_SECONDS) as response:
+            while True:
+                ctx.check_must_abort()
+                chunk = response.read1(DEFAULT_BUFFER_SIZE)
+                if not chunk:
+                    break
+                received_bytes += len(chunk)
+                if received_bytes > JSON_URL_MAX_BYTES:
+                    raise ValueError(f"JSON response from {url} exceeds {JSON_URL_MAX_BYTES} bytes")
+                if time_monotonic() > deadline:
+                    raise TimeoutError(f"JSON response from {url} did not complete within {JSON_URL_TIMEOUT_SECONDS} seconds")
+                chunks.append(chunk)
+    except OSError as err:
+        raise ValueError(f"Error while fetching JSON from {url}: {err}") from err
+    json_bytes = b"".join(chunks)
+    return json_bytes
+
+
 @mgp_read_proc
 def load_from_url(ctx: mgp_ProcCtx, url: str) -> mgp_Record:
-    request = Request(url)
-    request.add_header("User-Agent", "MAGE module")
-    try:
-        content = urlopen(request)
-    except URLError as url_error:
-        raise url_error from url_error
-    else:
-        objects = extract_objects(content)
+    objects = json_loads(fetch_json_bytes(ctx, url))
+    if type(objects) is dict:
+        objects = [objects]
 
     computed_return_value = mgp_Record(objects=objects)
     return computed_return_value

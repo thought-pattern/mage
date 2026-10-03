@@ -60,28 +60,22 @@ class ChainChunk(CorrelationPopulation):
         return computed_return_value
 
     def set_correlations(self) -> bool:
-        for i in range(self.size + 1):
-            if i == self.size:
-                c = self.calculate_correlation(self.individuals[0], self.internal_prev_indv)
-            else:
-                next_indv = self.individuals[i + 1] if i + 1 < self.size else self.internal_next_indv
-                c = self.calculate_correlation(self.individuals[i], next_indv)
-            self.internal_correlation.append(c)
-            self.internal_cumulative_correlation += c
+        # Links 0..size-1 join each member with its successor; link `size` joins the preceding chunk's individual
+        # (left) with the first member (right).
+        for i in range(self.size):
+            next_indv = self.individuals[i + 1] if i + 1 < self.size else self.internal_next_indv
+            self.set_link(i, self.individuals[i], next_indv)
+        self.set_link(self.size, self.internal_prev_indv, self.individuals[0])
         return False
 
     def set_prev_individual(self, individual: Individual) -> bool:
         """Sets the unit that precedes the current piece of chain."""
-        self.internal_cumulative_correlation -= self.internal_correlation[self.size]
-        self.internal_correlation[self.size] = self.calculate_correlation(individual, self.individuals[0])
-        self.internal_cumulative_correlation += self.internal_correlation[self.size]
+        self.set_link(self.size, individual, self.individuals[0])
         self.internal_prev_indv = individual
         return False
 
     def set_next_individual(self, individual: Individual) -> bool:
         """Sets the individual that follows the current piece of chain."""
-        self.internal_cumulative_correlation -= self.internal_correlation[self.size - 1]
-        self.internal_correlation[self.size - 1] = self.calculate_correlation(self.individuals[self.size - 1], individual)
-        self.internal_cumulative_correlation += self.internal_correlation[self.size - 1]
+        self.set_link(self.size - 1, self.individuals[self.size - 1], individual)
         self.internal_next_indv = individual
         return False

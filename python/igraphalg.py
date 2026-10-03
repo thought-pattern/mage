@@ -1,7 +1,5 @@
 """Utilities for igraphalg."""
 
-from collections import defaultdict
-
 from mgp import Nullable as mgp_Nullable
 from mgp import Number as mgp_Number
 from mgp import ProcCtx as mgp_ProcCtx
@@ -38,7 +36,7 @@ def maxflow(
 def pagerank(
     ctx: mgp_ProcCtx,
     damping: mgp_Number = 0.85,
-    weights: mgp_Nullable[str] = False,
+    weights: mgp_Nullable[str] = None,
     directed: bool = True,
     implementation: str = "prpack",
 ) -> list[mgp_Record]:
@@ -77,7 +75,7 @@ def mincut(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
     target: mgp_Vertex,
-    capacity: mgp_Nullable[str] = False,
+    capacity: mgp_Nullable[str] = None,
     directed: bool = True,
 ) -> list[mgp_Record]:
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
@@ -97,10 +95,10 @@ def topological_sort(ctx: mgp_ProcCtx, mode: str = "out") -> mgp_Record:
         TopologicalSortingModes.OUT.value,
     ]:
         raise InvalidTopologicalSortingModeException('Mode can only be either "out" or "in"')
-    if contains_cycle(ctx):
-        raise TopologicalSortException("Topological sort can't be performed on graph that contains cycle!")
-
     graph = MemgraphIgraph(ctx=ctx, directed=True)
+    # igraph's linear-time DAG check replaces a host-graph recursion that overflowed on long valid chains.
+    if not graph.is_dag():
+        raise TopologicalSortException("Topological sort can't be performed on graph that contains cycle!")
     sorted_nodes = graph.topological_sort(mode=mode)
 
     computed_return_value = mgp_Record(
@@ -113,12 +111,12 @@ def topological_sort(ctx: mgp_ProcCtx, mode: str = "out") -> mgp_Record:
 def community_leiden(
     ctx: mgp_ProcCtx,
     objective_function: str = "CPM",
-    weights: mgp_Nullable[str] = False,
+    weights: mgp_Nullable[str] = None,
     resolution_parameter: float = 1.0,
     beta: float = 0.01,
-    initial_membership: mgp_Nullable[mgp_Nullable[list[mgp_Nullable[int]]]] = False,
+    initial_membership: mgp_Nullable[mgp_Nullable[list[mgp_Nullable[int]]]] = None,
     n_iterations: int = 2,
-    node_weights: mgp_Nullable[list[mgp_Nullable[float]]] = False,
+    node_weights: mgp_Nullable[list[mgp_Nullable[float]]] = None,
 ) -> list[mgp_Record]:
     if objective_function not in [
         CommunityDetectionObjectiveFunctionOptions.CPM.value,
@@ -149,7 +147,7 @@ def community_leiden(
 
 
 @mgp_read_proc
-def spanning_tree(ctx: mgp_ProcCtx, weights: mgp_Nullable[str] = False, directed: bool = False) -> mgp_Record:
+def spanning_tree(ctx: mgp_ProcCtx, weights: mgp_Nullable[str] = None, directed: bool = False) -> mgp_Record:
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
 
     computed_return_value = mgp_Record(tree=graph.spanning_tree(weights=weights))
@@ -161,7 +159,7 @@ def shortest_path_length(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
     target: mgp_Vertex,
-    weights: mgp_Nullable[str] = False,
+    weights: mgp_Nullable[str] = None,
     directed: bool = True,
 ) -> mgp_Record:
     graph = MemgraphIgraph(ctx, directed=directed)
@@ -178,7 +176,7 @@ def shortest_path_length(
 @mgp_read_proc
 def all_shortest_path_lengths(
     ctx: mgp_ProcCtx,
-    weights: mgp_Nullable[str] = False,
+    weights: mgp_Nullable[str] = None,
     directed: bool = False,
 ) -> list[mgp_Record]:
     graph = MemgraphIgraph(ctx, directed=directed)
@@ -201,55 +199,10 @@ def get_shortest_path(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
     target: mgp_Vertex,
-    weights: mgp_Nullable[str] = False,
+    weights: mgp_Nullable[str] = None,
     directed: bool = True,
 ) -> mgp_Record:
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
 
     computed_return_value = mgp_Record(path=graph.get_shortest_path(source=source, target=target, weights=weights))
     return computed_return_value
-
-
-def dfs(node: mgp_Vertex, visited: dict[int, bool], stack: dict[int, bool]) -> bool:
-    """Depth-first-search algorithm with modification.
-
-    Args:
-        node (mgp.Vertex): Current node.
-        visited (Dict[int,bool]): Dictionary with all nodes id that we visited.
-        stack (Dict[int,bool]): Dictionary with nodes id that we encountered while traversing a node.
-
-    Returns:
-        bool: True if there is cycle else False.
-    """
-
-    visited[node.id] = True
-    stack[node.id] = True
-
-    for edge in node.out_edges:
-        neighbour = edge.to_vertex
-        if not visited.get(neighbour.id, False):
-            if dfs(neighbour, visited, stack):
-                return True
-        elif stack.get(neighbour.id, False):
-            return True
-
-    stack[node.id] = False
-    return False
-
-
-def contains_cycle(ctx: mgp_ProcCtx) -> bool:
-    """Method for checking if graph contains a cycle.
-
-    Args:
-        ctx (mgp.ProcCtx): Graph
-
-    Returns:
-        bool: True if there is cycle else False
-    """
-
-    visited, stack = defaultdict(bool), defaultdict(bool)
-    for node in ctx.graph.vertices:
-        if not visited.get(node.id, False):
-            if dfs(node, visited, stack):
-                return True
-    return False

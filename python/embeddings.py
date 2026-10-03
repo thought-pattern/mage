@@ -1,19 +1,19 @@
 """Utilities for embeddings."""
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import CancelledError, ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from gc import collect as gc_collect
 from importlib import import_module as imported_import_module
 from multiprocessing import get_context as mp_get_context
 from multiprocessing import set_executable as mp_set_executable
 from os import environ as os_environ
-from os import path as os_path
 from subprocess import CalledProcessError as subprocess_CalledProcessError
 from subprocess import check_output as subprocess_check_output
 from sys import executable as sys_executable
-from sys import path as sys_path
 from sys import version as sys_version
 
 from embed_worker.embed_worker import encode_chunk as embed_worker_encode_chunk
+from embed_worker.embed_worker import load_model as embed_worker_load_model
 from mgp import Any as mgp_Any
 from mgp import List as mgp_List
 from mgp import Logger as mgp_Logger
@@ -27,13 +27,11 @@ from mgp import write_proc as mgp_write_proc
 from sentence_transformers import SentenceTransformer
 from torch import cuda as torch_cuda
 
-DEFAULT_ARGUMENT_LIST = [0]
 DEFAULT_ARGUMENT_DICT = {}
 
 huggingface_hub = imported_import_module("huggingface_hub")
 # We need to import huggingface_hub, otherwise sentence_transformers will fail to load the model.
 
-sys_path.append(os_path.join(os_path.dirname(__file__), "embed_worker"))
 logger: mgp_Logger = mgp_Logger()
 
 os_environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
@@ -198,19 +196,16 @@ def select_device(device: mgp_Any):
 
 def cpu_compute(
     input_items: mgp_Any,  # Can be vertices or strings
-    embedding_property: str = "embedding",
-    excluded_properties: mgp_Nullable[
-        mgp_List[str]  # NOTE: It's a list because Memgraph query modules do NOT support sets yet.
-    ] = False,  # https://dev.to/ytskk/dont-use-mutable-default-arguments-in-python-56f4
-    model_name: str = "all-MiniLM-L6-v2",
-    batch_size: int = 2000,
-    return_embeddings: bool = False,
-    dimension: int = 0,
+    vertex_input: bool,
+    embedding_property: str,
+    excluded_properties: set[str],
+    model_name: str,
+    batch_size: int,
+    return_embeddings: bool,
 ) -> mgp_Record:
     imported_import_module("transformers")
 
     model = SentenceTransformer(model_name, device="cpu")
-    vertex_input = isinstance(embedding_property, str)
     if vertex_input:
         texts = build_texts(input_items, excluded_properties)
     else:
@@ -232,45 +227,39 @@ def cpu_compute(
     logger.info(f"Processed {n} items on CPU.")
     computed_return_value = return_data(
         input_items if vertex_input else embeddings_list,
-        embedding_property_name=embedding_property if vertex_input else False,
-        return_embeddings=return_embeddings,
-        success=True,
-        dimension=dimension,
+        vertex_input,
+        embedding_property,
+        return_embeddings,
+        True,
+        model.get_sentence_embedding_dimension(),
     )
     return computed_return_value
 
 
 def single_gpu_compute(
     input_items: mgp_Any,  # Can be vertices or strings
-    embedding_property: str = "embedding",
-    excluded_properties: mgp_Nullable[
-        mgp_List[str]  # NOTE: It's a list because Memgraph query modules do NOT support sets yet.
-    ] = False,  # https://dev.to/ytskk/dont-use-mutable-default-arguments-in-python-56f4
-    model_name: str = "all-MiniLM-L6-v2",
-    batch_size: int = 2000,
-    device: int = 0,
-    return_embeddings: bool = False,
-    dimension: int = 0,
+    vertex_input: bool,
+    embedding_property: str,
+    excluded_properties: set[str],
+    model_name: str,
+    batch_size: int,
+    device: int,
+    return_embeddings: bool,
 ) -> mgp_Record:
     imported_import_module("transformers")
 
-    vertex_input = isinstance(embedding_property, str)
+    # Cleanup accounting exists before acquisition so a failed acquisition still reaches its own failure record.
     model = False
     allocated_memory = 0
+    freed_memory = 0
     try:
         try:
             model = SentenceTransformer(model_name, device=f"cuda:{device}")
             allocated_memory = torch_cuda.memory_allocated()
             logger.info(f"Allocated memory: {allocated_memory / 1024 / 1024:.2f} MB")
-        except Exception as e:
-            logger.error(f"Failed to load model {model_name}: {e}")
-            computed_return_value = return_data(
-                input_items if vertex_input else [],
-                embedding_property_name=embedding_property if vertex_input else False,
-                return_embeddings=return_embeddings,
-                success=False,
-                dimension=dimension,
-            )
+        except Exception as err:
+            logger.error(f"Failed to load model {model_name}: {err}")
+            computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
             return computed_return_value
         item_iter = iter(input_items)
         n = len(input_items)
@@ -303,10 +292,11 @@ def single_gpu_compute(
         logger.info(f"Processed {len(input_items)} items on GPU {device}.")
         computed_return_value = return_data(
             input_items if vertex_input else all_embeddings,
-            embedding_property_name=embedding_property if vertex_input else False,
-            return_embeddings=return_embeddings,
-            success=True,
-            dimension=dimension,
+            vertex_input,
+            embedding_property,
+            return_embeddings,
+            True,
+            model.get_sentence_embedding_dimension(),
         )
         return computed_return_value
 
@@ -329,162 +319,143 @@ def single_gpu_compute(
 
 def multi_gpu_compute(
     input_items: mgp_Any,  # Can be vertices or strings
-    embedding_property: str = "embedding",
-    excluded_properties: mgp_Nullable[
-        mgp_List[str]  # NOTE: It's a list because Memgraph query modules do NOT support sets yet.
-    ] = False,  # https://dev.to/ytskk/dont-use-mutable-default-arguments-in-python-56f4
-    model_name: str = "all-MiniLM-L6-v2",
-    batch_size: int = 2000,
-    chunk_size: int = 48,
-    gpus: list[int] = DEFAULT_ARGUMENT_LIST,
-    return_embeddings: bool = False,
-    dimension: int = 0,
+    vertex_input: bool,
+    embedding_property: str,
+    excluded_properties: set[str],
+    model_name: str,
+    batch_size: int,
+    chunk_size: int,
+    gpus: list[int],
+    return_embeddings: bool,
 ) -> mgp_Record:
-    if gpus is DEFAULT_ARGUMENT_LIST:
-        gpus = DEFAULT_ARGUMENT_LIST.copy()
-    vertex_input = isinstance(embedding_property, str)
-
-    try:
-        pass
-    except Exception as e:
-        logger.error(f"Failed to import worker module: {e}")
-        computed_return_value = return_data(
-            input_items if vertex_input else [],
-            embedding_property_name=embedding_property,
-            return_embeddings=return_embeddings,
-            success=False,
-            dimension=dimension,
-        )
-        return computed_return_value
-
     n = len(input_items)
 
-    # Multi-GPU via spawn - process in chunks to avoid memory issues
-    # We spawn a worker process for each GPU every time we process a chunk.
-    # every time that happens, it takes about 8-10s to import libraries and load the model.
-    # `chunk_size` shoiuld be tweaked to minimize the number of times we spawn a worker process,
-    # while avoiding OOM.
+    # Chunks stay bounded (batch_size * chunk_size items) to limit payload and OOM exposure. Each GPU gets one spawned
+    # worker for the whole request: it loads the model once and encodes that GPU's slice of every chunk, instead of
+    # paying process start, library import and model load for every chunk. The workers exit when the request finishes,
+    # fails or is interrupted, which releases their device memory.
     chunk_size = min(batch_size * chunk_size, n)
     total_processed = 0
+    dimension = 0
 
     # Create an iterator from the input items
     item_iter = iter(input_items)
 
-    all_embeddings = []  # only used for string inputs
-    for chunk_start in range(0, n, chunk_size):
-        chunk_end = min(chunk_start + chunk_size, n)
+    # Text vectors are placed by input offset, so the result follows input order whatever order the slices finish in.
+    all_embeddings = [] if vertex_input else [[] for _ in range(n)]
+    mp_set_executable("/usr/bin/python3")
+    ctx_spawn = mp_get_context("spawn")
+    workers = []
+    try:
+        for gpu in gpus:
+            workers.append(
+                (
+                    gpu,
+                    ProcessPoolExecutor(
+                        max_workers=1,
+                        mp_context=ctx_spawn,
+                        initializer=embed_worker_load_model,
+                        initargs=(gpu, model_name),
+                    ),
+                )
+            )
 
-        # Collect only the input items for this chunk
-        chunk_items = []
-        for _ in range(chunk_end - chunk_start):
-            try:
-                chunk_items.append(next(item_iter))
-            except StopIteration:
+        for chunk_start in range(0, n, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, n)
+
+            # Collect only the input items for this chunk
+            chunk_items = []
+            for _ in range(chunk_end - chunk_start):
+                try:
+                    chunk_items.append(next(item_iter))
+                except StopIteration:
+                    break
+
+            if not chunk_items:
                 break
 
-        if not chunk_items:
-            break
-
-        if vertex_input:
-            chunk_texts = build_texts(chunk_items, excluded_properties)
-        else:
-            chunk_texts = chunk_items
-
-        # Split this chunk across GPUs
-        chunk_slices = split_slices(len(chunk_texts), len(gpus))
-        tasks = []
-        for gpu, (a, b) in zip(gpus, chunk_slices, strict=False):
-            if a < b:
-                tasks.append(
-                    (
-                        gpu,
-                        model_name,
-                        chunk_texts[a:b],
-                        batch_size,
-                        chunk_start + a,
-                        chunk_start + b,
-                    )
-                )
-
-        # Process this chunk
-        chunk_results = []
-        chunk_total = 0
-
-        mp_set_executable("/usr/bin/python3")
-        ctx_spawn = mp_get_context("spawn")
-        with ProcessPoolExecutor(max_workers=len(tasks), mp_context=ctx_spawn) as ex:
-            fut2info = {
-                ex.submit(embed_worker_encode_chunk, t[0], t[1], t[2], t[3]): (
-                    t[0],
-                    t[4],
-                    t[5],
-                )
-                for t in tasks
-            }
-            for fut in as_completed(fut2info):
-                task_info = fut2info.get(fut)
-                if task_info is None:
-                    raise KeyError("Embedding worker future was not registered")
-                gpu, a, b = task_info
-                try:
-                    count, embs = fut.result()
-                    if count != (b - a) or len(embs) != (b - a):
-                        logger.error(f"GPU {gpu} returned mismatched count {count} for slice [{a}:{b}]")
-                        continue
-                    chunk_results.append((a, b, embs))
-                    chunk_total += count
-                except Exception as e:
-                    logger.error(f"Worker on GPU {gpu} failed: {e}")
-
-        # Write back results for this chunk
-        for a, _, embs in chunk_results:
             if vertex_input:
-                for i, e in enumerate(embs, start=a):
-                    chunk_items[i - chunk_start].properties[embedding_property] = e
+                chunk_texts = build_texts(chunk_items, excluded_properties)
             else:
-                all_embeddings.extend(embs)
-        total_processed += chunk_total
+                chunk_texts = chunk_items
+
+            # Split this chunk across GPUs; each slice records its input offsets [a, b).
+            chunk_slices = split_slices(len(chunk_texts), len(gpus))
+            submitted = []
+            for (gpu, worker), (a, b) in zip(workers, chunk_slices, strict=True):
+                if a < b:
+                    try:
+                        future = worker.submit(embed_worker_encode_chunk, chunk_texts[a:b], batch_size)
+                    except BrokenProcessPool as err:
+                        logger.error(f"Worker on GPU {gpu} is unavailable: {err}")
+                        continue
+                    submitted.append((future, gpu, chunk_start + a, chunk_start + b))
+
+            # Process this chunk
+            chunk_total = 0
+            for future, gpu, a, b in submitted:
+                try:
+                    count, embs = future.result()
+                except CancelledError:
+                    raise
+                except Exception as err:
+                    logger.error(f"Worker on GPU {gpu} failed: {err}")
+                    continue
+                if count != (b - a) or len(embs) != (b - a):
+                    logger.error(f"GPU {gpu} returned mismatched count {count} for slice [{a}:{b}]")
+                    continue
+                if embs:
+                    dimension = len(embs[0])
+                # Write back results for this slice at its recorded offsets
+                if vertex_input:
+                    for i, e in enumerate(embs, start=a):
+                        chunk_items[i - chunk_start].properties[embedding_property] = e
+                else:
+                    all_embeddings[a:b] = embs
+                chunk_total += count
+            total_processed += chunk_total
+    finally:
+        for _, worker in workers:
+            worker.shutdown(wait=True, cancel_futures=True)
 
     logger.info(f"Successfully processed {total_processed}/{n} items across {len(gpus)} GPU(s).")
+    # Every input offset is covered only when the successful slices account for all n items.
     success_flag = total_processed == n
     computed_return_value = return_data(
         input_items if vertex_input else all_embeddings,
-        embedding_property_name=embedding_property,
-        return_embeddings=return_embeddings,
-        success=success_flag,
-        dimension=dimension,
+        vertex_input,
+        embedding_property,
+        return_embeddings,
+        success_flag,
+        dimension,
     )
     return computed_return_value
 
 
 def return_data(
     input_items: mgp_Any,
-    embedding_property_name: mgp_Nullable[str] = "embedding",
-    return_embeddings: bool = False,
-    success: bool = True,
-    dimension: int = 0,
+    vertex_input: bool,
+    embedding_property_name: str,
+    return_embeddings: bool,
+    success: bool,
+    dimension: int,
 ) -> mgp_Any:
     """
     Return embeddings and success status.
 
-    For vertices with embeddings stored as properties:
-      - Set return_embeddings=True to return embeddings from the property
-      - Returns embeddings only if requested and operation succeeded
+    Text input (vertex_input False): input_items are the computed vectors in input order, returned whenever the
+    operation succeeded.
 
-    For strings/computed embeddings (embedding_property_name is None):
-      - Always returns the embeddings if operation succeeded
+    Vertex input: input_items are the vertices; their stored vectors are returned only when return_embeddings is set
+    and the operation succeeded.
+
+    dimension is the admitted encoder's output dimension, or 0 when no encoder was admitted (empty input or a failure
+    before the model loaded).
     """
-    if embedding_property_name is None:
-        embedding_property_name = "embedding"
     embeddings = []
-
-    # Case 1: Items are embeddings themselves (strings from embed function)
-    if embedding_property_name == "embedding":
-        if success:
-            embeddings = input_items
-
-    # Case 2: Extract embeddings from vertex properties
-    elif return_embeddings and success:
+    if success and not vertex_input:
+        embeddings = input_items
+    elif success and return_embeddings:
         embeddings = [v.properties.get(embedding_property_name, False) for v in input_items]
 
     computed_return_value = mgp_Record(success=success, embeddings=embeddings, dimension=dimension)
@@ -503,12 +474,17 @@ def validate_configuration(configuration: mgp_Map):
     }
     configuration = {**default_configuration, **configuration}
 
-    if not configuration.get("excluded_properties", []):
-        configuration["excluded_properties"] = configuration.get("embedding_property", [])
-    if configuration.get("embedding_property", False) is not False and configuration.get(
-        "embedding_property", False
-    ) not in configuration.get("excluded_properties", []):
-        configuration.get("excluded_properties", []).append(configuration.get("embedding_property", False))
+    embedding_property = configuration.get("embedding_property", "")
+    if not isinstance(embedding_property, str) or not embedding_property:
+        raise ValueError(f"embedding_property must be a non-empty property name, got {embedding_property!r}")
+    excluded = configuration.get("excluded_properties", [])
+    if not isinstance(excluded, (list, tuple)) or not all(isinstance(name, str) for name in excluded):
+        raise ValueError(f"excluded_properties must be a list of property names, got {excluded!r}")
+    # A native set of complete property names (the host may pass a list or tuple), always including the embedding
+    # property itself so a previous vector never becomes encoder text. Membership is by exact name.
+    excluded_properties = set(excluded)
+    excluded_properties.add(embedding_property)
+    configuration["excluded_properties"] = excluded_properties
 
     logger.debug(f"Using embedding configuration: {configuration}")
 
@@ -518,36 +494,25 @@ def validate_configuration(configuration: mgp_Map):
 def compute_embeddings(
     input_items: mgp_Any,
     configuration: mgp_Map,
+    vertex_input: bool,
 ) -> mgp_Any:
-    dimension = get_model_info(configuration).get("dimension", 0)
-    if dimension == 0:
-        logger.warning("Failed to get model dimension.")
-
+    embedding_property = configuration.get("embedding_property", "")
+    return_embeddings = configuration.get("return_embeddings", False)
     try:
+        # Inputs and the device are admitted before any model is loaded; the dimension comes from the encoder that
+        # actually runs, so no separate metadata load happens.
         n = len(input_items)
         if n == 0:
             logger.info("No vertices to process.")
-            computed_return_value = return_data(
-                input_items,
-                configuration.get("embedding_property", False),
-                configuration.get("return_embeddings", []),
-                True,
-                dimension=dimension,
-            )
+            computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, True, 0)
             return computed_return_value
 
         # Validate and select target GPU(s)
         try:
             gpus = select_device(configuration.get("device", False))
-        except (ValueError, TypeError, RuntimeError) as e:
-            logger.error(f"Invalid device parameter: {e}")
-            computed_return_value = return_data(
-                input_items,
-                configuration.get("embedding_property", False),
-                configuration.get("return_embeddings", []),
-                False,
-                dimension=dimension,
-            )
+        except (ValueError, TypeError, RuntimeError) as err:
+            logger.error(f"Invalid device parameter: {err}")
+            computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
             return computed_return_value
 
         logger.info(f"Selected {len(gpus) if gpus else 0} GPU(s): {gpus}")
@@ -556,82 +521,58 @@ def compute_embeddings(
             try:
                 computed_return_value = cpu_compute(
                     input_items,
-                    configuration.get("embedding_property", False),
-                    configuration.get("excluded_properties", []),
+                    vertex_input,
+                    embedding_property,
+                    configuration.get("excluded_properties", set()),
                     configuration.get("model_name", ""),
                     configuration.get("batch_size", 0),
-                    configuration.get("return_embeddings", []),
-                    dimension=dimension,
+                    return_embeddings,
                 )
                 return computed_return_value
-            except Exception as e:
-                logger.error(f"CPU path failed: {e}")
-                computed_return_value = return_data(
-                    input_items,
-                    configuration.get("embedding_property", False),
-                    configuration.get("return_embeddings", []),
-                    False,
-                    dimension=dimension,
-                )
+            except Exception as err:
+                logger.error(f"CPU path failed: {err}")
+                computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
                 return computed_return_value
 
         if len(gpus) == 1:
             try:
                 computed_return_value = single_gpu_compute(
                     input_items,
-                    configuration.get("embedding_property", False),
-                    configuration.get("excluded_properties", []),
+                    vertex_input,
+                    embedding_property,
+                    configuration.get("excluded_properties", set()),
                     configuration.get("model_name", ""),
                     configuration.get("batch_size", 0),
                     gpus[0],
-                    configuration.get("return_embeddings", []),
-                    dimension=dimension,
+                    return_embeddings,
                 )
                 return computed_return_value
-            except Exception as e:
-                logger.error(f"Single GPU path failed: {e}")
-                computed_return_value = return_data(
-                    input_items,
-                    configuration.get("embedding_property", False),
-                    configuration.get("return_embeddings", []),
-                    False,
-                    dimension=dimension,
-                )
+            except Exception as err:
+                logger.error(f"Single GPU path failed: {err}")
+                computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
                 return computed_return_value
 
         if len(gpus) > 1:
             try:
                 computed_return_value = multi_gpu_compute(
                     input_items,
-                    configuration.get("embedding_property", False),
-                    configuration.get("excluded_properties", []),
+                    vertex_input,
+                    embedding_property,
+                    configuration.get("excluded_properties", set()),
                     configuration.get("model_name", ""),
                     configuration.get("batch_size", 0),
                     configuration.get("chunk_size", 0),
                     gpus,
-                    configuration.get("return_embeddings", []),
-                    dimension=dimension,
+                    return_embeddings,
                 )
                 return computed_return_value
-            except Exception as e:
-                logger.error(f"Multi GPU path failed: {e}")
-                computed_return_value = return_data(
-                    input_items,
-                    configuration.get("embedding_property", False),
-                    configuration.get("return_embeddings", []),
-                    False,
-                    dimension=dimension,
-                )
+            except Exception as err:
+                logger.error(f"Multi GPU path failed: {err}")
+                computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
                 return computed_return_value
-    except Exception as e:
-        logger.error(f"Failed to compute embeddings: {e}")
-        computed_return_value = return_data(
-            input_items,
-            configuration.get("embedding_property", False),
-            configuration.get("return_embeddings", []),
-            False,
-            dimension=dimension,
-        )
+    except Exception as err:
+        logger.error(f"Failed to compute embeddings: {err}")
+        computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
         return computed_return_value
     return False
 
@@ -679,7 +620,7 @@ def node_sentence(
     else:
         vertices = ctx.graph.vertices
 
-    computed_return_value = compute_embeddings(vertices, configuration)
+    computed_return_value = compute_embeddings(vertices, configuration, True)
     return computed_return_value
 
 
@@ -693,9 +634,8 @@ def text(
         configuration = DEFAULT_ARGUMENT_DICT.copy()
     logger.info(f"embed: starting (py_exec={sys_executable}, py_ver={sys_version.split()[0]})")
 
-    # hard code embedding_property to None for string input
-    configuration["embedding_property"] = False
     configuration = validate_configuration(configuration)
 
-    computed_return_value = compute_embeddings(input_strings, configuration)
+    # Strings are encoded directly and their vectors returned; the input mode, not a property name, selects that path.
+    computed_return_value = compute_embeddings(input_strings, configuration, False)
     return computed_return_value

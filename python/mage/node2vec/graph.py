@@ -73,9 +73,17 @@ class Graph(ABC):
 
 
 class GraphHolder(Graph):
-    def __init__(self, edges_weights: dict[tuple[int, int], float], is_directed: bool):
+    def __init__(self, edges_weights: dict[tuple[int, int], float], is_directed: bool, declared_nodes=()):
+        """
+        Args:
+            edges_weights: weight per (from, to) edge.
+            is_directed: whether edges are directed.
+            declared_nodes: every vertex ID of the source graph. Edges cannot reveal isolated vertices, so the
+                graph-conversion boundary declares them; endpoints of edges are nodes whether declared or not.
+        """
         super().__init__(is_directed)
         self.internal_edges_weights = edges_weights
+        self.internal_declared_nodes = list(declared_nodes)
         self.internal_graph = {}
         self.init_graph()
 
@@ -107,10 +115,12 @@ class GraphHolder(Graph):
         return computed_return_value
 
     def get_edges(self) -> list[tuple[int, int]]:
+        """Returns every oriented edge exactly once; an undirected edge stored in one orientation is also returned
+        reversed, and one stored in both orientations is not repeated."""
         edges = list(self.internal_edges_weights.keys())
         if self.internal_is_directed:
             return edges
-        edges.extend([(edge[1], edge[0]) for edge in edges])
+        edges.extend([(edge[1], edge[0]) for edge in edges if (edge[1], edge[0]) not in self.internal_edges_weights])
         return edges
 
     def get_edge_weight(self, src_node_id: int, dest_node_id: int) -> float:
@@ -128,13 +138,18 @@ class GraphHolder(Graph):
         return computed_return_value
 
     def init_graph(self) -> bool:
+        # Declared vertices and both endpoints of every edge are nodes. A directed sink or an isolated vertex keeps an
+        # empty neighbor list, so walks still start from it.
+        for node in self.internal_declared_nodes:
+            if node not in self.internal_graph:
+                self.internal_graph[node] = set()
         for node_from, node_to in self.internal_edges_weights:
             if node_from not in self.internal_graph:
                 self.internal_graph[node_from] = set()
+            if node_to not in self.internal_graph:
+                self.internal_graph[node_to] = set()
             self.internal_graph.get(node_from, set()).add(node_to)
             if not self.is_directed:
-                if node_to not in self.internal_graph:
-                    self.internal_graph[node_to] = set()
                 self.internal_graph.get(node_to, set()).add(node_from)
 
         self.internal_nodes = list(self.internal_graph.keys())

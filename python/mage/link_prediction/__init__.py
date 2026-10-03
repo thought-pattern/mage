@@ -15,7 +15,6 @@ from mage.link_prediction.constants import (
 from mage.link_prediction.link_prediction_util import (
     add_self_loop,  # noqa: F401
     classify,  # noqa: F401
-    inner_predict,  # noqa: F401
     inner_train,  # noqa: F401
     preprocess,  # noqa: F401
     proj_0,  # noqa: F401

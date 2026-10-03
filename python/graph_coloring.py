@@ -1,7 +1,5 @@
 """Utilities for graph coloring."""
 
-from collections import defaultdict
-
 from mgp import Edge as mgp_Edge
 from mgp import List as mgp_List
 from mgp import Map as mgp_Map
@@ -31,7 +29,7 @@ def color_graph(
     parameters = normalize_parameters(dict(parameters))
     graph = convert_to_graph(context, edge_property)
     algorithm = parameters.get(Parameter.ALGORITHM, False)
-    solution = algorithm.run(graph, parameters)
+    solution = algorithm.run(graph, parameters, abort_check=context.check_must_abort)
     computed_return_value = [
         mgp_Record(node=context.graph.get_vertex_by_id(graph.label(node)), color=color)
         for node, color in enumerate(solution.chromosome)
@@ -60,7 +58,7 @@ def color_subgraph(
     parameters = normalize_parameters(dict(parameters))
     graph = convert_to_subgraph(context, vertices, edges, edge_property)
     algorithm = parameters.get(Parameter.ALGORITHM, False)
-    solution = algorithm.run(graph, parameters)
+    solution = algorithm.run(graph, parameters, abort_check=context.check_must_abort)
     computed_return_value = [
         mgp_Record(node=context.graph.get_vertex_by_id(graph.label(node)), color=color)
         for node, color in enumerate(solution.chromosome)
@@ -70,7 +68,7 @@ def color_subgraph(
 
 def convert_to_graph(context: mgp_ProcCtx, edge_property: str) -> Graph:
     nodes = []
-    adj_list = defaultdict(list)
+    adj_list = {}
 
     for v in context.graph.vertices:
         context.check_must_abort()
@@ -80,8 +78,8 @@ def convert_to_graph(context: mgp_ProcCtx, edge_property: str) -> Graph:
         context.check_must_abort()
         for e in v.out_edges:
             weight = e.properties.get(edge_property, 1)
-            adj_list.get(e.from_vertex.id, []).append((e.to_vertex.id, weight))
-            adj_list.get(e.to_vertex.id, []).append((e.from_vertex.id, weight))
+            adj_list.setdefault(e.from_vertex.id, []).append((e.to_vertex.id, weight))
+            adj_list.setdefault(e.to_vertex.id, []).append((e.from_vertex.id, weight))
 
     computed_return_value = Graph(nodes, adj_list)
     return computed_return_value
@@ -96,7 +94,7 @@ def convert_to_subgraph(
     vertices, edges = map(set, [vertices, edges])
 
     nodes = []
-    adj_list = defaultdict(list)
+    adj_list = {}
 
     for v in vertices:
         context.check_must_abort()
@@ -109,8 +107,8 @@ def convert_to_subgraph(
             nodes.append(e.from_vertex.id)
         if e.to_vertex.id not in nodes:
             nodes.append(e.to_vertex.id)
-        adj_list.get(e.from_vertex.id, []).append((e.to_vertex.id, weight))
-        adj_list.get(e.to_vertex.id, []).append((e.from_vertex.id, weight))
+        adj_list.setdefault(e.from_vertex.id, []).append((e.to_vertex.id, weight))
+        adj_list.setdefault(e.to_vertex.id, []).append((e.from_vertex.id, weight))
 
     computed_return_value = Graph(nodes, adj_list)
     return computed_return_value

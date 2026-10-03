@@ -1,8 +1,10 @@
 """Utilities for graph analyzer."""
 
 from collections import OrderedDict
+from heapq import nlargest
 from inspect import cleandoc
 from itertools import chain, repeat
+from operator import itemgetter
 from sys import stderr as sys_stderr
 from sys import version as sys_version
 
@@ -61,7 +63,7 @@ def help() -> list[mgp_Record]:
 
 
 @mgp_read_proc
-def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = False) -> list[mgp_Record]:
+def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = None) -> list[mgp_Record]:
     """
     Shows graph information.
 
@@ -87,7 +89,7 @@ def analyze_subgraph(
     context: mgp_ProcCtx,
     vertices: mgp_List[mgp_Vertex],
     edges: mgp_List[mgp_Edge],
-    analyses: mgp_Nullable[list[str]] = False,
+    analyses: mgp_Nullable[list[str]] = None,
 ) -> list[mgp_Record]:
     """
     Shows subgraph information.
@@ -135,7 +137,7 @@ def get_analysis_mapping() -> OrderedDict[str, object]:
             ("self_loops", internal_self_loops),
             ("is_bipartite", internal_is_bipartite),
             ("is_planar", internal_is_planar),
-            ("is_biconnected: ", internal_is_biconnected),
+            ("is_biconnected", internal_is_biconnected),
             ("is_weakly_connected", internal_is_weakly_connected),
             ("number_of_weakly_components", weakly_components),
             ("is_strongly_connected", internal_is_strongly_connected),
@@ -196,17 +198,17 @@ def internal_number_of_edges(g: nx_MultiDiGraph) -> tuple[str, int]:
 
 
 def internal_avg_degree(g: nx_MultiDiGraph) -> tuple[str, float]:
-    """Returns average degree."""
+    """Returns the mean total (in + out) degree, the convention sorted_nodes_degree reports per node."""
     _, number_of_nodes = internal_number_of_nodes(g)
-    _, number_of_edges = internal_number_of_edges(g)
-    avg_degree = 0 if number_of_nodes == 0 else number_of_edges / number_of_nodes
+    total_degree = sum(degree for _, degree in g.degree())
+    avg_degree = 0 if number_of_nodes == 0 else total_degree / number_of_nodes
     return "Average degree", avg_degree
 
 
 def internal_sorted_nodes_degree(g: nx_MultiDiGraph) -> tuple[str, list[tuple[object, object]]]:
-    """Returns list of sorted nodes degree. [(node_id, degree), ...]"""
-    nodes_degree = [(n, g.degree(n)) for n in g.nodes()]
-    nodes_degree.sort(key=lambda x: x[1], reverse=True)
+    """Returns the MAX_LIST_SIZE highest total-degree nodes, descending. [(node_id, degree), ...]"""
+    # nlargest equals a stable descending sort truncated to the shown prefix, so ties keep node order.
+    nodes_degree = nlargest(MAX_LIST_SIZE, g.degree(), key=itemgetter(1))
     return "Sorted nodes degree", nodes_degree
 
 

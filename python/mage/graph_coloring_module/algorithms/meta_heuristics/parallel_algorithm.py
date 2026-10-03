@@ -5,8 +5,10 @@ from logging import getLogger as logging_getLogger
 from multiprocessing import Manager as mp_Manager
 from multiprocessing import Process as mp_Process
 from multiprocessing import Value as mp_Value
+from multiprocessing.connection import wait as mp_connection_wait
+from pickle import PicklingError
 
-from mage.graph_coloring_module.algorithms.algorithm import Algorithm
+from mage.graph_coloring_module.algorithms.algorithm import Algorithm, no_host_abort
 from mage.graph_coloring_module.components.chain_chunk import ChainChunk
 from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.components.population import Population
@@ -17,6 +19,12 @@ from mage.graph_coloring_module.utils.parameters_utils import param_value
 from mage.graph_coloring_module.utils.validation import validate
 
 logger = logging_getLogger("graph_coloring")
+
+# Error below which a coloring that also satisfies the coloring invariant counts as solved.
+SOLUTION_ERROR_TOLERANCE = 1e-5
+# How long the parent waits on worker exits before polling the host abort check again, i.e. the latency with which a
+# host cancellation reaches the workers.
+WORKER_ABORT_POLL_SECONDS = 0.1
 
 
 class ParallelAlgorithm(Algorithm, ABC):
@@ -29,12 +37,15 @@ class ParallelAlgorithm(Algorithm, ABC):
         Parameter.INIT_ALGORITHMS,
         Parameter.ERROR,
     )
-    def run(self, graph: Graph, parameters: dict) -> Individual:
+    def run(self, graph: Graph, parameters: dict, abort_check=no_host_abort) -> Individual:
         """Runs the algorithm in a given number of processes and returns the best individual.
 
         Parameters that must be specified:
         :no_of_processes: the number of processes to run an algorithm in
-        :error: a function that defines an error"""
+        :error: a function that defines an error
+
+        The host abort check is polled while workers run; however the run ends (completion, host abort, interruption
+        or failure), every started worker is stopped and reaped before the result or exception leaves."""
 
         no_of_processes = param_value(graph, parameters, Parameter.NO_OF_PROCESSES)
         population_size = param_value(graph, parameters, Parameter.POPULATION_SIZE)
@@ -65,7 +76,7 @@ class ParallelAlgorithm(Algorithm, ABC):
             run_algorithm = getattr(algorithm, "run", False)
             if not callable(run_algorithm):
                 raise TypeError("every initialization algorithm must provide run()")
-            individual = run_algorithm(graph, parameters)
+            individual = run_algorithm(graph, parameters, abort_check)
             if not isinstance(individual, Individual):
                 raise PopulationCreationException("An initialization algorithm did not produce an Individual")
             individuals.append(individual)
@@ -88,13 +99,17 @@ class ParallelAlgorithm(Algorithm, ABC):
         initial_best_solutions = {
             pid: population.best_individual(individual_error_value) for pid, population in enumerate(populations)
         }
-        if any(individual_error_value(graph, individual) < 1e-5 for individual in initial_best_solutions.values()):
-            best_individual = min(
-                initial_best_solutions.values(),
-                key=lambda individual: individual_error_value(graph, individual),
-            )
+        solved = [
+            individual
+            for population in populations
+            for individual in population.individuals
+            if self.is_solution(individual, individual_error_value(graph, individual))
+        ]
+        if solved:
+            best_individual = min(solved, key=lambda individual: individual_error_value(graph, individual))
             return best_individual
 
+        abort_check()
         try:
             manager_context = mp_Manager()
         except Exception as error_value:
@@ -130,28 +145,56 @@ class ParallelAlgorithm(Algorithm, ABC):
             started_processes = []
             try:
                 for process in processes:
-                    process.start()
+                    try:
+                        process.start()
+                    except (OSError, PicklingError, TypeError, AttributeError) as err:
+                        raise RuntimeError("Failed to start every graph-coloring worker") from err
                     started_processes.append(process)
-            except Exception as error_value:
-                for process in started_processes:
-                    if process.is_alive():
-                        process.terminate()
-                    process.join()
-                raise RuntimeError("Failed to start every graph-coloring worker") from error_value
-
-            for process in started_processes:
-                process.join()
+                self.wait_for_workers(started_processes, abort_check)
+            finally:
+                self.stop_workers(started_processes, running_flag)
 
             failed_processes = [process.pid for process in started_processes if process.exitcode != 0]
             if failed_processes:
                 raise RuntimeError(f"Graph-coloring workers failed: {failed_processes}")
 
+            # A valid coloring outranks any invalid one; ties and the invalid remainder are ordered by error.
             best_individual = min(
                 best_solutions.values(),
-                key=lambda individual: individual_error_value(graph, individual),
+                key=lambda individual: (len(individual.conflict_nodes) > 0, individual_error_value(graph, individual)),
             )
 
             return best_individual
+
+    def is_solution(self, individual: Individual, error_value: float) -> bool:
+        """A solution meets the weighted objective (error within SOLUTION_ERROR_TOLERANCE) and the coloring invariant
+        (no edge joins two nodes of one color, whatever its weight), so a zero-weight or fractional conflict is never
+        reported as solved."""
+        solved = abs(error_value) < SOLUTION_ERROR_TOLERANCE and not individual.conflict_nodes
+        return solved
+
+    def wait_for_workers(self, workers: list, abort_check) -> bool:
+        """Waits until every worker has exited, polling the host abort check between waits so that a host
+        cancellation raises here instead of blocking on an unbounded join."""
+        running = [worker for worker in workers if worker.is_alive()]
+        while running:
+            abort_check()
+            mp_connection_wait([worker.sentinel for worker in running], timeout=WORKER_ABORT_POLL_SECONDS)
+            running = [worker for worker in running if worker.is_alive()]
+        return False
+
+    def stop_workers(self, workers: list, running_flag) -> bool:
+        """Stops and reaps every started worker. A worker still running at this point belongs to an abandoned run
+        (host abort, interrupted wait or startup failure): the shared flag asks it to stop and it is terminated rather
+        than awaited. Exited workers are only joined."""
+        with running_flag.get_lock():
+            running_flag.value = 0
+        for worker in workers:
+            if worker.is_alive():
+                worker.terminate()
+        for worker in workers:
+            worker.join()
+        return False
 
     @abstractmethod
     def algorithm(

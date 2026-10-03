@@ -1,7 +1,11 @@
 """Utilities for elastic search serialization."""
 
+from collections.abc import Iterator
 from datetime import datetime
+from datetime import timezone as datetime_timezone
+from itertools import batched
 from json import loads as json_loads
+from threading import Lock
 
 from elasticsearch import Elasticsearch as elasticsearch_Elasticsearch
 from elasticsearch import helpers as elasticsearch_helpers
@@ -40,6 +44,14 @@ INDEX_TYPE = "index_type"
 AGGREGATIONS = "aggregations"
 HITS = "hits"
 TOTAL = "total"
+STATUS = "status"
+ERROR = "error"
+REINDEX_OP_TYPES = ("index", "create")
+
+# Bulk receipt fields
+ATTEMPTED = "attempted"
+INDEXED = "indexed"
+REJECTED = "rejected"
 
 # Constants
 MEM_TYPE = "mem_type"
@@ -63,8 +75,20 @@ meme_mapping[datetime] = MEM_DATE
 # Create global logger object
 logger: mgp_Logger = mgp_Logger()
 
-# Singleton client object
-client: elasticsearch_Elasticsearch
+# Connected client, published by connect only after it validates; the lock keeps concurrent reconnects coherent.
+CLIENT = "client"
+connection: dict[str, elasticsearch_Elasticsearch] = {}
+connection_lock = Lock()
+
+
+def connected_client() -> elasticsearch_Elasticsearch:
+    # The registry holds at most the one published client, so an empty registry means connect has not succeeded.
+    with connection_lock:
+        active_clients = list(connection.values())
+    if not active_clients:
+        raise RuntimeError("Elasticsearch is not connected; call elastic_search_serialization.connect first.")
+    active_client = active_clients[0]
+    return active_client
 
 
 # Helper method
@@ -75,10 +99,12 @@ def serialize_vertex(vertex: mgp_Vertex) -> dict[str, object]:
     Returns:
         Dict[str, Any]: ElasticSearch object representation.
     """
-    doc = serialize_properties(vertex.properties.items())
-    doc[MEM_CATEGORIES] = [label.name for label in vertex.labels]
-    doc[INDEX] = {ID: f"{vertex.id}"}
-    return doc
+    source = serialize_properties(vertex.properties.items())
+    source[MEM_CATEGORIES] = [label.name for label in vertex.labels]
+    # The bulk helpers take document identity from the top-level _id action metadata and index _source as the body,
+    # so replaying the same vertex replaces its document instead of adding an automatically identified copy.
+    document = {ID: f"{vertex.id}", INTERNAL_SOURCE: source}
+    return document
 
 
 def serialize_edge(edge: mgp_Edge) -> dict[str, object]:
@@ -88,10 +114,10 @@ def serialize_edge(edge: mgp_Edge) -> dict[str, object]:
     Returns:
         Dict[str, Any]: ElasticSearch object representation.
     """
-    doc = serialize_properties(edge.properties.items())
-    doc[MEM_TYPE] = edge.type.name
-    doc[INDEX] = {ID: f"{edge.from_vertex.id}-{edge.id}"}
-    return doc
+    source = serialize_properties(edge.properties.items())
+    source[MEM_TYPE] = edge.type.name
+    document = {ID: f"{edge.from_vertex.id}-{edge.id}", INTERNAL_SOURCE: source}
+    return document
 
 
 def serialize_properties(properties: mgp_Any) -> dict[str, object]:
@@ -104,63 +130,70 @@ def serialize_properties(properties: mgp_Any) -> dict[str, object]:
     source: dict[str, object] = {}
     for prop_key, prop_value in properties:
         if isinstance(prop_value, datetime):
-            # Convert datetime to str, replace microsecond and add Z suffix(Zulu or zero offset) manually because Python doesn't
-            # support it out of the box
+            # A naive graph datetime is UTC wall time; an aware one is normalized to UTC first so the single Z suffix
+            # (Zulu, added manually because isoformat has no option for it) states its real offset. Microseconds are dropped.
+            if prop_value.tzinfo is not None:
+                prop_value = prop_value.astimezone(datetime_timezone.utc).replace(tzinfo=None)
             prop_value = f"{prop_value.replace(microsecond=0).isoformat()}Z"
             source[f"{prop_key}{MEM_DATE}"] = prop_value
         elif type(prop_value) in meme_mapping:
-            source[f"{prop_key}{meme_mapping.get(type(prop_value), False)}"] = prop_value
+            source[f"{prop_key}{meme_mapping.get(type(prop_value), '')}"] = prop_value
     return source
 
 
-def generate_document(context_object: mgp_Any) -> tuple[dict[str, object], str]:
-    if context_object.get(EVENT_TYPE, False) == CREATED_VERTEX:
-        computed_return_value = serialize_vertex(context_object.get(VERTEX, False)), VERTEX
-        return computed_return_value
-    elif context_object.get(EVENT_TYPE, False) == CREATED_EDGE:
-        computed_return_value = serialize_edge(context_object.get(EDGE, False)), EDGE
-        return computed_return_value
-    raise ValueError(f"Unsupported trigger event: {context_object.get(EVENT_TYPE, False)}")
-
-
-def generate_documents_from_triggered_objects(
-    context_objects: list[mgp_Any],
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    (
-        "Generates vertices and edges documents for indexing and returns them as lists.\n    Args:\n   "  # Continue literal.
-        "     context_objects (List[Dict[str, Any]]): Objects that are sent as parameters because of "  # Continue literal.
-        "some trigger that was called. Trigger can be for update or for create.\n    Returns:\n        "  # Continue literal.
-        "Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]: Serialized vertices and edges.\n"
-    )
-    vertices, edges = [], []
+def triggered_vertex_documents(context_objects: list[mgp_Any]) -> Iterator[dict[str, object]]:
+    """Yields vertex documents for the created-vertex events sent by a create trigger."""
     for context_object in context_objects:
-        if context_object.get(EVENT_TYPE, False) == CREATED_VERTEX:
-            vertices.append(serialize_vertex(context_object.get(VERTEX, False)))
-        elif context_object.get(EVENT_TYPE, False) == CREATED_EDGE:
-            edges.append(serialize_edge(context_object.get(EDGE, False)))
-    return vertices, edges
+        if context_object.get(EVENT_TYPE, "") == CREATED_VERTEX:
+            # Memgraph's created_vertex event always carries its vertex; a malformed event is refused, never skipped.
+            if VERTEX not in context_object:
+                raise ValueError("A created_vertex trigger event carries no vertex.")
+            yield serialize_vertex(context_object.get(VERTEX, False))
 
 
-def generate_documents_from_db(
-    context: mgp_ProcCtx,
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    """Generates vertices and edges from the database.
-    Args:
-        context (mgp.ProcCtx): A reference to the context execution.
-    Returns:
-        Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]: Serialized vertices and edges.
-    """
-    vertices, edges = [], []
+def triggered_edge_documents(context_objects: list[mgp_Any]) -> Iterator[dict[str, object]]:
+    """Yields edge documents for the created-edge events sent by a create trigger."""
+    for context_object in context_objects:
+        if context_object.get(EVENT_TYPE, "") == CREATED_EDGE:
+            # Memgraph's created_edge event always carries its edge; a malformed event is refused, never skipped.
+            if EDGE not in context_object:
+                raise ValueError("A created_edge trigger event carries no edge.")
+            yield serialize_edge(context_object.get(EDGE, False))
+
+
+def database_vertex_documents(context: mgp_ProcCtx) -> Iterator[dict[str, object]]:
+    """Yields one document per database vertex as the bulk helper consumes them, so memory follows the chunk settings."""
     for vertex in context.graph.vertices:
-        vertices.append(serialize_vertex(vertex))
-        for edge in vertex.out_edges:
-            edges.append(serialize_edge(edge))
+        yield serialize_vertex(vertex)
 
-    return vertices, edges
+
+def database_edge_documents(context: mgp_ProcCtx) -> Iterator[dict[str, object]]:
+    """Yields one document per database relationship (each counted once, from its source vertex)."""
+    for vertex in context.graph.vertices:
+        for edge in vertex.out_edges:
+            yield serialize_edge(edge)
+
+
+def counted_documents(documents: Iterator[dict[str, object]], receipt: dict[str, object]) -> Iterator[dict[str, object]]:
+    """Passes documents through to a bulk helper while counting how many it consumed."""
+    for document in documents:
+        receipt[ATTEMPTED] = receipt.get(ATTEMPTED, 0) + 1
+        yield document
+
+
+def record_bulk_results(results: Iterator[tuple[bool, dict[str, object]]], receipt: dict[str, object]) -> None:
+    """Records every rejected bulk item with its server-reported identity, status and reason."""
+    rejected = receipt.get(REJECTED, [])
+    for ok, item in results:
+        if ok:
+            continue
+        # Each item maps its single operation type to the server's per-document result.
+        for details in item.values():
+            rejected.append({ID: details.get(ID, ""), STATUS: details.get(STATUS, 0), ERROR: details.get(ERROR, "")})
 
 
 def elastic_search_streaming_bulk(
-    objects: list[mgp_Any],
+    objects: Iterator[dict[str, object]],
     index: str,
     chunk_size: int = 500,
     max_chunk_bytes: int = 104857600,
@@ -170,7 +203,7 @@ def elastic_search_streaming_bulk(
     initial_backoff: float = 2.0,
     max_backoff: float = 600.0,
     yield_ok: bool = True,
-) -> bool:
+) -> dict[str, object]:
     (
         "\n    Sends streaming_bulk requests for the given objects to the provided index with the para"  # Continue literal.
         "meters specified.\n    Args:\n        objects (List[Any]): serialized nodes and edges that wil"  # Continue literal.
@@ -185,12 +218,14 @@ def elastic_search_streaming_bulk(
         "itial_backoff (float): The number of seconds we should wait before the first retry. Any subs"  # Continue literal.
         "equent retries will be powers of initial_backoff * 2**retry_number.\n        max_backoff (flo"  # Continue literal.
         "at): The maximum number of seconds a retry will wait.\n        yield_ok (float): If set to Fa"  # Continue literal.
-        "lse will skip successful documents in the output.\n"
+        "lse will skip successful documents in the output.\n    Returns:\n        Dict[str, Any]: Receipt"  # Continue literal.
+        " with attempted and indexed counts and every rejected item.\n"
     )
-    for _, _ in streaming_bulk(
-        client=client,
+    receipt: dict[str, object] = {ATTEMPTED: 0, REJECTED: []}
+    results = streaming_bulk(
+        client=connected_client(),
         index=index,
-        actions=objects,
+        actions=counted_documents(objects, receipt),
         chunk_size=chunk_size,
         max_chunk_bytes=max_chunk_bytes,
         initial_backoff=initial_backoff,
@@ -199,13 +234,14 @@ def elastic_search_streaming_bulk(
         raise_on_error=raise_on_error,
         raise_on_exception=raise_on_exception,
         max_retries=max_retries,
-    ):
-        pass
-    return False
+    )
+    record_bulk_results(results, receipt)
+    receipt[INDEXED] = receipt.get(ATTEMPTED, 0) - len(receipt.get(REJECTED, []))
+    return receipt
 
 
 def elastic_search_parallel_bulk(
-    objects: list[mgp_Any],
+    objects: Iterator[dict[str, object]],
     index: str,
     thread_count: int = 8,
     chunk_size: int = 500,
@@ -213,7 +249,7 @@ def elastic_search_parallel_bulk(
     raise_on_error: bool = True,
     raise_on_exception: bool = True,
     queue_size: int = 4,
-) -> bool:
+) -> dict[str, object]:
     (
         "\n    Sends parallel_bulk requests for the given objects to the provided index with the param"  # Continue literal.
         "eters specified.\n    Args:\n        objects (List[Any]): Serialized nodes and edges that will"  # Continue literal.
@@ -225,21 +261,30 @@ def elastic_search_parallel_bulk(
         "tion of the last chunk when some occur. By default we raise.\n        raise_on_exception (boo"  # Continue literal.
         "l): If False then don’t propagate exceptions from call to bulk and just report the items tha"  # Continue literal.
         "t failed as failed.\n        queue_size (int): Size of the task queue between the main thread"  # Continue literal.
-        " (producing chunks to send) and the processing threads.\n"
+        " (producing chunks to send) and the processing threads.\n    Returns:\n        Dict[str, Any]: Rec"  # Continue literal.
+        "eipt with attempted and indexed counts and every rejected item.\n"
     )
-    for _, _ in parallel_bulk(
-        client=client,
-        index=index,
-        actions=objects,
-        thread_count=thread_count,
-        chunk_size=chunk_size,
-        max_chunk_bytes=max_chunk_bytes,
-        raise_on_error=raise_on_error,
-        raise_on_exception=raise_on_exception,
-        queue_size=queue_size,
-    ):
-        pass
-    return False
+    receipt: dict[str, object] = {ATTEMPTED: 0, REJECTED: []}
+    active_client = connected_client()
+    # parallel_bulk pulls its actions on a pool thread, so graph objects are serialized here on the procedure thread one
+    # window at a time. A window matches what parallel_bulk keeps in flight: one chunk per worker plus its task queue,
+    # which holds max(queue_size, thread_count) chunks.
+    window_size = (thread_count + max(queue_size, thread_count)) * chunk_size
+    for window in batched(counted_documents(objects, receipt), window_size):
+        results = parallel_bulk(
+            client=active_client,
+            index=index,
+            actions=window,
+            thread_count=thread_count,
+            chunk_size=chunk_size,
+            max_chunk_bytes=max_chunk_bytes,
+            raise_on_error=raise_on_error,
+            raise_on_exception=raise_on_exception,
+            queue_size=queue_size,
+        )
+        record_bulk_results(results, receipt)
+    receipt[INDEXED] = receipt.get(ATTEMPTED, 0) - len(receipt.get(REJECTED, []))
+    return receipt
 
 
 @mgp_read_proc
@@ -257,14 +302,26 @@ def connect(
         "    elastic_password (str): User's password for connecting to the Elasticsearch.\n    Returns"  # Continue literal.
         ":\n        mgp.Record(connection_status=mgp.Map): Connection info.\n"
     )
-    global client
-    client = elasticsearch_Elasticsearch(
+    candidate = elasticsearch_Elasticsearch(
         hosts=elastic_url,
         ca_certs=ca_certs,
         basic_auth=(elastic_user, elastic_password),
     )
-    logger.info(f"Client info: {client.info()}")
-    computed_return_value = mgp_Record(connection_status=dict(client.info()))
+    published = False
+    try:
+        connection_status = dict(candidate.info())
+        with connection_lock:
+            displaced = list(connection.values())
+            connection[CLIENT] = candidate
+        published = True
+    finally:
+        # A candidate that failed validation is never published and its connection pool is released here.
+        if not published:
+            candidate.close()
+    for displaced_client in displaced:
+        displaced_client.close()
+    logger.info(f"Client info: {connection_status}")
+    computed_return_value = mgp_Record(connection_status=connection_status)
     return computed_return_value
 
 
@@ -286,7 +343,6 @@ def create_index(
     Returns:
        mgp.Map: Response message from Elasticsearch service.
     """
-    global client
     # Read schema from the path given
     with open(schema_path, "r") as schema_file:
         schema_json = json_loads(schema_file.read())
@@ -305,7 +361,9 @@ def create_index(
             schema_json[MAPPINGS][DYNAMIC_TEMPLATES][0][MEM_TYPE_HAS_RAW][MAPPING][ANALYZER] = schema_parameters[ANALYZER]
         logger.info(f"Analyzer set to: {schema_parameters[ANALYZER]}")
     logger.info(f"Schema dict: {schema_json}")
-    computed_return_value = mgp_Record(response=dict(client.indices.create(index=index_name, body=schema_json, ignore=400)))
+    computed_return_value = mgp_Record(
+        response=dict(connected_client().indices.create(index=index_name, body=schema_json, ignore=400))
+    )
     return computed_return_value
 
 
@@ -344,17 +402,19 @@ def index_db(
         " to False will skip successful documents in the output.\n        thread_count (int): Size of "  # Continue literal.
         "the threadpool to use for the bulk requests.\n        queue_size (int): Size of the task queu"  # Continue literal.
         "e between the main thread (producing chunks to send) and the processing threads.\n    Returns"  # Continue literal.
-        ":\n        mgp.Record(): Returns number of nodes and edges.\n"
-    )  # Now create iterable of documents that need to be indexed
-    nodes, edges = generate_documents_from_db(context)
-
+        ":\n        mgp.Record(nodes=int, edges=int, rejected_nodes=mgp.List[mgp.Map], rejected_edges=m"  # Continue literal.
+        "gp.List[mgp.Map]): Numbers of nodes and edges indexed, and every rejected item with its id, s"  # Continue literal.
+        "tatus and error.\n"
+    )
+    # Settings are admitted before any graph object is read; documents are then serialized lazily as they are sent.
     if thread_count < 1:
         raise ValueError("Number of threads must be positive number. ")
-    elif thread_count == 1:
+    if chunk_size < 1:
+        raise ValueError("Chunk size must be positive number. ")
+    if thread_count == 1:
         # Use streaming bulk
-        # Send nodes on indexing
-        elastic_search_streaming_bulk(
-            nodes,
+        node_receipt = elastic_search_streaming_bulk(
+            database_vertex_documents(context),
             node_index,
             chunk_size,
             max_chunk_bytes,
@@ -365,9 +425,8 @@ def index_db(
             max_backoff,
             yield_ok,
         )
-        # Send edges on indexing
-        elastic_search_streaming_bulk(
-            edges,
+        edge_receipt = elastic_search_streaming_bulk(
+            database_edge_documents(context),
             edge_index,
             chunk_size,
             max_chunk_bytes,
@@ -379,9 +438,8 @@ def index_db(
             yield_ok,
         )
     else:
-        # Send nodes on indexing
-        elastic_search_parallel_bulk(
-            nodes,
+        node_receipt = elastic_search_parallel_bulk(
+            database_vertex_documents(context),
             node_index,
             thread_count,
             chunk_size,
@@ -390,8 +448,8 @@ def index_db(
             raise_on_exception,
             queue_size,
         )
-        elastic_search_parallel_bulk(
-            edges,
+        edge_receipt = elastic_search_parallel_bulk(
+            database_edge_documents(context),
             edge_index,
             thread_count,
             chunk_size,
@@ -401,7 +459,13 @@ def index_db(
             queue_size,
         )
 
-    computed_return_value = mgp_Record(nodes=len(nodes), edges=len(edges))
+    # Counts are documents the server admitted; rejected items (non-raising settings) carry their own identity and reason.
+    computed_return_value = mgp_Record(
+        nodes=node_receipt.get(INDEXED, 0),
+        edges=edge_receipt.get(INDEXED, 0),
+        rejected_nodes=node_receipt.get(REJECTED, []),
+        rejected_edges=edge_receipt.get(REJECTED, []),
+    )
     return computed_return_value
 
 
@@ -442,16 +506,19 @@ def index(
         "\n        yield_ok (float): If set to False will skip successful documents in the output.\n   "  # Continue literal.
         "     thread_count (int): Size of the threadpool to use for the bulk requests.\n        queue_"  # Continue literal.
         "size (int): Size of the task queue between the main thread (producing chunks to send) and th"  # Continue literal.
-        "e processing threads.\n    Returns:\n        mgp.Record(): Returns number of nodes and edges.\n"
-    )  # Now create iterable of documents that need to be indexed
-    nodes, edges = generate_documents_from_triggered_objects(createdObjects)
-
+        "e processing threads.\n    Returns:\n        mgp.Record(nodes=int, edges=int, rejected_nodes=mgp.List[mg"  # Continue literal.
+        "p.Map], rejected_edges=mgp.List[mgp.Map]): Numbers of nodes and edges indexed, and every rejec"  # Continue literal.
+        "ted item with its id, status and error.\n"
+    )
+    # Settings are admitted before any graph object is read; documents are then serialized lazily as they are sent.
     if thread_count < 1:
         raise ValueError("Number of threads must be positive number. ")
-    elif thread_count == 1:
-        # Send nodes on indexing
-        elastic_search_streaming_bulk(
-            nodes,
+    if chunk_size < 1:
+        raise ValueError("Chunk size must be positive number. ")
+    if thread_count == 1:
+        # Use streaming bulk
+        node_receipt = elastic_search_streaming_bulk(
+            triggered_vertex_documents(createdObjects),
             node_index,
             chunk_size,
             max_chunk_bytes,
@@ -462,9 +529,8 @@ def index(
             max_backoff,
             yield_ok,
         )
-        # Send edges on indexing
-        elastic_search_streaming_bulk(
-            edges,
+        edge_receipt = elastic_search_streaming_bulk(
+            triggered_edge_documents(createdObjects),
             edge_index,
             chunk_size,
             max_chunk_bytes,
@@ -476,9 +542,8 @@ def index(
             yield_ok,
         )
     else:
-        # Send nodes on indexing
-        elastic_search_parallel_bulk(
-            nodes,
+        node_receipt = elastic_search_parallel_bulk(
+            triggered_vertex_documents(createdObjects),
             node_index,
             thread_count,
             chunk_size,
@@ -487,8 +552,8 @@ def index(
             raise_on_exception,
             queue_size,
         )
-        elastic_search_parallel_bulk(
-            edges,
+        edge_receipt = elastic_search_parallel_bulk(
+            triggered_edge_documents(createdObjects),
             edge_index,
             thread_count,
             chunk_size,
@@ -497,7 +562,14 @@ def index(
             raise_on_exception,
             queue_size,
         )
-    computed_return_value = mgp_Record(nodes=len(nodes), edges=len(edges))
+
+    # Counts are documents the server admitted; rejected items (non-raising settings) carry their own identity and reason.
+    computed_return_value = mgp_Record(
+        nodes=node_receipt.get(INDEXED, 0),
+        edges=edge_receipt.get(INDEXED, 0),
+        rejected_nodes=node_receipt.get(REJECTED, []),
+        rejected_edges=edge_receipt.get(REJECTED, []),
+    )
     return computed_return_value
 
 
@@ -509,7 +581,7 @@ def reindex(
     query: str,
     chunk_size: int = 500,
     scroll: str = "5m",
-    op_type: mgp_Nullable[str] = False,
+    op_type: mgp_Nullable[str] = None,
 ) -> mgp_Record:
     (
         "Reindex all documents that satisfy a given query from one index to another, potentially (if "  # Continue literal.
@@ -527,9 +599,11 @@ def reindex(
         " Returns:\n        response (str): Number of documents matched by a query in the source_index"  # Continue literal.
         ".\n"
     )
-    global client
+    # Null op_type is the SDK's own absence (it then auto-detects data streams); a supplied one must be a reindex operation.
+    if op_type is not None and op_type not in REINDEX_OP_TYPES:
+        raise ValueError(f"Unsupported reindex op_type {op_type!r}; expected one of {REINDEX_OP_TYPES}.")
     response = elasticsearch_helpers.reindex(
-        client=client,
+        client=connected_client(),
         source_index=source_index,
         target_index=target_index,
         query=json_loads(query),
@@ -551,8 +625,9 @@ def scan(
     preserve_order: bool = False,
     size: int = 1000,
     from_: int = 0,
-    request_timeout: mgp_Nullable[float] = False,
-    clear_scroll: bool = False,
+    request_timeout: mgp_Nullable[float] = None,
+    clear_scroll: bool = True,
+    max_items: mgp_Nullable[int] = None,
 ) -> mgp_Record:
     (
         "Runs a query on a index specified by the index_name.\n    Args:\n        context (mgp.ProcCtx)"  # Continue literal.
@@ -568,12 +643,16 @@ def scan(
         "m and size parameters. To page through more hits, use the search_after parameter.\n        re"  # Continue literal.
         "quest_timeout (mgp.Nullable[float]): Explicit timeout for each call to scan.\n        clear_s"  # Continue literal.
         "croll (bool): Explicitly calls delete on the scroll id via the clear scroll API at the end o"  # Continue literal.
-        "f the method on completion or error, defaults to true.\n    Returns:\n         mgp.Record(item"  # Continue literal.
-        "s=mgp.List[mgp.Map]): List of all items matched by the specific query.\n"
+        "f the method on completion or error, defaults to true.\n        max_items (mgp.Nullable[int]): "  # Continue literal.
+        "Most hits to return; null returns every hit. Reaching it stops the scroll and clears it whe"  # Continue literal.
+        "n clear_scroll is true.\n    Returns:\n         mgp.Record(items=mgp.List[mgp.Map], complete=b"  # Continue literal.
+        "ool): Hits matched by the query, and whether they are all of them (false when max_items stop"  # Continue literal.
+        "ped the scan before the last hit).\n"
     )
-    global client
-    response = elasticsearch_helpers.scan(
-        client,
+    if max_items is not None and max_items < 0:
+        raise ValueError("max_items must not be negative.")
+    hits = elasticsearch_helpers.scan(
+        connected_client(),
         query=json_loads(query),
         index=index_name,
         scroll=scroll,
@@ -585,13 +664,19 @@ def scan(
         from_=from_,
     )
     items = []
-    for item in response:
-        if INTERNAL_SOURCE in item and INDEX in item.get(INTERNAL_SOURCE, {}):
-            item[ID] = item.get(INTERNAL_SOURCE, {})[INDEX][ID]
-            item.get(INTERNAL_SOURCE, {}).pop(INDEX, False)
-        items.append(item)
+    complete = True
+    try:
+        for hit in hits:
+            if max_items is not None and len(items) == max_items:
+                # A hit beyond the caller's allowance exists, so the returned items are not the complete result.
+                complete = False
+                break
+            items.append(hit)
+    finally:
+        # Closing the scan generator runs its clear_scroll cleanup when iteration stops early or fails.
+        hits.close()
 
-    computed_return_value = mgp_Record(items=items)
+    computed_return_value = mgp_Record(items=items, complete=complete)
     return computed_return_value
 
 
@@ -602,8 +687,8 @@ def search(
     query: str,
     size: int = 1000,
     from_: int = 0,
-    aggregations: mgp_Nullable[mgp_Map] = False,
-    aggs: mgp_Nullable[mgp_Map] = False,
+    aggregations: mgp_Nullable[mgp_Map] = None,
+    aggs: mgp_Nullable[mgp_Map] = None,
 ) -> mgp_Record:
     """Searches for all documents by specifying query and index.
     Args:
@@ -615,8 +700,10 @@ def search(
     Returns:
          mgp.Record(items=mgp.List[mgp.Map]): List of all items matched by the specific query.
     """
-    global client
-    response = client.search(
+    # Null aggregation maps are the SDK's absence and are omitted from the request body; the two names are aliases.
+    if aggregations is not None and aggs is not None:
+        raise ValueError("Pass aggregations or aggs, not both; they are the same request field.")
+    response = connected_client().search(
         index=index_name,
         query=json_loads(query),
         aggregations=aggregations,
@@ -624,19 +711,12 @@ def search(
         size=size,
         from_=from_,
     )
-    hits = []
-    for hit in response[HITS][HITS]:
-        if INTERNAL_SOURCE in hit and INDEX in hit[INTERNAL_SOURCE]:
-            hit[ID] = hit[INTERNAL_SOURCE][INDEX][ID]
-            hit[INTERNAL_SOURCE].pop(INDEX, False)
-        hits.append(hit)
-
-    result = {}
-    result[HITS] = {HITS: hits, TOTAL: response[HITS][TOTAL]}
-    if AGGREGATIONS in response:
-        result[AGGREGATIONS] = response[AGGREGATIONS]
-    else:
-        result[AGGREGATIONS] = dict()
+    body = response.body
+    found = body.get(HITS, {})
+    result = {
+        HITS: {HITS: found.get(HITS, []), TOTAL: found.get(TOTAL, {})},
+        AGGREGATIONS: body.get(AGGREGATIONS, {}),
+    }
 
     computed_return_value = mgp_Record(result=result)
     return computed_return_value

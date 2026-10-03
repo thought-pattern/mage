@@ -14,14 +14,18 @@ metadata files which cve-bin-tool would normally look for (`valid_files`).
 """
 
 from argparse import ArgumentParser as argparse_ArgumentParser
+from json import JSONDecodeError as json_JSONDecodeError
+from json import load as json_load
 from os import getcwd as os_getcwd
 from os import getenv as os_getenv
 from os import makedirs as os_makedirs
 from os import path as os_path
+from os import replace as os_replace
 from os import walk as os_walk
 from shutil import copy2 as shutil_copy2
 from subprocess import PIPE as subprocess_PIPE
 from subprocess import run as subprocess_run
+from tempfile import TemporaryDirectory
 
 from cve_bin_tool.parsers.parse import valid_files as cbt_valid_files
 
@@ -56,7 +60,7 @@ def find_files(rootfs: str) -> list[str]:
     return matches
 
 
-def copy_language_files(rootfs: str, langfs: str):
+def copy_language_files(rootfs: str, langfs: str) -> None:
     """
     Copy language files from the root filesystem to a language-specific
     directory structure to avoid scanning everything in the rootfs.
@@ -64,33 +68,31 @@ def copy_language_files(rootfs: str, langfs: str):
 
     language_files = find_files(rootfs)
 
+    os_makedirs(langfs)
     for file in language_files:
-        destination_dir = os_path.dirname(file).replace(rootfs, langfs)
-        if not os_path.exists(destination_dir):
-            os_makedirs(destination_dir)
+        destination_dir = os_path.join(langfs, os_path.relpath(os_path.dirname(file), rootfs))
+        os_makedirs(destination_dir, exist_ok=True)
         shutil_copy2(file, destination_dir)
-    return False
 
 
-def run_language_scan(langfs: str) -> str:
+def run_language_scan(langfs: str, outfile: str) -> None:
     """
     Scan the CVE database using the list of language packages found and save the
     results to a JSON file.
+
+    cve-bin-tool's exit status counts products with findings and overlaps its error codes, so completion
+    is established by this attempt producing a complete JSON document at `outfile`, which the caller
+    must give as a path no earlier run could have written.
 
     Inputs
     =======
     langfs: str
         The directory containing the language package metadata files.
-
-    Returns
-    =======
-    str
-        The path to the JSON file containing the CVE scan results for the language packages.
-        If the file does not exist, an empty string is returned.
+    outfile: str
+        The run-owned path for the JSON scan results.
     """
 
     print("Scanning Language Packages...")
-    outfile = f"{CVE_DIR}/cve-bin-tool-lang-summary.json"
 
     cmd = [
         "cve-bin-tool",
@@ -105,16 +107,24 @@ def run_language_scan(langfs: str) -> str:
     completed = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
     if not os_path.isfile(outfile):
         raise RuntimeError(f"language CVE scan produced no result (status {completed.returncode}): {completed.stderr.strip()}")
-    return outfile
+    try:
+        with open(outfile, "r", encoding="utf-8") as f:
+            json_load(f)
+    except (OSError, json_JSONDecodeError) as err:
+        raise RuntimeError(f"language CVE scan result is incomplete (status {completed.returncode}): {err}") from err
 
 
-def main(rootfs: str) -> bool:
+def main(rootfs: str) -> None:
     """
     Scan the root filesystem for CVEs in the language packages.
     """
-    copy_language_files(rootfs, f"{CVE_DIR}/langfs")
-    run_language_scan(f"{CVE_DIR}/langfs")
-    return False
+    # Each run stages its own metadata copy and scanner output, so files from an earlier run can be neither
+    # mixed into this scan nor mistaken for its result; only a completed report replaces the published one.
+    with TemporaryDirectory(dir=CVE_DIR, prefix="cve-bin-tool-lang-") as staging:
+        staged_report = f"{staging}/cve-bin-tool-lang-summary.json"
+        copy_language_files(rootfs, f"{staging}/langfs")
+        run_language_scan(f"{staging}/langfs", staged_report)
+        os_replace(staged_report, f"{CVE_DIR}/cve-bin-tool-lang-summary.json")
 
 
 if __name__ == "__main__":

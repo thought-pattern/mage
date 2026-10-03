@@ -1,7 +1,13 @@
 """Utilities for link prediction util."""
 
-from collections import defaultdict
+from functools import partial as functools_partial
+from os import fdopen as os_fdopen
+from os import fsync as os_fsync
+from os import path as os_path
+from os import replace as os_replace
+from os import unlink as os_unlink
 from random import seed as random_seed
+from tempfile import mkstemp
 
 from dgl import dataloading as dgl_dataloading
 from dgl import graph as dgl_graph
@@ -9,7 +15,6 @@ from dgl import heterograph as dgl_heterograph
 from numpy import arange as np_arange
 from numpy import random as np_random
 from sklearn.metrics import (
-    accuracy_score,
     confusion_matrix,
     f1_score,
     precision_score,
@@ -28,6 +33,8 @@ from torch import ones as torch_ones
 from torch import optim as torch_optim
 from torch import save as torch_save
 from torch import sigmoid as torch_sigmoid
+from torch import tensor as torch_tensor
+from torch import unique as torch_unique
 from torch import zeros as torch_zeros
 
 from mage.link_prediction.constants import (
@@ -156,63 +163,102 @@ def classify(probs: torch_Tensor, threshold: float) -> torch_Tensor:
     return computed_return_value
 
 
-def evaluate(
-    metrics: list[str],
-    labels: torch_Tensor,
-    probs: torch_Tensor,
-    result: dict[str, float],
-    threshold: float,
-    epoch: int,
-    loss: float,
-    operator,
-) -> bool:
-    """Returns all metrics specified in metrics list based on labels and predicted classes. In-place modification of dictionary.
+def accumulate_batch(statistics: dict, labels: torch_Tensor, probs: torch_Tensor, loss_value: float) -> bool:
+    """Adds one batch to an epoch's sufficient statistics: its labels, its probabilities and its example-weighted
+    loss. Metrics are derived once per epoch from these (epoch_metrics), so counts are totals and rates are global
+    rather than means of per-batch values.
 
     Args:
-        metrics (List[str]): List of string metrics.
-        labels (torch.tensor): Predefined labels.
-        probs (torch.tensor): Probabilities of src_nodes = blocks[0].srcdata[dgl.NID]
-    dst_nodes = blocks[0].dstdata[dgl.NID]
-    Returns:
-        Dict[str, float]: Metrics embedded in dictionary -> name-value shape
+        statistics (dict): The epoch's statistics; an empty dict starts a new epoch.
+        labels (torch.tensor): True labels of the batch (1 positive, 0 negative).
+        probs (torch.tensor): Predicted probabilities of the batch.
+        loss_value (float): Mean loss of the batch.
     """
-    labels = labels.detach().cpu()
-    probs = probs.detach().cpu()
-    classes = classify(probs, threshold)
-    result[Metrics.EPOCH] = epoch
-    result[Metrics.LOSS] = operator(result.get(Metrics.LOSS, False), loss)
-    tn, fp, fn, tp = confusion_matrix(labels, classes).ravel()
+    batch_labels = statistics.get("labels", [])
+    batch_labels.append(labels.detach().cpu())
+    statistics["labels"] = batch_labels
+    batch_probs = statistics.get("probs", [])
+    batch_probs.append(probs.detach().cpu())
+    statistics["probs"] = batch_probs
+    statistics["loss_sum"] = statistics.get("loss_sum", 0.0) + loss_value * labels.shape[0]
+    return False
+
+
+def epoch_metrics(metrics: list[str], statistics: dict, threshold: float, epoch: int) -> dict[str, float]:
+    """Returns the epoch number, the example-weighted loss and every requested metric, derived from the whole epoch.
+
+    The confusion matrix always has both binary classes, so batches or epochs with a single class (for example no
+    sampled negatives) are counted rather than rejected. Precision, recall and F1 are 0.0 when their denominator is
+    zero. AUC is undefined unless the epoch has both classes; it is then reported as NaN.
+
+    Args:
+        metrics (List[str]): Requested metric names.
+        statistics (dict): Non-empty statistics built by accumulate_batch.
+        threshold (float): Probability above which an example is classified positive.
+        epoch (int): Epoch number.
+
+    Returns:
+        Dict[str, float]: Metric name to value; rates rounded to three decimals, counts exact.
+    """
+    labels = torch_cat(statistics.get("labels", [])).numpy().astype(int)
+    probs = torch_cat(statistics.get("probs", [])).numpy()
+    classes = classify(probs, threshold).astype(int)
+    example_count = labels.shape[0]
+    tn, fp, fn, tp = (int(count) for count in confusion_matrix(labels, classes, labels=[0, 1]).ravel())
+    positive_predictions = int(classes.sum())
+    positive_examples = int(labels.sum())
+
+    result = {Metrics.EPOCH: epoch, Metrics.LOSS: round(statistics.get("loss_sum", 0.0) / example_count, 3)}
     for metric_name in metrics:
         if metric_name == Metrics.ACCURACY:
-            result[Metrics.ACCURACY] = operator(result.get(Metrics.ACCURACY, False), accuracy_score(labels, classes))
+            result[Metrics.ACCURACY] = round((tp + tn) / example_count, 3)
         elif metric_name == Metrics.AUC_SCORE:
-            result[Metrics.AUC_SCORE] = operator(
-                result.get(Metrics.AUC_SCORE, False),
-                roc_auc_score(labels, probs.detach()),
-            )
+            both_classes = 0 < positive_examples < example_count
+            result[Metrics.AUC_SCORE] = round(float(roc_auc_score(labels, probs)), 3) if both_classes else float("nan")
         elif metric_name == Metrics.F1:
-            result[Metrics.F1] = operator(result.get(Metrics.F1, False), f1_score(labels, classes))
+            result[Metrics.F1] = round(float(f1_score(labels, classes, zero_division=0.0)), 3)
         elif metric_name == Metrics.PRECISION:
-            result[Metrics.PRECISION] = operator(result.get(Metrics.PRECISION, False), precision_score(labels, classes))
+            result[Metrics.PRECISION] = round(float(precision_score(labels, classes, zero_division=0.0)), 3)
         elif metric_name == Metrics.RECALL:
-            result[Metrics.RECALL] = operator(result.get(Metrics.RECALL, False), recall_score(labels, classes))
+            result[Metrics.RECALL] = round(float(recall_score(labels, classes, zero_division=0.0)), 3)
         elif metric_name == Metrics.POS_PRED_EXAMPLES:
-            result[Metrics.POS_PRED_EXAMPLES] = operator(result.get(Metrics.POS_PRED_EXAMPLES, False), classes.sum().item())
+            result[Metrics.POS_PRED_EXAMPLES] = positive_predictions
         elif metric_name == Metrics.NEG_PRED_EXAMPLES:
-            result[Metrics.NEG_PRED_EXAMPLES] = operator(result.get(Metrics.NEG_PRED_EXAMPLES, False), classes.sum().item())
+            result[Metrics.NEG_PRED_EXAMPLES] = example_count - positive_predictions
         elif metric_name == Metrics.POS_EXAMPLES:
-            result[Metrics.POS_EXAMPLES] = operator(result.get(Metrics.POS_EXAMPLES, False), (labels == 1).sum().item())
+            result[Metrics.POS_EXAMPLES] = positive_examples
         elif metric_name == Metrics.NEG_EXAMPLES:
-            result[Metrics.NEG_EXAMPLES] = operator(result.get(Metrics.NEG_EXAMPLES, False), (labels == 0).sum().item())
+            result[Metrics.NEG_EXAMPLES] = example_count - positive_examples
         elif metric_name == Metrics.TRUE_POSITIVES:
-            result[Metrics.TRUE_POSITIVES] = operator(result.get(Metrics.TRUE_POSITIVES, False), tp)
+            result[Metrics.TRUE_POSITIVES] = tp
         elif metric_name == Metrics.FALSE_POSITIVES:
-            result[Metrics.FALSE_POSITIVES] = operator(result.get(Metrics.FALSE_POSITIVES, False), fp)
+            result[Metrics.FALSE_POSITIVES] = fp
         elif metric_name == Metrics.TRUE_NEGATIVES:
-            result[Metrics.TRUE_NEGATIVES] = operator(result.get(Metrics.TRUE_NEGATIVES, False), tn)
+            result[Metrics.TRUE_NEGATIVES] = tn
         elif metric_name == Metrics.FALSE_NEGATIVES:
-            result[Metrics.FALSE_NEGATIVES] = operator(result.get(Metrics.FALSE_NEGATIVES, False), fn)
-    return False
+            result[Metrics.FALSE_NEGATIVES] = fn
+    return result
+
+
+def exclude_held_out(target_etypes: list, held_out_ids: torch_Tensor, seed_edges: dict) -> dict:
+    """DGL exclusion rule for one minibatch: the edges kept out of message passing. These are every held-out
+    (validation) binding of the target relation plus the minibatch's own supervision edges, each together with its
+    reverse edge, so neither the batch's targets nor validation topology inform the embeddings being trained or
+    evaluated.
+
+    Args:
+        target_etypes (list): The canonical target relation, followed by its reverse relation when the graph has one;
+            edge i of the reverse relation is the reverse of edge i of the target relation.
+        held_out_ids (torch.Tensor): Target-relation edge IDs whose (source, destination) binding is held out.
+        seed_edges (dict): The minibatch's supervision edges by canonical edge type.
+
+    Returns:
+        dict: Edge IDs to exclude by canonical edge type.
+    """
+    batch_ids = seed_edges.get(target_etypes[0], held_out_ids[:0])
+    excluded_ids = torch_unique(torch_cat([held_out_ids.to(batch_ids.device), batch_ids]))
+    excluded = {etype: excluded_ids for etype in target_etypes}
+    return excluded
 
 
 def batch_forward_pass(
@@ -285,6 +331,7 @@ def inner_train(
     batch_size: int,
     sampling_workers: int,
     device: torch_device,
+    checkpoint_manifest: dict,
 ) -> tuple[list[dict[str, float]], list[dict[str, float]]]:
     (
         "Batch training method.\n\n    Args:\n        graph (dgl.graph): A reference to the original gra"  # Continue literal.
@@ -310,7 +357,9 @@ def inner_train(
         "\n        num_layers (int): Number of layers in the GNN architecture.\n        batch_size (int"  # Continue literal.
         "): Batch size used in both training and validation procedure.\n        sampling_workers (int)"  # Continue literal.
         ": Number of workers that will cooperate in the sampling procedure in the training and valida"  # Continue literal.
-        "tion.\n        device (torch.device): cpu or cuda\n    Returns:\n        Tuple[List[Dict[str, f"  # Continue literal.
+        "tion.\n        device (torch.device): cpu or cuda\n        checkpoint_manifest (dict): Architecture"  # Continue literal.
+        " and graph contract saved with every checkpoint so it can be rebuilt.\n    Returns:\n"  # Continue literal.
+        "        Tuple[List[Dict[str, f"  # Continue literal.
         "loat]], torch.nn.Module, torch.Tensor]: Training and validation results. _\n"
     )
     # Define what will be returned
@@ -324,20 +373,30 @@ def inner_train(
 
     # Create reverse target relation
     reverse_target_relation = reverse_relation(target_relation)
-    if reverse_target_relation not in graph.etypes and reverse_target_relation not in graph.canonical_etypes:
-        # same source and destination node
-        sampler = dgl_dataloading.as_edge_prediction_sampler(sampler, negative_sampler=negative_sampler, exclude="self")
-    else:
-        reverse_etypes = {
-            target_relation: reverse_target_relation,
-            reverse_target_relation: target_relation,
-        }
-        sampler = dgl_dataloading.as_edge_prediction_sampler(
-            sampler,
-            negative_sampler=negative_sampler,
-            exclude="reverse_types",
-            reverse_etypes=reverse_etypes,
-        )
+    target_etypes = [graph.to_canonical_etype(target_relation)]
+    if reverse_target_relation in graph.etypes or reverse_target_relation in graph.canonical_etypes:
+        target_etypes.append(graph.to_canonical_etype(reverse_target_relation))
+
+    # Held-out bindings: every target edge whose (source, destination) pair is a validation edge, parallel edges
+    # included. They and their reverses stay out of the message graph for training and validation alike, while the
+    # validation edge IDs remain the supervision set of the validation loader.
+    edge_sources, edge_destinations = graph.edges(etype=target_etypes[0])
+    validation_ids = val_eid_dict.get(target_relation, torch_zeros(0, dtype=edge_sources.dtype))
+    held_out_bindings = set(zip(edge_sources[validation_ids].tolist(), edge_destinations[validation_ids].tolist()))
+    held_out_ids = torch_tensor(
+        [
+            edge_id
+            for edge_id, binding in enumerate(zip(edge_sources.tolist(), edge_destinations.tolist()))
+            if binding in held_out_bindings
+        ],
+        dtype=edge_sources.dtype,
+        device=edge_sources.device,
+    )
+    sampler = dgl_dataloading.as_edge_prediction_sampler(
+        sampler,
+        negative_sampler=negative_sampler,
+        exclude=functools_partial(exclude_held_out, target_etypes, held_out_ids),
+    )
 
     # Define training and validation dictionaries
     # For heterogeneous full neighbor sampling we need to define a dictionary of edge types and edge ID tensors instead of a
@@ -373,19 +432,6 @@ def inner_train(
 
     loss = torch_nn.BCELoss()
 
-    # Define lambda functions for operating on dictionaries
-    def add_(prior: float, later: float) -> float:
-        computed_return_value = prior + later
-        return computed_return_value
-
-    def avg_(prior: float, size: float) -> float:
-        computed_return_value = prior / size
-        return computed_return_value
-
-    def format_float(prior: float) -> float:
-        computed_return_value = round(prior, 3)
-        return computed_return_value
-
     # Training
     max_val_acc, num_val_acc_drop = (
         -1.0,
@@ -394,12 +440,11 @@ def inner_train(
 
     for epoch in range(1, num_epochs + 1):
         # Evaluation epoch
-        if epoch % console_log_freq == 0:
-            epoch_training_result = defaultdict(float)
-            epoch_validation_result = defaultdict(float)
+        training_statistics = {}
+        validation_statistics = {}
         # Training batch
-        num_batches = 0
         model.train()
+        predictor.train()
         tr_finished = False
         for _, pos_graph, neg_graph, blocks in train_dataloader:
             input_features = blocks[0].ndata[node_features_property]
@@ -423,32 +468,18 @@ def inner_train(
             optimizer.step()
             # Evaluate on training set
             if epoch % console_log_freq == 0:
-                evaluate(
-                    metrics,
-                    labels,
-                    probs,
-                    epoch_training_result,
-                    threshold,
-                    epoch,
-                    loss_output.item(),
-                    add_,
-                )
-            # Increment num batches
-            num_batches += 1
+                accumulate_batch(training_statistics, labels, probs, loss_output.item())
         # Edit train results and evaluate on validation set
-        if epoch % console_log_freq == 0:
-            epoch_training_result = {
-                key: format_float(avg_(val, num_batches)) if key != Metrics.EPOCH else val
-                for key, val in epoch_training_result.items()
-            }
+        if epoch % console_log_freq == 0 and training_statistics:
+            epoch_training_result = epoch_metrics(metrics, training_statistics, threshold, epoch)
             training_results.append(epoch_training_result)
             # Check if training finished
             if Metrics.ACCURACY in metrics and epoch_training_result.get(Metrics.ACCURACY, 0.0) == 1.0 and epoch > 1:
                 tr_finished = True
             # Evaluate on the validation set
             model.eval()
+            predictor.eval()
             with torch_no_grad():
-                num_batches = 0
                 for _, pos_graph, neg_graph, blocks in validation_dataloader:
                     input_features = blocks[0].ndata[node_features_property]
                     # Perform forward pass
@@ -465,24 +496,10 @@ def inner_train(
                         num_neg_per_pos_edge,  # TODO: remove
                         device,
                     )
-                    # Add to the epoch_validation_result for saving
-                    evaluate(
-                        metrics,
-                        labels,
-                        probs,
-                        epoch_validation_result,
-                        threshold,
-                        epoch,
-                        loss_output.item(),
-                        add_,
-                    )
-                    num_batches += 1
-            if num_batches > 0:  # Because it is possible that user specified not to have a validation dataset
-                # Average over batches
-                epoch_validation_result = {
-                    key: format_float(avg_(val, num_batches)) if key != Metrics.EPOCH else val
-                    for key, val in epoch_validation_result.items()
-                }
+                    # Add to the epoch's validation statistics
+                    accumulate_batch(validation_statistics, labels, probs, loss_output.item())
+            if validation_statistics:  # Because it is possible that user specified not to have a validation dataset
+                epoch_validation_result = epoch_metrics(metrics, validation_statistics, threshold, epoch)
                 validation_results.append(epoch_validation_result)
                 if (
                     Metrics.ACCURACY in metrics
@@ -499,58 +516,95 @@ def inner_train(
 
         # Save the model if necessary
         if epoch % checkpoint_freq == 0:
-            save_context(model, predictor, context_save_dir)
+            save_context(model, predictor, checkpoint_manifest, context_save_dir)
         # All examples learnt
         if tr_finished:
             break
 
     # Save model at the end of the training
-    save_context(model, predictor, context_save_dir)
+    save_context(model, predictor, checkpoint_manifest, context_save_dir)
 
     return training_results, validation_results
 
 
-def save_context(model: torch_nn.Module, predictor: torch_nn.Module, context_save_dir: str):
-    """Saves model and predictor to path.
+def save_context(model: torch_nn.Module, predictor: torch_nn.Module, checkpoint_manifest: dict, context_save_dir: str):
+    """Publishes one checkpoint bundle: the model and predictor tensor state dictionaries plus the manifest needed to
+    rebuild them. The bundle holds only tensors and plain values, so it loads under torch.load(weights_only=True). It is
+    written beside its destination, flushed, then renamed over it, so readers see the previous or the new generation.
 
     Args:
-        context_save_dir: str -> Path where the model and predictor will be saved every checkpoint_freq epochs.
         model (torch.nn.Module): A reference to the model.
         predictor (torch.nn.Module): A reference to the predictor.
+        checkpoint_manifest (dict): Architecture and graph contract of model and predictor.
+        context_save_dir: str -> Path where the checkpoint will be saved every checkpoint_freq epochs.
     """
-    torch_save(model, context_save_dir + Context.MODEL_NAME)
-    torch_save(predictor, context_save_dir + Context.PREDICTOR_NAME)
+    checkpoint_path = context_save_dir + Context.CHECKPOINT_NAME
+    bundle = {
+        "manifest": checkpoint_manifest,
+        "model": model.state_dict(),
+        "predictor": predictor.state_dict(),
+    }
+    staging_descriptor, staging_path = mkstemp(dir=os_path.dirname(checkpoint_path) or ".", suffix=".staging")
+    try:
+        with os_fdopen(staging_descriptor, "wb") as staging_file:
+            torch_save(bundle, staging_file)
+            staging_file.flush()
+            os_fsync(staging_file.fileno())
+        os_replace(staging_path, checkpoint_path)
+    except BaseException:
+        os_unlink(staging_path)
+        raise
     return False
 
 
-def inner_predict(
-    model,
-    predictor,
-    graph,
-    node_features_property: str,
-    src_node: int,
-    dest_node: int,
-    src_type: str = "",
-    dest_type: str = "",
-) -> float:
-    (
-        "Predicts edge scores for given graph. This method is called to obtain edge probability for e"  # Continue literal.
-        "dge with id=edge_id.\n\n    Args:\n        model (torch.nn.Module): A reference to the trained "  # Continue literal.
-        "model.\n        predictor (torch.nn.Module): A reference to the predictor.\n        graph (dgl"  # Continue literal.
-        ".graph): A reference to the graph. This is semi-inductive setting so new nodes are appended "  # Continue literal.
-        "to the original graph(train+validation).\n        node_features_property (str): Property name"  # Continue literal.
-        " of the features.\n        src_node (int): Source node of the edge.\n        dest_node (int): "  # Continue literal.
-        "Destination node of the edge.\n        src_type (str): Type of the source node.\n        dest_"  # Continue literal.
-        "type (str): Type of the destination node.\n\n    Returns:\n        float: Edge score.\n"
-    )
+def compute_node_embeddings(model, graph, node_features_property: str) -> dict[str, torch_Tensor]:
+    """Computes every node's embedding once on the given message graph; any number of pairs can then be scored.
+
+    Args:
+        model (torch.nn.Module): A reference to the trained model.
+        graph (dgl.graph): Message graph. This is semi-inductive setting so new nodes are appended to the original graph.
+        node_features_property (str): Property name of the features.
+
+    Returns:
+        Dict[str, torch.Tensor]: Embeddings for every node type.
+    """
     graph_features = {
         node_type: graph.nodes[node_type].data.get(node_features_property, torch_zeros((0, 0))) for node_type in graph.ntypes
     }
+    # Inference always runs in evaluation mode: training may end in training mode and a freshly built model starts
+    # in it, and dropout must not make prediction scores stochastic. The published model is used only for inference.
+    model.eval()
     with torch_no_grad():
-        h = model.online_forward(graph, graph_features)
-        src_embedding, dest_embedding = h[src_type][src_node], h[dest_type][dest_node]
+        embeddings = model.online_forward(graph, graph_features)
+    return embeddings
+
+
+def score_pair(
+    predictor,
+    embeddings: dict[str, torch_Tensor],
+    src_node: int,
+    dest_node: int,
+    src_type: str,
+    dest_type: str,
+) -> float:
+    """Edge probability for one source/destination pair from precomputed embeddings.
+
+    Args:
+        predictor (torch.nn.Module): A reference to the predictor.
+        embeddings (Dict[str, torch.Tensor]): Embeddings from compute_node_embeddings.
+        src_node (int): Source node of the edge.
+        dest_node (int): Destination node of the edge.
+        src_type (str): Type of the source node.
+        dest_type (str): Type of the destination node.
+
+    Returns:
+        float: Edge probability.
+    """
+    predictor.eval()
+    with torch_no_grad():
+        src_embedding = embeddings.get(src_type, torch_zeros((0, 0)))[src_node]
+        dest_embedding = embeddings.get(dest_type, torch_zeros((0, 0)))[dest_node]
         score = predictor.forward_pred(src_embedding, dest_embedding)
         prob = torch_sigmoid(score)
-        computed_return_value = prob.item()
-        return computed_return_value
-    return 0.0
+    computed_return_value = prob.item()
+    return computed_return_value

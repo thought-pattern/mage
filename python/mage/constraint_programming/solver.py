@@ -2,7 +2,6 @@
 
 from abc import ABC as abc_ABC
 from abc import abstractmethod as abc_abstractmethod
-from random import shuffle as random_shuffle
 from sys import stderr as sys_stderr
 from sys import version as sys_version
 
@@ -117,7 +116,9 @@ class GekkoMPSolver(MatchingProblemSolver):
 
 class GreedyMPSolver(MatchingProblemSolver):
     """
-    Solver of set cover with greedy method
+    Solver of set cover with the classic greedy method: repeatedly pick the set covering the most still-uncovered
+    elements. This is a heuristic with the H(n) <= ln(n) + 1 approximation bound (n = largest set size), not an exact
+    minimum; GekkoMPSolver is the exact solver.
     """
 
     def solve(self, matching_problem: GreedyMatchingProblem):
@@ -127,19 +128,25 @@ class GreedyMPSolver(MatchingProblemSolver):
         :return: set indices
         """
 
-        universe = matching_problem.elements
+        uncovered = set(matching_problem.elements)
+        # Sorted candidates make ties explicit and deterministic: among equally useful sets the lowest id is taken.
+        candidate_sets = sorted(matching_problem.containing_sets)
 
-        possible_sets = list(matching_problem.containing_sets)
-        random_shuffle(possible_sets)
+        picked_sets = []
+        while uncovered and candidate_sets:
+            picked_set = max(
+                candidate_sets,
+                key=lambda candidate: len(uncovered & matching_problem.elements_by_sets.get(candidate, set())),
+            )
+            newly_covered = uncovered & matching_problem.elements_by_sets.get(picked_set, set())
+            if not newly_covered:
+                break
 
-        picked_sets = list()
-        covered_universe = set()
-
-        while len(universe) != len(covered_universe):
-            picked_set = possible_sets[0]
             picked_sets.append(picked_set)
-            possible_sets = possible_sets[1:]
+            candidate_sets.remove(picked_set)
+            uncovered -= newly_covered
 
-            covered_universe |= matching_problem.elements_by_sets[picked_set]
+        if uncovered:
+            raise ValueError(f"elements {sorted(uncovered)!r} are not contained by any set")
 
         return picked_sets

@@ -143,6 +143,10 @@ class UnhashableProperties(collections_abc.Mapping):
         self.internal_properties = properties
 
     def __getitem__(self, key):
+        # Mapping protocol: a missing property raises KeyError, so callers'
+        # explicit defaults such as NetworkX's get("weight", 1) apply.
+        if key not in self.internal_properties:
+            raise KeyError(key)
         computed_return_value = self.internal_properties.get(key, "")
         return computed_return_value
 
@@ -239,18 +243,18 @@ class MemgraphDiGraphBase:
         ]:
             setattr(self, f, lambda *args, **kwargs: self.internal_error())
 
-        parent_init = getattr(super(), "__init__", False)
-        if not callable(parent_init):
-            raise TypeError("NetworkX graph parent must provide initialization")
-        parent_init(incoming_graph_data=False, **kwargs)
+        # NetworkX converts any incoming data other than its None default, so
+        # the absent data is omitted rather than passed as a false value.
+        super().__init__(**kwargs)
 
         # NOTE: This is a necessary hack because NetworkX assumes that the
         # customizable factory functions will only ever return *empty*
         # dictionaries. In our case, the factory functions return our custom,
-        # already populated, dictionaries. Because self._pred and self._end are
+        # already populated, dictionaries. Because self._pred and self._succ are
         # initialized by the same factory function, they end up storing the
         # same adjacency lists which is not good. We correct that here.
-        self.internal_pred = MemgraphAdjlistOuterDict(ctx, succ=False, multi=multi)
+        # `_pred` is NetworkX's own predecessor attribute name.
+        self._pred = MemgraphAdjlistOuterDict(ctx, succ=False, multi=multi)
 
     def internal_error(self):
         raise RuntimeError("Modification operations are not supported")
@@ -279,7 +283,7 @@ def MemgraphGraph(incoming_graph_data=False, ctx=False, **kwargs):
 
 
 class PropertiesDictionary(collections_abc.Mapping):
-    __slots__ = ("_ctx", "_len", "_prop")
+    __slots__ = ("internal_ctx", "internal_len", "internal_prop")
 
     def __init__(self, ctx, prop):
         self.internal_ctx = ctx
@@ -288,14 +292,9 @@ class PropertiesDictionary(collections_abc.Mapping):
 
     def __getitem__(self, vertex):
         if vertex not in self:
-            raise KeyError
-        try:
-            computed_return_value = vertex.properties.get(self.internal_prop, "")
-            return computed_return_value
-        except KeyError as caught_error_287:
-            raise KeyError(
-                ("{} doesn\t have the required " + "property '{}'").format(vertex, self.internal_prop)
-            ) from caught_error_287
+            raise KeyError(f"{vertex} doesn't have the required property '{self.internal_prop}'")
+        computed_return_value = vertex.properties.get(self.internal_prop, "")
+        return computed_return_value
 
     def __iter__(self):
         for v in self.internal_ctx.graph.vertices:

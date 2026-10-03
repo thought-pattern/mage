@@ -79,7 +79,9 @@ def calculate_node_embeddings(
 
 def get_graph_memgraph_ctx(ctx: mgp_ProcCtx, edge_weight_property: str, is_directed: bool = False) -> Graph:
     edges_weights = {}
+    vertex_ids = []
     for vertex in ctx.graph.vertices:
+        vertex_ids.append(vertex.id)
         for edge in vertex.out_edges:
             edge_weight = float(edge.properties.get(edge_weight_property, default=1))
             old_value = 0
@@ -87,7 +89,7 @@ def get_graph_memgraph_ctx(ctx: mgp_ProcCtx, edge_weight_property: str, is_direc
                 old_value = edges_weights.get((edge.from_vertex.id, edge.to_vertex.id), "")
             edges_weights[(edge.from_vertex.id, edge.to_vertex.id)] = old_value + edge_weight
 
-    graph: Graph = GraphHolder(edges_weights, is_directed)
+    graph: Graph = GraphHolder(edges_weights, is_directed, vertex_ids)
     return graph
 
 

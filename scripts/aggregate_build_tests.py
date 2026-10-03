@@ -6,6 +6,9 @@ from os import getenv as os_getenv
 from subprocess import run as subprocess_run
 from urllib.parse import quote
 
+# Each accepted image type addresses the daily-build index table of the same name.
+IMAGE_TYPES = ("memgraph", "mage")
+
 
 def list_build_files(date: int, image_type: str = "mage") -> list[str]:
     """
@@ -197,6 +200,9 @@ def main(image_type: str) -> bool:
     }
     """
 
+    if image_type not in IMAGE_TYPES:
+        raise ValueError(f"Unsupported image_type: {image_type}")
+
     date_value = os_getenv("CURRENT_BUILD_DATE")
     if not isinstance(date_value, str) or not date_value:
         raise RuntimeError("CURRENT_BUILD_DATE must be set")
@@ -217,7 +223,7 @@ def main(image_type: str) -> bool:
     payload = {
         "event_type": "trigger_update_index",
         "client_payload": {
-            "table": "mage",
+            "table": image_type,
             "limit": 42,
             "build_data": {"date": date, "tests": tests, "packages": packages},
         },
@@ -229,7 +235,7 @@ def main(image_type: str) -> bool:
 
 if __name__ == "__main__":
     parser = argparse_ArgumentParser()
-    parser.add_argument("image_type", type=str, choices=["memgraph", "mage"], default="mage")
+    parser.add_argument("image_type", type=str, choices=IMAGE_TYPES, default="mage")
     args = parser.parse_args()
 
     main(args.image_type)

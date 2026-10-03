@@ -1,9 +1,11 @@
 """Utilities for travelling salesman."""
 
+from itertools import combinations as itertools_combinations
 from sys import stderr as sys_stderr
 from sys import version as sys_version
 
 from numpy import ndarray as np_ndarray
+from numpy import shape as np_shape
 from numpy import zeros as np_zeros
 
 from mage.geography import calculate_distance_between_points
@@ -13,6 +15,7 @@ try:
     from networkx import MultiGraph as nx_MultiGraph
     from networkx import dfs_preorder_nodes as nx_dfs_preorder_nodes
     from networkx import eulerian_path as nx_eulerian_path
+    from networkx import max_weight_matching as nx_max_weight_matching
     from networkx import minimum_spanning_tree as nx_minimum_spanning_tree
 except ImportError as import_error:
     sys_stderr.write(f"NOTE: Please install networkx to be able touse graph_analyzer module. Using Python: {sys_version}")
@@ -45,6 +48,11 @@ def solve_2_approx(dm: np_ndarray):
     :return: List of indices - path between them (based on distance matrix indexes)
     """
 
+    point_count = tour_point_count(dm)
+    if point_count < 2:
+        path = list(range(point_count))
+        return path
+
     mst = get_mst(dm)
     path = [x for x in nx_dfs_preorder_nodes(mst)]
     path.append(path[0])
@@ -54,14 +62,20 @@ def solve_2_approx(dm: np_ndarray):
 
 def solve_1_5_approx(dm: np_ndarray):
     """
-    Solves the tsp_module problem with 1.5-approximation (Christofides algorithm).
+    Solves the tsp_module problem with 1.5-approximation (Christofides algorithm). The bound holds for metric
+    distances, which the geographic distance matrix is.
     :param distance_matrix: Distance matrix.
     :return: List of indices - path between them (based on distance matrix indexes)
     """
 
+    point_count = tour_point_count(dm)
+    if point_count < 2:
+        path = list(range(point_count))
+        return path
+
     mst = get_mst(dm)
-    odd_matchings = [x[0] for x in filter(lambda x: x[1] % 2 == 1, mst.degree)]
-    matches = get_perfect_matchings(odd_matchings)
+    odd_vertices = [vertex for vertex, degree in mst.degree if degree % 2 == 1]
+    matches = get_minimum_weight_perfect_matching(odd_vertices, dm)
 
     all_edges = list(mst.edges)
     all_edges.extend(matches)
@@ -78,6 +92,11 @@ def solve_greedy(dm: np_ndarray):
     :param distance_matrix: Distance matrix.
     :return: List of indices - path between them (based on distance matrix indexes)
     """
+
+    point_count = tour_point_count(dm)
+    if point_count < 2:
+        path = list(range(point_count))
+        return path
 
     path = []
     visited_vert = dict()
@@ -100,6 +119,23 @@ def solve_greedy(dm: np_ndarray):
     path.append(0)
 
     return path
+
+
+def tour_point_count(dm: np_ndarray) -> int:
+    """
+    Admits a distance matrix at the solver boundary and returns its point count. Every solver returns a closed tour
+    (first index repeated at the end) for two or more points; fewer points have no edge to travel, so the empty
+    collection has the empty tour and a single point is the one-index tour [0].
+    :param dm: Distance matrix.
+    :return: Number of points
+    """
+
+    matrix_shape = np_shape(dm)
+    if len(matrix_shape) != 2 or matrix_shape[0] != matrix_shape[1]:
+        raise ValueError(f"TSP distance matrix must be square, received shape {matrix_shape}")
+
+    point_count = matrix_shape[0]
+    return point_count
 
 
 def get_hamiltonian_circuit(euler_circuit):
@@ -135,15 +171,26 @@ def get_euler_circuit(tum_edges):
     return path
 
 
-def get_perfect_matchings(odd_matchings):
+def get_minimum_weight_perfect_matching(odd_vertices: list[int], dm: np_ndarray):
     """
-    Dummy perfect matchings method which takes every 2 vertexes and combines them to an edge
-    #TODO, real perfect matchings with minimum cost
-    :param odd_matchings: List of vertexes with odd degree
+    Minimum-cost perfect matching of the spanning tree's odd-degree vertices, which the Christofides bound requires.
+    A maximum-cardinality matching of the complete graph on an even vertex count is perfect, so maximising
+    (heaviest + 1 - distance) among those matchings minimises their total distance; the offset keeps every weight
+    positive. The transform is stated here instead of using networkx.min_weight_matching, whose objective differs
+    between the pinned 2.8 release (reciprocal weights) and 3.x.
+    :param odd_vertices: Vertices with odd degree in the minimum spanning tree (always an even count)
+    :param dm: Distance matrix
     :return: List of matched edges
     """
 
-    matched_edges = [(odd_matchings[i], odd_matchings[i + 1]) for i in range(0, len(odd_matchings), 2)]
+    vertex_pairs = list(itertools_combinations(odd_vertices, 2))
+    heaviest = max((dm[u][v] for u, v in vertex_pairs), default=0.0)
+
+    matching_graph = nx_Graph()
+    for u, v in vertex_pairs:
+        matching_graph.add_edge(u, v, weight=heaviest + 1.0 - dm[u][v])
+
+    matched_edges = list(nx_max_weight_matching(matching_graph, maxcardinality=True))
 
     return matched_edges
 

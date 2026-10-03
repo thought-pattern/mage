@@ -10,18 +10,23 @@ This script:
 4. Compares results with tolerance
 5. Validates node identity mapping is correct
 
+Each run owns exactly one container (named MEMGRAPH_CONTAINER plus a run identifier and labelled with
+that identifier), a fresh data directory, and the loopback Bolt port Docker assigns to that container. It
+never stops, removes, or clears any other container, directory, or database, and releases its own
+container and then its data directory on every exit unless MEMGRAPH_RETAIN asks to keep them.
+
 Usage:
-    # Using default settings (creates temp data dir)
+    # Using default settings (data directory under the system temp directory)
     python validate_cugraph_algorithms.py
 
     # Using custom settings via environment variables
-    MEMGRAPH_DATA_DIR=/path/to/data MEMGRAPH_IMAGE=my-image:tag python validate_cugraph_algorithms.py
+    MEMGRAPH_DATA_DIR=/path/to/parent MEMGRAPH_IMAGE=my-image:tag python validate_cugraph_algorithms.py
 
 Environment Variables:
-    MEMGRAPH_URI         - Bolt URI (default: bolt://localhost:7687)
-    MEMGRAPH_DATA_DIR    - Data directory (default: creates temp dir)
+    MEMGRAPH_DATA_DIR    - Parent of the run's data directory (default: system temp directory)
     MEMGRAPH_IMAGE       - Docker image name (default: memgraph-mage-cugraph:latest)
-    MEMGRAPH_CONTAINER   - Container name (default: memgraph-cugraph-validation)
+    MEMGRAPH_CONTAINER   - Container name prefix (default: memgraph-cugraph-validation)
+    MEMGRAPH_RETAIN      - "true" keeps the run's container and data directory for inspection
 """
 
 from os import environ as os_environ
@@ -34,6 +39,7 @@ from subprocess import run as subprocess_run
 from sys import exit as sys_exit
 from tempfile import mkdtemp as tempfile_mkdtemp
 from time import sleep as time_sleep
+from uuid import uuid4 as uuid_uuid4
 
 from neo4j import GraphDatabase
 from networkx import DiGraph as nx_DiGraph
@@ -45,22 +51,18 @@ from networkx import katz_centrality as nx_katz_centrality
 from networkx import pagerank as nx_pagerank
 
 # Configuration via environment variables with sensible defaults
-MEMGRAPH_URI = os_environ.get("MEMGRAPH_URI", "bolt://localhost:7687")
 MEMGRAPH_USER = os_environ.get("MEMGRAPH_USER", "")
 MEMGRAPH_PASSWORD = os_environ.get("MEMGRAPH_PASSWORD", "")
 
 # Docker configuration
 CONTAINER_NAME = os_environ.get("MEMGRAPH_CONTAINER", "memgraph-cugraph-validation")
 IMAGE_NAME = os_environ.get("MEMGRAPH_IMAGE", "memgraph-mage-cugraph:latest")
+# Label whose value is the run identifier; release removes only containers carrying this run's value.
+OWNER_LABEL = "org.memgraph.mage.cugraph-validation.run"
 
-# Data directory - use temp dir if not specified
-default_data_dir = os_environ.get("MEMGRAPH_DATA_DIR", "")
-if default_data_dir:
-    MEMGRAPH_DATA_DIR = Path(default_data_dir)
-    using_temp_dir = False
-else:
-    MEMGRAPH_DATA_DIR = Path(tempfile_mkdtemp(prefix="memgraph_validation_"))
-    using_temp_dir = True
+# Parent directory for each run's own data directory
+DATA_PARENT_DIR = os_environ.get("MEMGRAPH_DATA_DIR", "")
+RETAIN_RESOURCES = os_environ.get("MEMGRAPH_RETAIN", "").lower() in ("1", "true", "yes")
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -69,10 +71,13 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 TOLERANCE = 0.05  # 5% relative tolerance
 ABS_TOLERANCE = 1e-6  # Absolute tolerance for near-zero values
 
-# Expected nodes in the test graph
-EXPECTED_NODES = {"A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4", "HUB"}
+# Authored node identities of the test graph (name -> id), shared by the NetworkX graph and the identity check
+EXPECTED_NODE_IDS = {"A1": 1, "A2": 2, "A3": 3, "A4": 4, "B1": 5, "B2": 6, "B3": 7, "B4": 8, "HUB": 9}
+EXPECTED_NODES = set(EXPECTED_NODE_IDS)
 COMMUNITY_A = {"A1", "A2", "A3", "A4"}
 COMMUNITY_B = {"B1", "B2", "B3", "B4"}
+# HUB bridges A1 and B1 symmetrically, so an accepted partition may place it with either community or alone.
+TIE_NODE = "HUB"
 
 
 def build_networkx_graph() -> nx_DiGraph:
@@ -80,17 +85,7 @@ def build_networkx_graph() -> nx_DiGraph:
     G = nx_DiGraph()
 
     # Add nodes with names
-    nodes = [
-        (1, {"name": "A1"}),
-        (2, {"name": "A2"}),
-        (3, {"name": "A3"}),
-        (4, {"name": "A4"}),
-        (5, {"name": "B1"}),
-        (6, {"name": "B2"}),
-        (7, {"name": "B3"}),
-        (8, {"name": "B4"}),
-        (9, {"name": "HUB"}),
-    ]
+    nodes = [(node_id, {"name": name}) for name, node_id in EXPECTED_NODE_IDS.items()]
     G.add_nodes_from(nodes)
 
     # Community 1 edges (A1-A4)
@@ -199,47 +194,26 @@ def values_match(expected: float, actual: float, name: str = "") -> tuple[bool, 
     return ()
 
 
-def communities_match(expected: dict[str, int], actual: dict[str, int]) -> tuple[bool, str]:
-    """Check if community assignments group the same nodes together."""
+def core_partition(assignment: dict) -> list[list[str]]:
+    """Group every node except the tie node by community, independent of community IDs."""
+    groups = {}
+    for name in sorted(EXPECTED_NODES - {TIE_NODE}):
+        groups.setdefault(assignment.get(name, ""), []).append(name)
+    computed_return_value = sorted(groups.values())
+    return computed_return_value
 
-    # Build sets of nodes in each community for both
-    def get_community_sets(comm_dict):
-        sets = {}
-        for node, comm_id in comm_dict.items():
-            if comm_id not in sets:
-                sets[comm_id] = set()
-            sets.get(comm_id, set()).add(node)
-        computed_return_value = list(sets.values())
-        return computed_return_value
 
-    expected_sets = get_community_sets(expected)
-    actual_sets = get_community_sets(actual)
-
-    # Check that each expected community appears in actual (order/IDs may differ)
-    for exp_set in expected_sets:
-        found = False
-        for act_set in actual_sets:
-            if exp_set == act_set:
-                found = True
-                break
-            # Also check if it's a subset (cuGraph might merge communities differently)
-            if exp_set.issubset(act_set) or act_set.issubset(exp_set):
-                found = True
-                break
-        if not found:
-            # Check if nodes are at least grouped together
-            first_node = next(iter(exp_set))
-            first_comm = actual.get(first_node, False)
-            if first_comm is not False:
-                all_same = all(actual.get(n, False) == first_comm for n in exp_set)
-                if all_same:
-                    found = True
-
-        if not found:
-            computed_return_value = False, f"Community {exp_set} not found in actual results"
-            return computed_return_value
-
-    return True, ""
+def partition_contract_errors(actual: dict, baseline: dict) -> list[str]:
+    """Require the NetworkX baseline partition, up to relabelling and the declared tie-node placement."""
+    errors = []
+    declared = sorted([sorted(COMMUNITY_A), sorted(COMMUNITY_B)])
+    baseline_groups = core_partition(baseline)
+    actual_groups = core_partition(actual)
+    if baseline_groups != declared:
+        errors.append(f"NetworkX baseline {baseline_groups} does not separate the authored communities {declared}")
+    if actual_groups != baseline_groups:
+        errors.append(f"Partition {actual_groups} differs from the NetworkX baseline {baseline_groups}")
+    return errors
 
 
 def run_cmd(cmd: list[str]) -> subprocess_CompletedProcess:
@@ -249,25 +223,22 @@ def run_cmd(cmd: list[str]) -> subprocess_CompletedProcess:
     return computed_return_value
 
 
-def setup_container():
-    """Stop old container and start fresh one with latest image."""
+def acquire_data_dir() -> Path:
+    """Create this run's empty Memgraph data directory."""
+    if DATA_PARENT_DIR:
+        Path(DATA_PARENT_DIR).mkdir(parents=True, exist_ok=True)
+        data_dir = Path(tempfile_mkdtemp(prefix="memgraph_validation_", dir=DATA_PARENT_DIR))
+    else:
+        data_dir = Path(tempfile_mkdtemp(prefix="memgraph_validation_"))
+    print(f"  Run data directory: {data_dir}")
+    return data_dir
+
+
+def setup_container(container_name: str, run_id: str, data_dir: Path) -> str:
+    """Start this run's container on its own data directory and return the Bolt URI Docker assigned it."""
     print("\n" + "=" * 60)
     print("CONTAINER SETUP")
     print("=" * 60)
-
-    print("\n>>> Killing all memgraph containers...")
-    result = run_cmd(["docker", "ps", "-a", "--format", "{{.Names}}"])
-    for container in result.stdout.strip().split("\n"):
-        if container and "memgraph" in container.lower():
-            print(f"  Stopping {container}...")
-            run_cmd(["docker", "rm", "-f", container])
-
-    print(f"\n>>> Clearing entire data directory at {MEMGRAPH_DATA_DIR}...")
-    if MEMGRAPH_DATA_DIR.exists():
-        shutil_rmtree(MEMGRAPH_DATA_DIR)
-        print("  Removed all old data")
-    MEMGRAPH_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    print("  Created fresh directory")
 
     print(f"\n>>> Checking image '{IMAGE_NAME}' exists...")
     result = run_cmd(["docker", "images", "-q", IMAGE_NAME])
@@ -275,31 +246,31 @@ def setup_container():
         print(f"ERROR: Image '{IMAGE_NAME}' not found!")
         print("Build it first with:")
         print(f"  docker build -f Dockerfile.cugraph -t {IMAGE_NAME} .")
-        sys_exit(1)
+        raise RuntimeError(f"validation image {IMAGE_NAME!r} is not available")
     print(f"  Image ID: {result.stdout.strip()}")
 
-    print(f"\n>>> Starting new container '{CONTAINER_NAME}'...")
+    print(f"\n>>> Starting new container '{container_name}'...")
     uid = os_getuid()
     gid = os_getgid()
 
+    # The Bolt port is published on a Docker-assigned loopback port so the run never binds or reaches a peer's
+    # Memgraph endpoint.
     cmd = [
         "docker",
         "run",
         "-d",
         "--name",
-        CONTAINER_NAME,
+        container_name,
+        "--label",
+        f"{OWNER_LABEL}={run_id}",
         "--user",
         f"{uid}:{gid}",
         "--gpus",
         "all",
         "-p",
-        "7687:7687",
-        "-p",
-        "7444:7444",
-        "-p",
-        "3000:3000",
+        "127.0.0.1::7687",
         "-v",
-        f"{MEMGRAPH_DATA_DIR}:/var/lib/memgraph:z",
+        f"{data_dir}:/var/lib/memgraph:z",
         IMAGE_NAME,
         "--storage-mode=IN_MEMORY_ANALYTICAL",
         "--query-execution-timeout-sec=0",
@@ -308,16 +279,34 @@ def setup_container():
         "--also-log-to-stderr",
     ]
     result = run_cmd(cmd)
-    container_id = result.stdout.strip()[:12]
-    print(f"  Container started: {container_id}")
+    print(f"  Container started: {result.stdout.strip()}")
 
     print("\n>>> Verifying container uses correct image...")
-    result = run_cmd(["docker", "inspect", "--format", "{{.Config.Image}}", CONTAINER_NAME])
+    result = run_cmd(["docker", "inspect", "--format", "{{.Config.Image}}", container_name])
     actual_image = result.stdout.strip()
     print(f"  Container image: {actual_image}")
     if actual_image != IMAGE_NAME:
         print(f"  WARNING: Expected {IMAGE_NAME}, got {actual_image}")
-    return False
+
+    result = run_cmd(["docker", "port", container_name, "7687/tcp"])
+    bindings = result.stdout.split()
+    if not bindings:
+        raise RuntimeError(f"container {container_name!r} has no published Bolt port")
+    bolt_uri = f"bolt://{bindings[0]}"
+    print(f"  Bolt endpoint: {bolt_uri}")
+    return bolt_uri
+
+
+def release_resources(run_id: str, data_dir: Path) -> None:
+    """Remove exactly this run's container, then its data directory, unless they are retained."""
+    if RETAIN_RESOURCES:
+        print(f"\n>>> Retaining containers labelled {OWNER_LABEL}={run_id} and data directory {data_dir}")
+    else:
+        result = run_cmd(["docker", "ps", "-a", "-q", "--filter", f"label={OWNER_LABEL}={run_id}"])
+        for container_id in result.stdout.split():
+            run_cmd(["docker", "rm", "-f", container_id])
+        print(f"\n>>> Removing run data directory: {data_dir}")
+        shutil_rmtree(data_dir)
 
 
 def wait_for_memgraph(driver, max_retries=30, delay=2):
@@ -399,8 +388,8 @@ def validate_node_identities(records: list, algorithm_name: str) -> tuple[bool, 
     errors = []
 
     # Check node count
-    if len(records) != 9:
-        errors.append(f"Expected 9 nodes, got {len(records)}")
+    if len(records) != len(EXPECTED_NODE_IDS):
+        errors.append(f"Expected {len(EXPECTED_NODE_IDS)} nodes, got {len(records)}")
 
     # Check all node names are present
     returned_names = {r.get("name", "") for r in records}
@@ -411,6 +400,15 @@ def validate_node_identities(records: list, algorithm_name: str) -> tuple[bool, 
         errors.append(f"Missing nodes: {missing}")
     if extra:
         errors.append(f"Unexpected nodes: {extra}")
+
+    # Check each returned name still carries its authored id
+    mismatched = sorted(
+        f"{r.get('name', '')}={r.get('id', '')}"
+        for r in records
+        if r.get("name", "") in EXPECTED_NODE_IDS and r.get("id", "") != EXPECTED_NODE_IDS.get(r.get("name", ""), 0)
+    )
+    if mismatched:
+        errors.append(f"Node IDs differ from the authored graph: {mismatched}")
 
     computed_return_value = len(errors) == 0, errors
     return computed_return_value
@@ -619,27 +617,12 @@ def test_louvain(session, ground_truth: dict) -> bool:
         for r in records:
             print(f"    {r.get('name', '')}: community {r.get('community', False)}")
 
-        # Check that A1-A4 are in same community
-        a_comms = {actual_communities.get(n, False) for n in COMMUNITY_A}
-        if len(a_comms) != 1:
-            print(f"  ✗ A1-A4 should be in same community but are in: {a_comms}")
+        errors = partition_contract_errors(actual_communities, ground_truth.get("communities", {}))
+        for error in errors:
+            print(f"  ✗ {error}")
+        if errors:
             return False
-        print(f"  ✓ A1-A4 are in same community ({a_comms.pop()})")
-
-        # Check that B1-B4 are in same community
-        b_comms = {actual_communities.get(n, False) for n in COMMUNITY_B}
-        if len(b_comms) != 1:
-            print(f"  ✗ B1-B4 should be in same community but are in: {b_comms}")
-            return False
-        print(f"  ✓ B1-B4 are in same community ({b_comms.pop()})")
-
-        # Check that A and B communities are different
-        a_comm = actual_communities.get("A1", False)
-        b_comm = actual_communities.get("B1", False)
-        if a_comm == b_comm:
-            print(f"  ✗ A and B communities should be different but both are {a_comm}")
-            return False
-        print("  ✓ A and B are in different communities")
+        print("  ✓ A1-A4 and B1-B4 form separate communities matching the NetworkX baseline")
 
         return True
 
@@ -676,19 +659,12 @@ def test_leiden(session, ground_truth: dict) -> bool:
         for r in records:
             print(f"    {r.get('name', '')}: community {r.get('community', False)}")
 
-        # Check that A1-A4 are in same community
-        a_comms = {actual_communities.get(n, False) for n in COMMUNITY_A}
-        if len(a_comms) != 1:
-            print(f"  ✗ A1-A4 should be in same community but are in: {a_comms}")
+        errors = partition_contract_errors(actual_communities, ground_truth.get("communities", {}))
+        for error in errors:
+            print(f"  ✗ {error}")
+        if errors:
             return False
-        print("  ✓ A1-A4 are in same community")
-
-        # Check that B1-B4 are in same community
-        b_comms = {actual_communities.get(n, False) for n in COMMUNITY_B}
-        if len(b_comms) != 1:
-            print(f"  ✗ B1-B4 should be in same community but are in: {b_comms}")
-            return False
-        print("  ✓ B1-B4 are in same community")
+        print("  ✓ A1-A4 and B1-B4 form separate communities matching the NetworkX baseline")
 
         return True
 
@@ -832,59 +808,61 @@ def main():
     for name in sorted(bc.keys(), key=lambda x: bc[x], reverse=True)[:3]:
         print(f"    {name}: {bc[name]:.6f}")
 
-    # Setup container with fresh image
-    setup_container()
-
-    driver = GraphDatabase.driver(MEMGRAPH_URI, auth=(MEMGRAPH_USER, MEMGRAPH_PASSWORD))
-
+    # Every acquired resource is released in the finally blocks, driver first, then container, then storage.
+    run_id = uuid_uuid4().hex
+    data_dir = acquire_data_dir()
     try:
-        if not wait_for_memgraph(driver):
-            sys_exit(1)
-
-        with driver.session() as session:
-            print("\n--- Setup ---")
-            clear_database(session)
-            if not create_test_graph(session):
-                print("✗ Failed to create test graph")
-                sys_exit(1)
-
-            results = {}
-
-            results["PageRank"] = test_pagerank(session, ground_truth)
-            results["Betweenness Centrality"] = test_betweenness_centrality(session, ground_truth)
-            results["HITS"] = test_hits(session, ground_truth)
-            results["Louvain"] = test_louvain(session, ground_truth)
-            results["Leiden"] = test_leiden(session, ground_truth)
-            results["Katz Centrality"] = test_katz_centrality(session, ground_truth)
-            results["Personalized PageRank"] = test_personalized_pagerank(session, ground_truth)
-
-            print("\n" + "=" * 60)
-            print("TEST SUMMARY")
-            print("=" * 60)
-
-            passed = sum(1 for v in results.values() if v)
-            failed = sum(1 for v in results.values() if not v)
-
-            for name, result in results.items():
-                status = "✓ PASS" if result else "✗ FAIL"
-                print(f"  {status}: {name}")
-
-            print(f"\nTotal: {passed} passed, {failed} failed")
-            print(f"Tolerance: {TOLERANCE:.0%} relative, {ABS_TOLERANCE} absolute")
-
-            if failed > 0:
-                sys_exit(1)
-            else:
-                print("\n✓ All cuGraph algorithms match NetworkX ground truth!")
-                sys_exit(0)
-
+        bolt_uri = setup_container(f"{CONTAINER_NAME}-{run_id}", run_id, data_dir)
+        driver = GraphDatabase.driver(bolt_uri, auth=(MEMGRAPH_USER, MEMGRAPH_PASSWORD))
+        try:
+            passed = run_validation(driver, ground_truth)
+        finally:
+            driver.close()
     finally:
-        # Cleanup temp directory if we created one
-        if using_temp_dir and MEMGRAPH_DATA_DIR.exists():
-            print(f"\n>>> Cleaning up temp data directory: {MEMGRAPH_DATA_DIR}")
-            shutil_rmtree(MEMGRAPH_DATA_DIR, ignore_errors=True)
-        driver.close()
-    return False
+        release_resources(run_id, data_dir)
+    sys_exit(0 if passed else 1)
+
+
+def run_validation(driver, ground_truth: dict) -> bool:
+    """Build the test graph in this run's database and compare every algorithm with the ground truth."""
+    if not wait_for_memgraph(driver):
+        return False
+
+    with driver.session() as session:
+        print("\n--- Setup ---")
+        clear_database(session)
+        if not create_test_graph(session):
+            print("✗ Failed to create test graph")
+            return False
+
+        results = {}
+
+        results["PageRank"] = test_pagerank(session, ground_truth)
+        results["Betweenness Centrality"] = test_betweenness_centrality(session, ground_truth)
+        results["HITS"] = test_hits(session, ground_truth)
+        results["Louvain"] = test_louvain(session, ground_truth)
+        results["Leiden"] = test_leiden(session, ground_truth)
+        results["Katz Centrality"] = test_katz_centrality(session, ground_truth)
+        results["Personalized PageRank"] = test_personalized_pagerank(session, ground_truth)
+
+    print("\n" + "=" * 60)
+    print("TEST SUMMARY")
+    print("=" * 60)
+
+    passed = sum(1 for v in results.values() if v)
+    failed = sum(1 for v in results.values() if not v)
+
+    for name, result in results.items():
+        status = "✓ PASS" if result else "✗ FAIL"
+        print(f"  {status}: {name}")
+
+    print(f"\nTotal: {passed} passed, {failed} failed")
+    print(f"Tolerance: {TOLERANCE:.0%} relative, {ABS_TOLERANCE} absolute")
+
+    all_passed = failed == 0
+    if all_passed:
+        print("\n✓ All cuGraph algorithms match NetworkX ground truth!")
+    return all_passed
 
 
 if __name__ == "__main__":

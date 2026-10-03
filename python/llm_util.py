@@ -17,6 +17,8 @@ class SchemaGenerator(object):
         self.all_node_properties_dict = {}
         self.all_relationship_properties_dict = {}
         self.all_relationships_list = []
+        # Membership index for all_relationships_list, which keeps discovery order for the external records.
+        self.all_relationship_keys = set()
 
         self.generate_schema(context)
 
@@ -68,15 +70,20 @@ class SchemaGenerator(object):
         relationship: mgp_Edge,
         target_labels: tuple[str],
     ):
+        relationship_type = relationship.type.name
         for start_label in start_labels:
             for target_label in target_labels:
-                full_relationship = {
-                    Parameter.START.value: start_label,
-                    Parameter.TYPE.value: relationship.type.name,
-                    Parameter.END.value: target_label,
-                }
-                if full_relationship not in self.all_relationships_list:
-                    self.all_relationships_list.append(full_relationship)
+                relationship_key = (start_label, relationship_type, target_label)
+                if relationship_key in self.all_relationship_keys:
+                    continue
+                self.all_relationship_keys.add(relationship_key)
+                self.all_relationships_list.append(
+                    {
+                        Parameter.START.value: start_label,
+                        Parameter.TYPE.value: relationship_type,
+                        Parameter.END.value: target_label,
+                    }
+                )
         return False
 
     def get_raw_schema(self) -> mgp_Map:

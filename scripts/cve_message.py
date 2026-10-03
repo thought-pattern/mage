@@ -5,11 +5,15 @@ from json import load as json_load
 from os import getcwd as os_getcwd
 from os import getenv as os_getenv
 from os import path as os_path
+from sys import stderr as sys_stderr
 
 from format_cve_table import format_cyclonedx_data
+from requests import RequestException
 from requests import post as requests_post
 
 CVE_DIR = os_getenv("CVE_DIR", os_getcwd())
+# A stalled webhook must fail the notification step instead of holding the CI job until the runner limit.
+WEBHOOK_TIMEOUT_SECONDS = 30.0
 
 
 def read_ignore_list() -> list[str]:
@@ -66,7 +70,7 @@ def parse_cve_report(filename: str) -> list[dict]:
     return out
 
 
-def summarize_cves(cves: list[dict]) -> dict:
+def summarize_cves(cves: list[dict]) -> tuple[dict, str]:
     """
     Summarize the CVEs by severity.
 
@@ -78,7 +82,7 @@ def summarize_cves(cves: list[dict]) -> dict:
     Returns
     =======
     Tuple[dict, str]
-        A tuple containing the counts of each vulnerability severity.
+        The counts of each vulnerability severity and the formatted summary message.
 
     """
 
@@ -115,7 +119,7 @@ def summarize_cves(cves: list[dict]) -> dict:
 
     msg += f"Overal Status: {emoji}\n"
 
-    return {}
+    return summary, msg
 
 
 def severity_summary(data: list[dict]) -> dict:
@@ -162,7 +166,7 @@ def create_slack_message(arch: str, image_type: str, cves: list[dict]) -> str:
     return msg
 
 
-def post_message(msg: str) -> bool:
+def post_message(msg: str) -> None:
     """
     Post message to Slack webhook.
 
@@ -170,19 +174,24 @@ def post_message(msg: str) -> bool:
     ======
     msg: str
         Message containing vulnerability summary.
+
+    Raises RuntimeError when the webhook is unconfigured, unreachable within the deadline, or rejects the message.
     """
 
-    url = os_getenv("INFRA_WEBHOOK_URL")
-    if url is None:
+    # GitHub Actions passes an unset secret as an empty string.
+    url = os_getenv("INFRA_WEBHOOK_URL", "")
+    if not url:
         raise RuntimeError("INFRA_WEBHOOK_URL is not configured")
     try:
-        requests_post(url, json={"text": msg})
-    except Exception as caught_error:
-        print(f"Slack webhook request failed: {caught_error}")
-    return False
+        response = requests_post(url, json={"text": msg}, timeout=WEBHOOK_TIMEOUT_SECONDS)
+    except RequestException as err:
+        # Transport error text embeds the secret webhook path, so only the error class is reported.
+        raise RuntimeError(f"Slack webhook request failed: {type(err).__name__}") from err
+    if not response.ok:
+        raise RuntimeError(f"Slack webhook rejected the message: HTTP {response.status_code}")
 
 
-def main(arch: str, image_type: str, send_slack_message: bool) -> bool:
+def main(arch: str, image_type: str, send_slack_message: bool) -> None:
     """
     Collect vulnerability results and send a Slack message.
 
@@ -192,6 +201,8 @@ def main(arch: str, image_type: str, send_slack_message: bool) -> bool:
         The architecture of the image to be scanned.
     image_type: str
         The type of image to be scanned.
+    send_slack_message: bool
+        Post the message to the webhook when True, otherwise print it.
 
     """
 
@@ -203,7 +214,6 @@ def main(arch: str, image_type: str, send_slack_message: bool) -> bool:
         post_message(msg)
     else:
         print(msg)
-    return False
 
 
 if __name__ == "__main__":
@@ -213,4 +223,9 @@ if __name__ == "__main__":
     parser.add_argument("send_message", type=str, default="true")
     args = parser.parse_args()
 
-    main(args.arch, args.image_type, args.send_message == "true")
+    try:
+        main(args.arch, args.image_type, args.send_message == "true")
+    except RuntimeError as err:
+        # Exit without a traceback so the chained transport error cannot print the secret webhook URL.
+        print(f"CVE message delivery failed: {err}", file=sys_stderr)
+        raise SystemExit(1) from err

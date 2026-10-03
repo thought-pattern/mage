@@ -31,53 +31,31 @@ class GATJK(torch_nn.Module):
 
         super(GATJK, self).__init__()
 
-        self.convs = torch_nn.ModuleList()
-        self.convs.append(
-            GATConv(
-                in_channels,
-                hidden_features_size[0],
-                heads=heads,
-                concat=True,
-                add_self_loops=False,
-            )
-        )
+        # Layer i maps the previous width (the input, then each earlier hidden width times the concatenated heads) to
+        # hidden_features_size[i], and every layer except the last is batch-normalised, so a single hidden width is a
+        # complete one-layer architecture.
+        widths = list(hidden_features_size)
+        if not widths or not all(isinstance(width, int) and not isinstance(width, bool) and width > 0 for width in widths):
+            raise ValueError(f"GATJK needs at least one positive integer hidden width, received {hidden_features_size!r}")
+        # max and lstm aggregation combine the layer outputs elementwise, so every layer must have the same width.
+        if jk_type in ("max", "lstm") and len(set(widths)) != 1:
+            raise ValueError(f"GATJK with jk_type {jk_type!r} needs equal hidden widths, received {widths!r}")
 
-        self.bns = torch_nn.ModuleList()
-        self.bns.append(torch_nn.BatchNorm1d(hidden_features_size[0] * heads))
-        for i in range(len(hidden_features_size) - 2):
-            self.convs.append(
-                GATConv(
-                    hidden_features_size[i] * heads,
-                    hidden_features_size[i + 1],
-                    heads=heads,
-                    concat=True,
-                    add_self_loops=False,
-                )
-            )
-            self.bns.append(torch_nn.BatchNorm1d(hidden_features_size[i + 1] * heads))
-
-        self.convs.append(
-            GATConv(
-                hidden_features_size[-2] * heads,
-                hidden_features_size[-1],
-                heads=heads,
-                add_self_loops=False,
-            )
+        input_widths = [in_channels] + [width * heads for width in widths[:-1]]
+        self.convs = torch_nn.ModuleList(
+            GATConv(input_width, width, heads=heads, concat=True, add_self_loops=False)
+            for input_width, width in zip(input_widths, widths, strict=True)
         )
+        self.bns = torch_nn.ModuleList(torch_nn.BatchNorm1d(width * heads) for width in widths[:-1])
 
         self.dropout = dropout
         self.activation = F.elu  # note: uses elu
 
-        self.jump = JumpingKnowledge(
-            jk_type, channels=hidden_features_size[-1] * heads, num_layers=1
-        )
+        self.jump = JumpingKnowledge(jk_type, channels=widths[-1] * heads, num_layers=len(widths))
         if jk_type == "cat":
-            self.final_project = Linear(
-                hidden_features_size[-1] * heads * len(hidden_features_size),
-                out_channels,
-            )
+            self.final_project = Linear(sum(widths) * heads, out_channels)
         else:  # max or lstm
-            self.final_project = Linear(hidden_features_size[-1] * heads, out_channels)
+            self.final_project = Linear(widths[-1] * heads, out_channels)
 
     def reset_parameters(self):
         """Reset of parameters."""
