@@ -105,10 +105,10 @@ def parse_file_os_arch(file, image_type):
     return os, arch
 
 
-def build_package_json(files: list[str], return_url: bool = True, image_type: str = "mage") -> dict:
+def group_packages_by_os_arch(files: list[str], return_url: bool = True, image_type: str = "mage") -> dict:
     """
-    Extracts the OS and CPU architecture and builds the dict/json used by the
-    daily-builds workflow
+    Classifies each package key by OS and CPU architecture and groups the
+    package locations into the nested mapping used by the daily-builds workflow
 
     Inputs
     ======
@@ -139,10 +139,9 @@ def build_package_json(files: list[str], return_url: bool = True, image_type: st
 
         os, arch = parse_file_os_arch(file, image_type)
 
-        if os not in out:
-            out[os] = {}
-
-        out.get(os, {})[arch] = url
+        os_packages = out.get(os, {})
+        os_packages[arch] = url
+        out[os] = os_packages
 
     return out
 
@@ -174,7 +173,7 @@ def list_daily_release_packages(date: int, return_url: bool = True, image_type: 
 
     files = list_build_files(date, image_type)
 
-    packages = build_package_json(files, return_url, image_type)
+    packages = group_packages_by_os_arch(files, return_url, image_type)
 
     return packages
 

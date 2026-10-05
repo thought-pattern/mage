@@ -23,7 +23,6 @@ from mage.tgn.definitions.events import (
     Event,
     InteractionEvent,
     NodeEvent,
-    create_interaction_events,
 )
 from mage.tgn.definitions.memory import Memory
 from mage.tgn.definitions.memory_updater import (
@@ -217,7 +216,7 @@ class TGN(nn.Module):
         # dict nodeid -> List[event]
         raw_messages = self.raw_message_store.get_messages()
 
-        processed_messages = self.create_messages(
+        processed_messages = self.process_raw_messages(
             raw_messages=raw_messages,
         )
 
@@ -246,22 +245,22 @@ class TGN(nn.Module):
         edge_features: dict[int, torch_Tensor],
         node_features: dict[int, torch_Tensor],
     ) -> bool:
-        interaction_events: dict[int, list[InteractionEvent]] = create_interaction_events(
-            sources=sources,
-            destinations=destinations,
-            timestamps=timestamps,
-            edge_idxs=edge_idxs,
-        )
-
-        events: dict[int, list[Event]] = {}
-        for node, interaction_node_events in interaction_events.items():
-            node_events: list[Event] = []
-            node_events.extend(interaction_node_events)
-            events[node] = node_events
+        # Every node of the batch gets an event list; each interaction is one event, filed under its source node, and
+        # later yields a raw message for both endpoints.
+        events: dict[int, list[Event]] = {node: [] for node in set(sources).union(set(destinations))}
+        for i in range(len(sources)):
+            events.get(sources[i], []).append(
+                InteractionEvent(
+                    source=sources[i],
+                    dest=destinations[i],
+                    timestamp=timestamps[i],
+                    edge_idx=edge_idxs[i],
+                )
+            )
 
         self.admit_event_chronology(events)
 
-        raw_messages: dict[int, list[RawMessage]] = self.create_raw_messages(
+        raw_messages: dict[int, list[RawMessage]] = self.events_to_raw_messages(
             events=events,
             edge_features=edge_features,
             node_features=node_features,
@@ -286,19 +285,15 @@ class TGN(nn.Module):
                         raise ValueError(f"Event at time {event.timestamp} precedes node {node}'s last memory update {last_update}")
         return False
 
-    def create_node_events(
-        self,
-    ):
-        raise NotImplementedError()
-
-    def create_messages(
+    def process_raw_messages(
         self,
         raw_messages: dict[int, list[RawMessage]],
     ) -> dict[int, list[torch_Tensor]]:
-        processed_messages_dict: dict[int, list[torch_Tensor]] = {node: [] for node in raw_messages}
-        for node in raw_messages:
-            messages = raw_messages.get(node, [])
-            processed_node_messages = processed_messages_dict.get(node, [])
+        """Applies the node or edge message function to every raw message, keeping each node's message order."""
+        processed_messages_dict: dict[int, list[torch_Tensor]] = {}
+        for node, messages in raw_messages.items():
+            processed_node_messages = []
+            processed_messages_dict[node] = processed_node_messages
             for message in messages:
                 if isinstance(message, NodeRawMessage):
                     node_raw_message = message
@@ -328,16 +323,18 @@ class TGN(nn.Module):
                     raise TypeError(f"Unsupported message type: {type(message)}")
         return processed_messages_dict
 
-    def create_raw_messages(
+    def events_to_raw_messages(
         self,
         events: dict[int, list[Event]],
         node_features: dict[int, torch_Tensor],
         edge_features: dict[int, torch_Tensor],
     ) -> dict[int, list[RawMessage]]:
+        """Turns each node's events into raw messages from current memory: one per node event and two per interaction
+        event, one filed under each endpoint, with delta time measured from that endpoint's last memory update."""
         raw_messages = {node: [] for node in events}
-        for node in events:
+        for node, node_events in events.items():
             node_messages = raw_messages.get(node, [])
-            for event in events.get(node, []):
+            for event in node_events:
                 if node != event.source:
                     raise ValueError(f"Event source {event.source} does not match message-store node {node}")
                 if isinstance(event, NodeEvent):
@@ -352,6 +349,9 @@ class TGN(nn.Module):
                         )
                     )
                 elif isinstance(event, InteractionEvent):
+                    # The destination's message is filed under it, so it must be a node of this batch's events.
+                    if event.dest not in raw_messages:
+                        raise KeyError(f"Interaction destination {event.dest} has no message-store entry")
                     default_edge_features = torch_zeros(self.num_edge_features, device=self.device)
                     edge_feature = edge_features.get(event.edge_idx, default_edge_features)
                     # every interaction event creates two raw messages
@@ -396,8 +396,7 @@ class TGN(nn.Module):
         processed_messages: dict[int, list[torch_Tensor]],
     ) -> dict[int, torch_Tensor]:
         aggregated_messages: dict[int, torch_Tensor] = {}
-        for node in processed_messages:
-            messages = processed_messages.get(node, [])
+        for node, messages in processed_messages.items():
             if not messages:
                 continue
             aggregated_messages[node] = self.message_aggregator(messages)

@@ -32,7 +32,7 @@ def extract_flags(to_run):
 memgraph_docker_image = sys_argv[1]
 flags = extract_flags(["docker", "run", "-it", "--rm", memgraph_docker_image, "--help-xml"])
 for flag_name, flag_details in flags.items():
-    print(flag_name, flag_details.get("default", False))
+    print(flag_name, flag_details.get("default", ""))
 # IMPORTANT: There is also an issue with printing default values, because
 # --help is returning build defaults which is missleaning to the user but also
 # here because we can't detect changes in default values.

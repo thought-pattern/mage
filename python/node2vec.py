@@ -84,10 +84,9 @@ def get_graph_memgraph_ctx(ctx: mgp_ProcCtx, edge_weight_property: str, is_direc
         vertex_ids.append(vertex.id)
         for edge in vertex.out_edges:
             edge_weight = float(edge.properties.get(edge_weight_property, default=1))
-            old_value = 0
-            if (edge.from_vertex.id, edge.to_vertex.id) in edges_weights:
-                old_value = edges_weights.get((edge.from_vertex.id, edge.to_vertex.id), "")
-            edges_weights[(edge.from_vertex.id, edge.to_vertex.id)] = old_value + edge_weight
+            edge_key = (edge.from_vertex.id, edge.to_vertex.id)
+            # Parallel edges between the same ordered pair accumulate into one weight.
+            edges_weights[edge_key] = edges_weights.get(edge_key, 0.0) + edge_weight
 
     graph: Graph = GraphHolder(edges_weights, is_directed, vertex_ids)
     return graph
@@ -182,9 +181,9 @@ def get_embeddings(
     embeddings_result = []
     nodes_result = []
     for node_id, embedding in embeddings.items():
-        embeddings[node_id] = [float(e) for e in embedding]
+        embedding_values = [float(e) for e in embedding]
         nodes_result.append(ctx.graph.get_vertex_by_id(node_id))
-        embeddings_result.append(embeddings.get(node_id, False))
+        embeddings_result.append(embedding_values)
     # TODO (antoniofilipovic): when api becomes available, change to return list of records
     computed_return_value = mgp_Record(nodes=nodes_result, embeddings=embeddings_result)
     return computed_return_value
@@ -282,12 +281,12 @@ def set_embeddings(
     nodes_result = []
 
     for node_id, embedding in embeddings.items():
-        embeddings[node_id] = [float(e) for e in embedding]
+        embedding_values = [float(e) for e in embedding]
         vertex = ctx.graph.get_vertex_by_id(node_id)
-        vertex.properties.set(NODE_EMBEDDING_PROPERTY, embeddings.get(node_id, set()))
+        vertex.properties.set(NODE_EMBEDDING_PROPERTY, embedding_values)
 
         nodes_result.append(ctx.graph.get_vertex_by_id(node_id))
-        embeddings_result.append(embeddings.get(node_id, False))
+        embeddings_result.append(embedding_values)
     # TODO (antoniofilipovic): when api becomes available, change to return list of records
     computed_return_value = mgp_Record(nodes=nodes_result, embeddings=embeddings_result)
     return computed_return_value
@@ -296,15 +295,11 @@ def set_embeddings(
 @mgp_read_proc
 def help() -> list[mgp_Record]:
     """Shows manual page for node2vec"""
+    # Each procedure's title names its first manual line; its remaining lines carry an empty name.
     records = []
-
-    def make_records(name, doc):
-        computed_return_value = (
-            mgp_Record(name=n, value=v) for n, v in zip(chain([name], repeat("")), cleandoc(doc).splitlines(), strict=False)
-        )
-        return computed_return_value
-
     for func in (help, get_embeddings):
-        records.extend(make_records("Procedure '{}'".format(func.__name__), func.__doc__))
+        title = "Procedure '{}'".format(func.__name__)
+        lines = cleandoc(func.__doc__).splitlines()
+        records.extend(mgp_Record(name=name, value=line) for name, line in zip(chain([title], repeat("")), lines, strict=False))
 
     return records

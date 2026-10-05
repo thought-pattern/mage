@@ -70,6 +70,9 @@ CYPHER_NAME = r"(\w+|`(?:[^`]|``)+`)"
 CYPHER_NODE_SHORTHAND = re_compile(rf"\s*\(\s*:{CYPHER_NAME}\s*\)\s*")
 CYPHER_RELATIONSHIP_SHORTHAND = re_compile(rf"\s*\[\s*:{CYPHER_NAME}\s*\]\s*")
 
+# Nullable procedure arguments (params, setup_queries) default to None, the only default Memgraph admits for a
+# nullable argument; the stream openers treat null and empty alike as "none given".
+
 
 class MigrationStreams:
     """Open migration streams of one batched procedure, keyed by its exact arguments.
@@ -95,7 +98,8 @@ class MigrationStreams:
 
     def open(self, key: str, acquire, *arguments) -> None:
         """Admit one stream under key; acquire fills it, and a failed acquisition releases what it acquired."""
-        # closers run in reverse acquisition order; commit only after exhaustion
+        # closers run in reverse acquisition order; commit only after exhaustion. Acquirers register each closer with
+        # stream.setdefault("closers", []), so a registered closer is always one release() runs.
         stream = {"closers": [], "commit": False, "fetch": False}
         with self.lock:
             if key in self.streams:
@@ -142,12 +146,11 @@ class MigrationStreams:
 
 def run_in_order(steps: list) -> None:
     """Run every step in order even when one raises; a failure propagates after the remaining steps ran."""
-    if not steps:
-        return
-    try:
-        steps[0]()
-    finally:
-        run_in_order(steps[1:])
+    if steps:
+        try:
+            steps[0]()
+        finally:
+            run_in_order(steps[1:])
 
 
 def stream_key(*arguments) -> str:
@@ -179,7 +182,7 @@ def open_mysql_stream(stream: dict, table_or_sql: str, config: mgp_Map, config_p
 
     connection = mysql_connector.connect(**effective_config(config, config_path))
     # close() also ends a connection that still has unread rows; commit only runs after exhaustion
-    stream["closers"].append(connection.close)
+    stream.setdefault("closers", []).append(connection.close)
     stream["commit"] = connection.commit
     cursor = connection.cursor()
     if params:
@@ -195,7 +198,7 @@ def init_migrate_mysql(
     table_or_sql: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ):
     key = stream_key(table_or_sql, config, config_path, params)
     mysql_streams.open(key, open_mysql_stream, table_or_sql, config, config_path, params)
@@ -205,7 +208,7 @@ def mysql(
     table_or_sql: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ) -> list[mgp_Record]:
     """
     With migrate.mysql you can access MySQL and execute queries.
@@ -247,10 +250,10 @@ def open_sql_server_stream(stream: dict, table_or_sql: str, config: mgp_Map, con
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
     connection = pyodbc_connect(**effective_config(config, config_path))
-    stream["closers"].append(connection.close)
+    stream.setdefault("closers", []).append(connection.close)
     stream["commit"] = connection.commit
     cursor = connection.cursor()
-    stream["closers"].append(cursor.close)
+    stream.setdefault("closers", []).append(cursor.close)
     cursor.execute(table_or_sql, *params)
 
     column_names = [column[Constants.I_COLUMN_NAME] for column in cursor.description]
@@ -261,7 +264,7 @@ def init_migrate_sql_server(
     table_or_sql: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ):
     key = stream_key(table_or_sql, config, config_path, params)
     sql_server_streams.open(key, open_sql_server_stream, table_or_sql, config, config_path, params)
@@ -271,7 +274,7 @@ def sql_server(
     table_or_sql: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ) -> list[mgp_Record]:
     """
     With migrate.sql_server you can access SQL Server and execute queries.
@@ -314,10 +317,10 @@ def open_oracle_db_stream(stream: dict, table_or_sql: str, config: mgp_Map, conf
     oracle_config["disable_oob"] = True
 
     connection = oracledb_connect(**oracle_config)
-    stream["closers"].append(connection.close)
+    stream.setdefault("closers", []).append(connection.close)
     stream["commit"] = connection.commit
     cursor = connection.cursor()
-    stream["closers"].append(cursor.close)
+    stream.setdefault("closers", []).append(cursor.close)
 
     if not params:
         cursor.execute(table_or_sql)
@@ -334,7 +337,7 @@ def init_migrate_oracle_db(
     table_or_sql: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ):
     key = stream_key(table_or_sql, config, config_path, params)
     oracle_db_streams.open(key, open_oracle_db_stream, table_or_sql, config, config_path, params)
@@ -344,7 +347,7 @@ def oracle_db(
     table_or_sql: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ) -> list[mgp_Record]:
     """
     With migrate.oracle_db you can access Oracle DB and execute queries.
@@ -386,10 +389,10 @@ def open_postgresql_stream(stream: dict, table_or_sql: str, config: mgp_Map, con
         table_or_sql = f"SELECT * FROM {table_or_sql};"
 
     connection = psycopg2_connect(**effective_config(config, config_path))
-    stream["closers"].append(connection.close)
+    stream.setdefault("closers", []).append(connection.close)
     stream["commit"] = connection.commit
     cursor = connection.cursor()
-    stream["closers"].append(cursor.close)
+    stream.setdefault("closers", []).append(cursor.close)
     cursor.execute(table_or_sql, params)
 
     column_names = [column.name for column in cursor.description]
@@ -400,7 +403,7 @@ def init_migrate_postgresql(
     table_or_sql: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ):
     key = stream_key(table_or_sql, config, config_path, params)
     postgres_streams.open(key, open_postgresql_stream, table_or_sql, config, config_path, params)
@@ -410,7 +413,7 @@ def postgresql(
     table_or_sql: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ) -> list[mgp_Record]:
     """
     With migrate.postgresql you can access PostgreSQL and execute queries.
@@ -466,13 +469,13 @@ def open_s3_stream(stream: dict, file_path: str, config: mgp_Map, config_path: s
         if value:
             client_options[option] = value
     s3_client = boto3_client("s3", **client_options)
-    stream["closers"].append(s3_client.close)
+    stream.setdefault("closers", []).append(s3_client.close)
 
     # Fetch and read file as a streaming object
     response = s3_client.get_object(Bucket=bucket_name, Key=s3_key)
     # Convert binary stream to text stream; closing it closes the HTTP body
     text_stream = io_TextIOWrapper(response.get("Body", io_BytesIO()), encoding="utf-8")
-    stream["closers"].append(text_stream.close)
+    stream.setdefault("closers", []).append(text_stream.close)
 
     csv_reader = csv_reader_2(text_stream)
     # First row contains column names; an empty object has none and no rows
@@ -536,14 +539,14 @@ def open_neo4j_stream(stream: dict, label_or_rel_or_query: str, config: mgp_Map,
     database = neo4j_config.get(Constants.DATABASE, "")
 
     driver = GraphDatabase.driver(build_neo4j_uri(neo4j_config), auth=(username, password))
-    stream["closers"].append(driver.close)
+    stream.setdefault("closers", []).append(driver.close)
 
     # An absent database selects the server's default database
     if database:
         session = driver.session(database=database)
     else:
         session = driver.session()
-    stream["closers"].append(session.close)
+    stream.setdefault("closers", []).append(session.close)
 
     # Neo4j expects the parameters as a map
     result = session.run(query, parameters=params if params else {})
@@ -554,7 +557,7 @@ def init_migrate_neo4j(
     label_or_rel_or_query: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ):
     key = stream_key(label_or_rel_or_query, config, config_path, params)
     neo4j_streams.open(key, open_neo4j_stream, label_or_rel_or_query, config, config_path, params)
@@ -564,7 +567,7 @@ def neo4j(
     label_or_rel_or_query: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ) -> list[mgp_Record]:
     """
     Migrate data from Neo4j to Memgraph. Can migrate a specific node label, relationship type, or execute a custom Cypher query.
@@ -640,7 +643,7 @@ def open_arrow_flight_stream(stream: dict, query: str, config: mgp_Map, config_p
     encoded_auth = base64_b64encode(auth_string).decode("utf-8")
 
     client = connect_arrow_flight(flight_config)
-    stream["closers"].append(client.close)
+    stream.setdefault("closers", []).append(client.close)
 
     # Authenticate
     options = flight.FlightCallOptions(headers=[(b"authorization", f"Basic {encoded_auth}".encode("utf-8"))])
@@ -703,9 +706,9 @@ duckdb_streams = MigrationStreams("duckdb")
 def open_duckdb_stream(stream: dict, query: str, setup_queries) -> None:
     # Ensure a fresh in-memory DuckDB instance for each query
     connection = duckDB_connect()
-    stream["closers"].append(connection.close)
+    stream.setdefault("closers", []).append(connection.close)
     cursor = connection.cursor()
-    stream["closers"].append(cursor.close)
+    stream.setdefault("closers", []).append(cursor.close)
     for setup_query in setup_queries if setup_queries else []:
         cursor.execute(setup_query)
 
@@ -715,7 +718,7 @@ def open_duckdb_stream(stream: dict, query: str, setup_queries) -> None:
     stream["fetch"] = partial(fetch_sql_records, cursor, column_names, name_row_cells)
 
 
-def init_migrate_duckdb(query: str, setup_queries: mgp_Nullable[list[str]] = False):
+def init_migrate_duckdb(query: str, setup_queries: mgp_Nullable[list[str]] = None):
     """
     Initialize an in-memory DuckDB connection and execute the query.
 
@@ -725,7 +728,7 @@ def init_migrate_duckdb(query: str, setup_queries: mgp_Nullable[list[str]] = Fal
     duckdb_streams.open(stream_key(query, setup_queries), open_duckdb_stream, query, setup_queries)
 
 
-def duckdb(query: str, setup_queries: mgp_Nullable[list[str]] = False) -> list[mgp_Record]:
+def duckdb(query: str, setup_queries: mgp_Nullable[list[str]] = None) -> list[mgp_Record]:
     """
     Fetch rows from DuckDB in batches.
 
@@ -762,7 +765,7 @@ def open_memgraph_stream(stream: dict, label_or_rel_or_query: str, config: mgp_M
     # The row generator holds the client connection; closing it and dropping the
     # stream releases that connection (gqlalchemy exposes no explicit close).
     rows = memgraph_db.execute_and_fetch(query, params if params else {})
-    stream["closers"].append(rows.close)
+    stream.setdefault("closers", []).append(rows.close)
     stream["fetch"] = partial(fetch_iterator_records, rows, mapping_row)
 
 
@@ -770,7 +773,7 @@ def init_migrate_memgraph(
     label_or_rel_or_query: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ):
     key = stream_key(label_or_rel_or_query, config, config_path, params)
     memgraph_streams.open(key, open_memgraph_stream, label_or_rel_or_query, config, config_path, params)
@@ -780,7 +783,7 @@ def memgraph(
     label_or_rel_or_query: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ) -> list[mgp_Record]:
     """
     Migrate data from Memgraph to another Memgraph instance. Can migrate a specific node label,
@@ -851,7 +854,7 @@ def init_migrate_servicenow(
     endpoint: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ):
     """
     Initialize the connection to the ServiceNow REST API and fetch the first page of JSON data.
@@ -870,7 +873,7 @@ def servicenow(
     endpoint: str,
     config: mgp_Map,
     config_path: str = "",
-    params: mgp_Nullable[mgp_Any] = False,
+    params: mgp_Nullable[mgp_Any] = None,
 ) -> list[mgp_Record]:
     """
     Fetch rows from the ServiceNow REST API in batches, following its pagination links.

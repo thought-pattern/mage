@@ -12,7 +12,11 @@ def read_all_csv_from_stdin():
 
 def validate_first_as_int(data, field, expected_value):
     assert len(data) == 1
-    assert int(data[0][field]) == int(expected_value), f"Got {data[0][field]}, expected {expected_value}."
+    first = data[0]
+    # A result without the requested column fails the smoke check rather than comparing a placeholder value.
+    assert field in first, f"Result has no {field} field; fields are {list(first)}."
+    actual = first.get(field, "")
+    assert int(actual) == int(expected_value), f"Got {actual}, expected {expected_value}."
     print(f"Validation of the first {field} is OK.")
     return False
 

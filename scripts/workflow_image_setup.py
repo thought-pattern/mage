@@ -44,13 +44,14 @@ def get_daily_url(date: str, arch: str, malloc: bool) -> str:
 
     packages = list_daily_release_packages(int(date), return_url=True)
 
-    try:
-        arch_name = "x86_64" if arch == "amd64" else "arm64"
-        key = f"Docker ({arch_name})"
-        key_image = f"{arch_name}-malloc" if malloc else arch_name
-        url = packages[key][key_image]
-    except KeyError:
-        url = "fail"
+    arch_name = "x86_64" if arch == "amd64" else "arm64"
+    key = f"Docker ({arch_name})"
+    key_image = f"{arch_name}-malloc" if malloc else arch_name
+    arch_packages = packages.get(key, {})
+    if not isinstance(arch_packages, dict):
+        raise RuntimeError(f"daily build {date} package entry for {key} must be a mapping")
+    # The workflow reads "fail" as the unavailable-build marker for a missing architecture or image variant.
+    url = arch_packages.get(key_image, "fail")
 
     return url
 

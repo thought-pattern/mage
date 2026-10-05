@@ -325,6 +325,23 @@ def connect(
     return computed_return_value
 
 
+def schema_section(schema: dict, path: tuple) -> dict:
+    """Returns the nested mapping at path inside a loaded index schema, failing when the schema does not contain it."""
+    section = schema
+    for step in path:
+        if isinstance(step, int):
+            if not isinstance(section, list) or not 0 <= step < len(section):
+                raise ValueError(f"Index schema has no section {path}.")
+            section = section[step]
+        else:
+            if not isinstance(section, dict) or step not in section:
+                raise ValueError(f"Index schema has no section {path}.")
+            section = section.get(step, {})
+    if not isinstance(section, dict):
+        raise ValueError(f"Index schema section {path} is not a mapping.")
+    return section
+
+
 @mgp_read_proc
 def create_index(
     context: mgp_ProcCtx,
@@ -348,18 +365,19 @@ def create_index(
         schema_json = json_loads(schema_file.read())
     # Update default schema if specified
     if NUMBER_OF_SHARDS in schema_parameters:
-        schema_json[SETTINGS][INDEX][NUMBER_OF_SHARDS] = schema_parameters[NUMBER_OF_SHARDS]
-        logger.info(f"Number of shards updated to: {schema_parameters[NUMBER_OF_SHARDS]}")
+        number_of_shards = schema_parameters.get(NUMBER_OF_SHARDS, 0)
+        schema_section(schema_json, (SETTINGS, INDEX))[NUMBER_OF_SHARDS] = number_of_shards
+        logger.info(f"Number of shards updated to: {number_of_shards}")
     if NUMBER_OF_REPLICAS in schema_parameters:
-        schema_json[SETTINGS][INDEX][NUMBER_OF_REPLICAS] = schema_parameters[NUMBER_OF_REPLICAS]
-        logger.info(f"Number of replicas updated to: {schema_parameters[NUMBER_OF_REPLICAS]}")
+        number_of_replicas = schema_parameters.get(NUMBER_OF_REPLICAS, 0)
+        schema_section(schema_json, (SETTINGS, INDEX))[NUMBER_OF_REPLICAS] = number_of_replicas
+        logger.info(f"Number of replicas updated to: {number_of_replicas}")
     if ANALYZER in schema_parameters and INDEX_TYPE in schema_parameters:
-        schema_json[MAPPINGS][DYNAMIC_TEMPLATES][1][STRING][MAPPING][ANALYZER] = schema_parameters[ANALYZER]
-        if schema_parameters[INDEX_TYPE] == VERTEX:
-            schema_json[MAPPINGS][DYNAMIC_TEMPLATES][0][MEM_CATEGORIES_HAS_RAW][MAPPING][ANALYZER] = schema_parameters[ANALYZER]
-        else:
-            schema_json[MAPPINGS][DYNAMIC_TEMPLATES][0][MEM_TYPE_HAS_RAW][MAPPING][ANALYZER] = schema_parameters[ANALYZER]
-        logger.info(f"Analyzer set to: {schema_parameters[ANALYZER]}")
+        analyzer = schema_parameters.get(ANALYZER, "")
+        schema_section(schema_json, (MAPPINGS, DYNAMIC_TEMPLATES, 1, STRING, MAPPING))[ANALYZER] = analyzer
+        raw_template = MEM_CATEGORIES_HAS_RAW if schema_parameters.get(INDEX_TYPE, "") == VERTEX else MEM_TYPE_HAS_RAW
+        schema_section(schema_json, (MAPPINGS, DYNAMIC_TEMPLATES, 0, raw_template, MAPPING))[ANALYZER] = analyzer
+        logger.info(f"Analyzer set to: {analyzer}")
     logger.info(f"Schema dict: {schema_json}")
     computed_return_value = mgp_Record(
         response=dict(connected_client().indices.create(index=index_name, body=schema_json, ignore=400))

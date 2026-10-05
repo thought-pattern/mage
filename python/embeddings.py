@@ -456,7 +456,7 @@ def return_data(
     if success and not vertex_input:
         embeddings = input_items
     elif success and return_embeddings:
-        embeddings = [v.properties.get(embedding_property_name, False) for v in input_items]
+        embeddings = [v.properties.get(embedding_property_name, []) for v in input_items]
 
     computed_return_value = mgp_Record(success=success, embeddings=embeddings, dimension=dimension)
     return computed_return_value
@@ -577,20 +577,6 @@ def compute_embeddings(
     return False
 
 
-def get_model_info(configuration: mgp_Map):
-    imported_import_module("transformers")
-
-    model = SentenceTransformer(configuration.get("model_name", ""), device="cpu")
-
-    info = {
-        "model_name": configuration.get("model_name", ""),
-        "dimension": model.get_sentence_embedding_dimension(),
-        "max_sequence_length": model.get_max_seq_length(),
-    }
-
-    return info
-
-
 @mgp_read_proc
 def model_info(
     configuration: mgp_Map = DEFAULT_ARGUMENT_DICT,
@@ -599,7 +585,14 @@ def model_info(
         configuration = DEFAULT_ARGUMENT_DICT.copy()
     configuration = validate_configuration(configuration)
 
-    info = get_model_info(configuration)
+    imported_import_module("transformers")
+    model_name = configuration.get("model_name", "")
+    model = SentenceTransformer(model_name, device="cpu")
+    info = {
+        "model_name": model_name,
+        "dimension": model.get_sentence_embedding_dimension(),
+        "max_sequence_length": model.get_max_seq_length(),
+    }
     computed_return_value = mgp_Record(info=info)
     return computed_return_value
 
@@ -607,7 +600,7 @@ def model_info(
 @mgp_write_proc
 def node_sentence(
     ctx: mgp_ProcCtx,
-    input_nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = False,
+    input_nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = None,
     configuration: mgp_Map = DEFAULT_ARGUMENT_DICT,
 ) -> mgp_Record:
     if configuration is DEFAULT_ARGUMENT_DICT:
@@ -615,6 +608,7 @@ def node_sentence(
     logger.info(f"compute_embeddings: starting (py_exec={sys_executable}, py_ver={sys_version.split()[0]})")
 
     configuration = validate_configuration(configuration)
+    # A null input_nodes (Memgraph's nullable-argument default) or an empty list selects every graph vertex.
     if input_nodes:
         vertices = input_nodes
     else:

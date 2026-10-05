@@ -82,11 +82,15 @@ def route(
     solver = VRPConstraintProgrammingSolver(number_of_vehicles, distance_matrix, depot_index)
     solver.solve()
 
-    result = solver.get_result()
-
-    computed_return_value = [
-        mgp_Record(from_vertex=vertices[x.from_vertex], to_vertex=vertices[x.to_vertex]) for x in result.vrp_paths
-    ]
+    computed_return_value = []
+    for path in solver.get_result():
+        from_index = path.get("from_vertex", -1)
+        to_index = path.get("to_vertex", -1)
+        # Path endpoints are positions in this call's vertex list; a missing or out-of-range endpoint is refused rather
+        # than wrapped around to another vertex.
+        if not 0 <= from_index < len(vertices) or not 0 <= to_index < len(vertices):
+            raise ValueError(f"route path endpoints outside the vertex list: {path!r}")
+        computed_return_value.append(mgp_Record(from_vertex=vertices[from_index], to_vertex=vertices[to_index]))
     return computed_return_value
 
 

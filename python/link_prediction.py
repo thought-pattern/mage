@@ -1,8 +1,5 @@
 """Utilities for link prediction."""
 
-from collections import defaultdict
-from copy import copy
-from dataclasses import dataclass, field, fields
 from heapq import heappop, heappush
 from itertools import chain as itertools_chain
 from json import loads as js_loads
@@ -55,110 +52,54 @@ from mage.link_prediction.predictors.DotPredictor import DotPredictor
 from mage.link_prediction.predictors.MLPPredictor import MLPPredictor
 
 ##############################
-# classes and data structures
-##############################
-
-
-@dataclass
-class LinkPredictionParameters:
-    (
-        "Parameters user in LinkPrediction module.\n    :param in_feats: int -> Defines the size of th"  # Continue literal.
-        "e input features. It will be automatically inferred by algorithm.\n    :param hidden_features"  # Continue literal.
-        "_size: List[int] -> Defines the size of each hidden layer in the architecture.\n    :param la"  # Continue literal.
-        "yer_type: str -> Layer type\n    :param num_epochs: int -> Number of epochs for model trainin"  # Continue literal.
-        "g\n    :param optimizer: str -> Can be one of the following: ADAM, SGD, AdaGrad...\n    :param"  # Continue literal.
-        " learning_rate: float -> Learning rate for optimizer\n    :param split_ratio: float -> Split "  # Continue literal.
-        "ratio between training and validation set. There is not test dataset because it is assumed t"  # Continue literal.
-        "hat user first needs to create new edges in dataset to test a model on them.\n    :param node"  # Continue literal.
-        "_features_property: str → Property name where the node features are saved.\n    :param device"  # Continue literal.
-        "_type: str ->  If model will be trained using CPU or cuda GPU. Possible values are cpu and c"  # Continue literal.
-        "uda. To run it on Cuda, user must set this flag to true and system must support cuda executi"  # Continue literal.
-        "on.\n        System's support is checked with torch.cuda.is_available()\n    :param console_lo"  # Continue literal.
-        "g_freq: int ->  how often do you want to print results from your model? Results will be from"  # Continue literal.
-        " validation dataset.\n    :param checkpoint_freq: int → Select the number of epochs on which "  # Continue literal.
-        "the model will be saved. The model is persisted on disc.\n    :param aggregator: str → Aggreg"  # Continue literal.
-        "ator used in models. Can be one of the following: lstm, pool, mean, gcn. It is only used in "  # Continue literal.
-        "graph_sage, not graph_attn\n    :param metrics: mgp.List[str] -> Metrics used to evaluate mod"  # Continue literal.
-        "el in training on the test/validation set(we don't use validation set to optimize parameters"  # Continue literal.
-        " so everything is test set).\n        Epoch will always be displayed, you can add loss, accur"  # Continue literal.
-        "acy, precision, recall, specificity, F1, auc_score etc.\n    :param predictor_type: str -> Ty"  # Continue literal.
-        "pe of the predictor. Predictor is used for combining node scores to edge scores.\n    :param "  # Continue literal.
-        "attn_num_heads: List[int] -> GAT can support usage of more than one head in each layers exce"  # Continue literal.
-        "pt last one. Only used in GAT, not in GraphSage.\n    :param tr_acc_patience: int -> Training"  # Continue literal.
-        " patience, for how many epoch will accuracy drop on validation set be tolerated before stopp"  # Continue literal.
-        "ing the training.\n    :param context_save_dir: str -> Path where the model and predictor wil"  # Continue literal.
-        "l be saved every checkpoint_freq epochs.\n    :param target_relation: str -> Unique edge type"  # Continue literal.
-        " that is used for training.\n    :param num_neg_per_pos_edge (int): Number of negative edges "  # Continue literal.
-        "that will be sampled per one positive edge in the mini-batch.\n    :param num_layers (int): N"  # Continue literal.
-        "umber of layers in the GNN architecture.\n    :param batch_size (int): Batch size used in bot"  # Continue literal.
-        "h training and validation procedure.\n    :param sampling_workers (int): Number of workers th"  # Continue literal.
-        "at will cooperate in the sampling procedure in the training and validation.\n    :param last_"  # Continue literal.
-        "activation_function (str) → Activation function that is applied after the last layer in the "  # Continue literal.
-        "model and before the predictor_type. Currently, only sigmoid is supported.\n    :param add_re"  # Continue literal.
-        "verse_edges (bool) -> Whether the module should add reverse edges for each in the obtained g"  # Continue literal.
-        "raph. If the source and destination nodes are of the same type, edges of the same edge type "  # Continue literal.
-        "will\n            be created. If the source and destination nodes are different, then prefix "  # Continue literal.
-        "rev_ will be added to the previous edge type. Reverse edges will be excluded as message pass"  # Continue literal.
-        "ing edges for corresponding supervision edges.\n    :param add_self_loops (bool) -> Whether t"  # Continue literal.
-        'he module should add self loop edges to every node in the graph with edge_type set to "self"'  # Continue literal.
-        ".\n\n"
-    )
-
-    in_feats: int = 0
-    hidden_features_size: list = field(
-        default_factory=lambda: [128, 128]
-        # Cannot add typing because of the way Python is implemented(no default things in dataclass, list is immutable something
-        # like
-        # this)
-    )
-    layer_type: str = Models.GRAPH_ATTN
-    num_epochs: int = 10
-    optimizer: str = Optimizers.ADAM_OPT
-    learning_rate: float = 0.01
-    split_ratio: float = 0.8
-    node_features_property: str = "features"
-    device_type: str = Devices.CPU_DEVICE
-    console_log_freq: int = 1
-    checkpoint_freq: int = 10
-    aggregator: str = Aggregators.POOL_AGG
-    metrics: list = field(
-        default_factory=lambda: [
-            Metrics.LOSS,
-            Metrics.ACCURACY,
-            Metrics.AUC_SCORE,
-            Metrics.PRECISION,
-            Metrics.RECALL,
-            Metrics.F1,
-            Metrics.TRUE_POSITIVES,
-            Metrics.FALSE_POSITIVES,
-            Metrics.TRUE_NEGATIVES,
-            Metrics.FALSE_NEGATIVES,
-        ]
-    )
-    predictor_type: str = Predictors.MLP_PREDICTOR
-    attn_num_heads: list[int] = field(default_factory=lambda: [4, 4])
-    tr_acc_patience: int = 5
-    context_save_dir: str = "/tmp/"
-    target_relation: str = ""
-    num_neg_per_pos_edge: int = 1
-    batch_size: int = 512
-    sampling_workers: int = 4
-    last_activation_function = Activations.SIGMOID
-    add_reverse_edges = False  # only allowed in some cases
-    add_self_loops = False  # for automatically adding self-loop
-
-
-##############################
 # global parameters
 ##############################
 
-link_prediction_parameters: LinkPredictionParameters = LinkPredictionParameters()  # parameters currently saved.
-# Names set_model_parameters accepts: the dataclass fields plus the three unannotated class-level switches.
-SETTABLE_PARAMETERS = {parameter.name for parameter in fields(LinkPredictionParameters)} | {
-    Parameters.LAST_ACTIVATION_FUNCTION.value,
-    Parameters.ADD_REVERSE_EDGES.value,
-    Parameters.ADD_SELF_LOOPS.value,
+DEFAULT_CONTEXT_SAVE_DIR = "/tmp/"
+
+# The model configuration currently saved; set_model_parameters documents every entry and replaces the whole dictionary
+# only after an update is admitted. in_feats 0 infers the input width from the node features at training; an empty
+# target_relation is inferred when the graph has exactly one edge type; aggregator is used only by graph_sage and
+# attn_num_heads only by graph_attn; metrics are evaluated on the validation set every epoch.
+link_prediction_parameters = {
+    "in_feats": 0,
+    "hidden_features_size": [128, 128],
+    "layer_type": Models.GRAPH_ATTN,
+    "num_epochs": 10,
+    "optimizer": Optimizers.ADAM_OPT,
+    "learning_rate": 0.01,
+    "split_ratio": 0.8,
+    "node_features_property": "features",
+    "device_type": Devices.CPU_DEVICE,
+    "console_log_freq": 1,
+    "checkpoint_freq": 10,
+    "aggregator": Aggregators.POOL_AGG,
+    "metrics": [
+        Metrics.LOSS,
+        Metrics.ACCURACY,
+        Metrics.AUC_SCORE,
+        Metrics.PRECISION,
+        Metrics.RECALL,
+        Metrics.F1,
+        Metrics.TRUE_POSITIVES,
+        Metrics.FALSE_POSITIVES,
+        Metrics.TRUE_NEGATIVES,
+        Metrics.FALSE_NEGATIVES,
+    ],
+    "predictor_type": Predictors.MLP_PREDICTOR,
+    "attn_num_heads": [4, 4],
+    "tr_acc_patience": 5,
+    "context_save_dir": DEFAULT_CONTEXT_SAVE_DIR,
+    "target_relation": "",
+    "num_neg_per_pos_edge": 1,
+    "batch_size": 512,
+    "sampling_workers": 4,
+    "last_activation_function": Activations.SIGMOID,
+    "add_reverse_edges": False,  # only allowed in some cases
+    "add_self_loops": False,  # for automatically adding self-loop
 }
+# Names set_model_parameters accepts.
+SETTABLE_PARAMETERS = set(link_prediction_parameters)
 training_results: list[dict[str, float]] = (
     list()
 )  # List of all output training records. String is the metric's name and float represents value.
@@ -248,23 +189,22 @@ def set_model_parameters(ctx: mgp_ProcCtx, parameters: mgp_Map) -> mgp_Record:
 
     # The update is applied to a copy and published only after the complete effective configuration is admitted, so a
     # rejected request leaves the prior configuration and device untouched.
-    candidate = copy(link_prediction_parameters)
-    for key, value in requested.items():
-        setattr(candidate, key, value)
-    for key in (Parameters.HIDDEN_FEATURES_SIZE, Parameters.ATTN_NUM_HEADS, Parameters.METRICS):
-        value = getattr(candidate, key)
+    candidate = {**link_prediction_parameters, **requested}
+    # The host passes lists as tuples; the configuration keeps them as lists.
+    for key in (Parameters.HIDDEN_FEATURES_SIZE.value, Parameters.ATTN_NUM_HEADS.value, Parameters.METRICS.value):
+        value = candidate.get(key, [])
         if isinstance(value, tuple):
-            setattr(candidate, key, list(value))
+            candidate[key] = list(value)
 
     validate_effective_parameters(candidate)
 
     candidate_device = (
         torch_device(Devices.CUDA_DEVICE)
-        if candidate.device_type == Devices.CUDA_DEVICE and torch_cuda.is_available()
+        if candidate.get("device_type", "") == Devices.CUDA_DEVICE and torch_cuda.is_available()
         else torch_device(Devices.CPU_DEVICE)
     )
     if candidate_device.type == "cuda":
-        candidate.sampling_workers = 0
+        candidate["sampling_workers"] = 0
 
     link_prediction_parameters, device = candidate, candidate_device
 
@@ -290,11 +230,12 @@ def train(
     reset_train_predict_parameters()
 
     parameters = link_prediction_parameters
+    node_features_property = parameters.get("node_features_property", "")
     graph_contract = {
-        "node_features_property": parameters.node_features_property,
-        "target_relation": parameters.target_relation,
-        "add_reverse_edges": parameters.add_reverse_edges,
-        "add_self_loops": parameters.add_self_loops,
+        "node_features_property": node_features_property,
+        "target_relation": parameters.get("target_relation", ""),
+        "add_reverse_edges": parameters.get("add_reverse_edges", False),
+        "add_self_loops": parameters.get("add_self_loops", False),
     }
 
     # Get some data
@@ -302,46 +243,49 @@ def train(
     graph, reindex, type_triplets = get_dgl_graph_data(ctx, graph_contract)
 
     # An omitted target relation ("") is inferred only when the graph has exactly one edge type.
-    target_relation = parameters.target_relation
+    target_relation = parameters.get("target_relation", "")
     if not target_relation:
         if len(type_triplets) != 1:
             raise ValueError("target_relation must be set when the graph has more than one edge type. ")
         target_relation = type_triplets[0]
 
     # An omitted input width (0) is the converted feature width; an explicit one must match it.
-    feature_width = node_feature_width(graph, parameters.node_features_property)
-    in_feats = parameters.in_feats if parameters.in_feats else feature_width
+    feature_width = node_feature_width(graph, node_features_property)
+    configured_in_feats = parameters.get("in_feats", 0)
+    in_feats = configured_in_feats if configured_in_feats else feature_width
     if in_feats != feature_width:
         raise ValueError(f"in_feats is {in_feats} but the node features are {feature_width} wide. ")
 
     # Split the data
+    split_ratio = parameters.get("split_ratio", 0.0)
     train_eid_dict, val_eid_dict = preprocess(
         graph=graph,
-        split_ratio=parameters.split_ratio,
+        split_ratio=split_ratio,
         target_relation=target_relation,
         device=device,
     )
     if len(train_eid_dict.get(target_relation, [])) == 0:
-        raise ValueError(f"split_ratio {parameters.split_ratio} leaves no training edges. ")
+        raise ValueError(f"split_ratio {split_ratio} leaves no training edges. ")
 
     # Extract number of layers
-    num_layers = len(parameters.hidden_features_size)
+    hidden_features_size = parameters.get("hidden_features_size", [])
+    num_layers = len(hidden_features_size)
 
     # Plain values only (no enum members), so the manifest loads under torch.load(weights_only=True).
     checkpoint_manifest = {
         "format": Context.CHECKPOINT_FORMAT.value,
-        "layer_type": parameters.layer_type.lower(),
+        "layer_type": parameters.get("layer_type", "").lower(),
         "in_feats": in_feats,
-        "hidden_features_size": list(parameters.hidden_features_size),
-        "attn_num_heads": list(parameters.attn_num_heads),
-        "aggregator": parameters.aggregator.lower(),
-        "predictor_type": parameters.predictor_type.lower(),
+        "hidden_features_size": list(hidden_features_size),
+        "attn_num_heads": list(parameters.get("attn_num_heads", [])),
+        "aggregator": parameters.get("aggregator", "").lower(),
+        "predictor_type": parameters.get("predictor_type", "").lower(),
         "edge_types": list(graph.etypes),
         "target_relation": target_relation,
-        "node_features_property": parameters.node_features_property,
-        "add_reverse_edges": parameters.add_reverse_edges,
-        "add_self_loops": parameters.add_self_loops,
-        "last_activation_function": parameters.last_activation_function.lower(),
+        "node_features_property": node_features_property,
+        "add_reverse_edges": parameters.get("add_reverse_edges", False),
+        "add_self_loops": parameters.get("add_self_loops", False),
+        "last_activation_function": parameters.get("last_activation_function", "").lower(),
     }
     trained_model, trained_predictor = construct_architecture(checkpoint_manifest)
 
@@ -349,16 +293,16 @@ def train(
         Optimizers.ADAM_OPT: torch_optim.Adam,
         Optimizers.SGD_OPT: torch_optim.SGD,
     }
-    optimizer_type = parameters.optimizer.upper()
+    optimizer_type = parameters.get("optimizer", "").upper()
     optimizer_class = optimizer_types.get(optimizer_type, torch_optim.Optimizer)
     if optimizer_class is torch_optim.Optimizer:
         raise ValueError(f"Optimizer {optimizer_type} is not supported")
     optimizer = optimizer_class(
         itertools_chain(trained_model.parameters(), trained_predictor.parameters()),
-        lr=parameters.learning_rate,
+        lr=parameters.get("learning_rate", 0.0),
     )
 
-    activation_function = parameters.last_activation_function
+    activation_function = parameters.get("last_activation_function", "")
     if activation_function != Activations.SIGMOID:
         raise ValueError(f"Activation function {activation_function} is not supported")
     m = torch_nn.Sigmoid()
@@ -373,19 +317,19 @@ def train(
         trained_model,
         trained_predictor,
         optimizer,
-        parameters.num_epochs,
+        parameters.get("num_epochs", 0),
         m,
         threshold,
-        parameters.node_features_property,
-        parameters.console_log_freq,
-        parameters.checkpoint_freq,
-        parameters.metrics,
-        parameters.tr_acc_patience,
-        parameters.context_save_dir,
-        parameters.num_neg_per_pos_edge,
+        node_features_property,
+        parameters.get("console_log_freq", 0),
+        parameters.get("checkpoint_freq", 0),
+        parameters.get("metrics", []),
+        parameters.get("tr_acc_patience", 0),
+        parameters.get("context_save_dir", ""),
+        parameters.get("num_neg_per_pos_edge", 0),
         num_layers,
-        parameters.batch_size,
-        parameters.sampling_workers,
+        parameters.get("batch_size", 0),
+        parameters.get("sampling_workers", 0),
         device,
         checkpoint_manifest,
     )
@@ -435,8 +379,8 @@ def predict(ctx: mgp_ProcCtx, src_vertex: mgp_Vertex, dest_vertex: mgp_Vertex) -
                 raise Exception("Prediction can be only computed on edges on which model was trained. ")
 
     # Get dgl ids
-    src_id = reindex.get(Reindex.MEMGRAPH, {})[src_type][src_old_id]
-    dest_id = reindex.get(Reindex.MEMGRAPH, {})[dest_type][dest_old_id]
+    src_id = dgl_node_id(reindex, src_type, src_old_id)
+    dest_id = dgl_node_id(reindex, dest_type, dest_old_id)
 
     message_graph = mask_target_bindings(graph, target_relation, src_id, [dest_id])
     embeddings = compute_node_embeddings(model, message_graph, trained_manifest.get("node_features_property", ""))
@@ -485,14 +429,14 @@ def recommend(
                 raise Exception("Prediction can be only computed on edges on which model was trained. ")
 
     # Get dgl ids
-    src_id = reindex.get(Reindex.MEMGRAPH, {})[src_type][src_old_id]
+    src_id = dgl_node_id(reindex, src_type, src_old_id)
 
     # Admit every candidate before any scoring: (vertex, dgl id, type).
     candidates: list[tuple[mgp_Vertex, int, str]] = []
     for dest_vertex in dest_vertices:
         # Get dest vertex
         dest_old_id, dest_type = dest_vertex.id, merge_labels(dest_vertex.labels)
-        dest_id = reindex.get(Reindex.MEMGRAPH, {})[dest_type][dest_old_id]
+        dest_id = dgl_node_id(reindex, dest_type, dest_old_id)
 
         # Check if dest_type is of the same target relation
         if isinstance(target_relation, tuple):
@@ -601,7 +545,7 @@ def get_training_results(
 
 
 @mgp_read_proc
-def load_model(ctx: mgp_ProcCtx, path: str = link_prediction_parameters.context_save_dir) -> mgp_Record:
+def load_model(ctx: mgp_ProcCtx, path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Record:
     """Loads the checkpoint bundle train saved under the given directory. If the path doesn't exist, underlying exception
     is thrown. If the path argument is not given, it loads from the default path. If the user has changed path and the
     context was deleted then he/she needs to send that parameter here.
@@ -717,9 +661,7 @@ def admit_checkpoint_manifest(bundle: object) -> dict:
 
 def node_feature_width(graph: dgl_graph, node_features_property: str) -> int:
     """Feature width of the converted graph; proj_0 has padded every node type to the same width."""
-    width = max(
-        graph.nodes[node_type].data.get(node_features_property, torch_tensor([])).shape[1] for node_type in graph.ntypes
-    )
+    width = max(graph.nodes[node_type].data.get(node_features_property, torch_tensor([])).shape[1] for node_type in graph.ntypes)
     return width
 
 
@@ -807,6 +749,15 @@ def process_help_function(
     return False
 
 
+def dgl_node_id(reindex: dict, node_type: str, memgraph_id: int) -> int:
+    """Returns the DGL index the conversion gave a Memgraph vertex of node_type, refusing a vertex it did not convert."""
+    type_ids = reindex.get(Reindex.MEMGRAPH, {}).get(node_type, {})
+    if memgraph_id not in type_ids:
+        raise KeyError(f"Vertex {memgraph_id} of type {node_type!r} is not part of the converted graph. ")
+    dgl_id = type_ids.get(memgraph_id, 0)
+    return dgl_id
+
+
 def get_dgl_graph_data(
     ctx: mgp_ProcCtx,
     graph_contract: dict,
@@ -832,10 +783,7 @@ def get_dgl_graph_data(
     type_triplets = []
     index_dgl_to_features = {}  # dgl indexes to features
 
-    src_nodes, dest_nodes = (
-        defaultdict(list),
-        defaultdict(list),
-    )  # label to node IDs -> Tuple of node-tensors format from DGL
+    src_nodes, dest_nodes = {}, {}  # type triplet to DGL node IDs -> Tuple of node-tensors format from DGL
 
     edge_types = set()
 
@@ -847,7 +795,7 @@ def get_dgl_graph_data(
         src_id, src_type, src_features = (
             vertex.id,
             merge_labels(vertex.labels),
-            vertex.properties.get(node_features_property, False),
+            vertex.properties.get(node_features_property, []),
         )
 
         # Find if the node is disconnected from the rest of the graph
@@ -875,7 +823,7 @@ def get_dgl_graph_data(
             dest_id, dest_type, dest_features = (
                 dest_node.id,
                 merge_labels(dest_node.labels),
-                dest_node.properties.get(node_features_property, False),
+                dest_node.properties.get(node_features_property, []),
             )
 
             # Define type triplet
@@ -911,8 +859,8 @@ def get_dgl_graph_data(
             )
 
             # Define edge
-            src_nodes[type_triplet].append(reindex.get(Reindex.MEMGRAPH, {})[src_type][src_id])
-            dest_nodes[type_triplet].append(reindex.get(Reindex.MEMGRAPH, {})[dest_type][dest_id])
+            src_nodes.setdefault(type_triplet, []).append(dgl_node_id(reindex, src_type, src_id))
+            dest_nodes.setdefault(type_triplet, []).append(dgl_node_id(reindex, dest_type, dest_id))
 
         # Append old id
         if src_isolated_node:
@@ -928,8 +876,8 @@ def get_dgl_graph_data(
     # Create a heterograph
     for type_triplet in type_triplets:
         data_dict[type_triplet] = (
-            torch_tensor(src_nodes[type_triplet], device=device),
-            torch_tensor(dest_nodes[type_triplet], device=device),
+            torch_tensor(src_nodes.get(type_triplet, []), device=device),
+            torch_tensor(dest_nodes.get(type_triplet, []), device=device),
         )
 
     g = dgl_heterograph(data_dict, device=device)
@@ -939,7 +887,7 @@ def get_dgl_graph_data(
         isolated_node = ctx.graph.get_vertex_by_id(isolated_node_id)
         isolated_node_type, isolated_node_features = (
             merge_labels(isolated_node.labels),
-            isolated_node.properties.get(node_features_property, False),
+            isolated_node.properties.get(node_features_property, []),
         )
         process_help_function(
             mem_indexes,
@@ -963,10 +911,13 @@ def get_dgl_graph_data(
 
     # Create features
     for node_type in g.ntypes:
+        type_features = index_dgl_to_features.get(node_type, {})
         node_features = []
         for node in g.nodes(node_type):
             node_id = node.item()
-            node_features.append(index_dgl_to_features.get(node_type, {})[node_id])
+            if node_id not in type_features:
+                raise ValueError(f"Node {node_id} of type {node_type} has no converted {node_features_property!r} features. ")
+            node_features.append(type_features.get(node_id, []))
 
         if len({len(features) for features in node_features}) > 1:
             raise ValueError(f"Nodes of type {node_type} have {node_features_property!r} lists of different lengths. ")
@@ -997,7 +948,7 @@ def reset_train_predict_parameters() -> bool:
     model = False  # Annulate old model
     trained_manifest = {}  # The published model's contract goes with it
     graph = False  # Set graph to None
-    reindex = False  # Delete indexing stuff
+    reindex = {}  # Delete indexing stuff
     return False
 
 
@@ -1026,13 +977,16 @@ def conversion_to_dgl_test(
             # Get int from torch.Tensor
             vertex_id = vertex.item()
             # Find vertex in Memgraph
-            old_id = reindex.get(Reindex.DGL, {})[node_type][vertex_id]
+            dgl_to_memgraph = reindex.get(Reindex.DGL, {}).get(node_type, {})
+            if vertex_id not in dgl_to_memgraph:
+                raise Exception(f"The conversion to DGL failed. DGL node {vertex_id} of type {node_type} has no Memgraph vertex. ")
+            old_id = dgl_to_memgraph.get(vertex_id, 0)
             vertex = ctx.graph.get_vertex_by_id(old_id)
             if vertex is None:
                 raise Exception(f"The conversion to DGL failed. Vertex with id {old_id} is not mapped to DGL graph. ")
 
             # Admit features exactly as the conversion did.
-            old_features = admit_node_features(vertex.properties.get(node_features_property, False), old_id, node_features_property)
+            old_features = admit_node_features(vertex.properties.get(node_features_property, []), old_id, node_features_property)
 
             # Check if equal
             if not torch_equal(
@@ -1070,7 +1024,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # Hidden features size
     if Parameters.HIDDEN_FEATURES_SIZE in parameters.keys():
-        hidden_features_size = parameters.get(Parameters.HIDDEN_FEATURES_SIZE, 0)
+        hidden_features_size = parameters.get(Parameters.HIDDEN_FEATURES_SIZE, ())
 
         # Because list cannot be sent through mgp.
         type_checker(hidden_features_size, "hidden_features_size not an iterable object. ", tuple)
@@ -1094,7 +1048,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # Num epochs
     if Parameters.NUM_EPOCHS in parameters.keys():
-        num_epochs = parameters.get(Parameters.NUM_EPOCHS, [])
+        num_epochs = parameters.get(Parameters.NUM_EPOCHS, 0)
 
         # Check typing
         type_checker(num_epochs, "num_epochs must be int. ", int)
@@ -1104,7 +1058,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # Optimizer check
     if Parameters.OPTIMIZER in parameters.keys():
-        optimizer = parameters.get(Parameters.OPTIMIZER, False)
+        optimizer = parameters.get(Parameters.OPTIMIZER, "")
 
         # Check typing
         type_checker(optimizer, "optimizer must be a string. ", str)
@@ -1124,7 +1078,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # Split ratio check
     if Parameters.SPLIT_RATIO in parameters.keys():
-        split_ratio = parameters.get(Parameters.SPLIT_RATIO, False)
+        split_ratio = parameters.get(Parameters.SPLIT_RATIO, 0.0)
 
         # Check typing
         type_checker(split_ratio, "split_ratio must be a float. ", float)
@@ -1135,7 +1089,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # node_features_property check
     if Parameters.NODE_FEATURES_PROPERTY in parameters.keys():
-        node_features_property = parameters.get(Parameters.NODE_FEATURES_PROPERTY, False)
+        node_features_property = parameters.get(Parameters.NODE_FEATURES_PROPERTY, "")
 
         # Check typing
         type_checker(node_features_property, "node_features_property must be a string. ", str)
@@ -1155,7 +1109,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # console_log_freq check
     if Parameters.CONSOLE_LOG_FREQ in parameters.keys():
-        console_log_freq = parameters.get(Parameters.CONSOLE_LOG_FREQ, False)
+        console_log_freq = parameters.get(Parameters.CONSOLE_LOG_FREQ, 0)
 
         # Check typing
         type_checker(console_log_freq, "console_log_freq must be an int. ", int)
@@ -1165,7 +1119,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # checkpoint freq check
     if Parameters.CHECKPOINT_FREQ in parameters.keys():
-        checkpoint_freq = parameters.get(Parameters.CHECKPOINT_FREQ, False)
+        checkpoint_freq = parameters.get(Parameters.CHECKPOINT_FREQ, 0)
 
         # Check typing
         type_checker(checkpoint_freq, "checkpoint_freq must be an int. ", int)
@@ -1175,7 +1129,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # aggregator check
     if Parameters.AGGREGATOR in parameters.keys():
-        aggregator = parameters.get(Parameters.AGGREGATOR, False)
+        aggregator = parameters.get(Parameters.AGGREGATOR, "")
 
         # Check typing
         type_checker(aggregator, "aggregator must be a string. ", str)
@@ -1185,7 +1139,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # metrics check
     if Parameters.METRICS in parameters.keys():
-        metrics = parameters.get(Parameters.METRICS, [])
+        metrics = parameters.get(Parameters.METRICS, ())
 
         # Check typing
         type_checker(metrics, "metrics must be an iterable object. ", tuple)
@@ -1206,7 +1160,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # Attention heads
     if Parameters.ATTN_NUM_HEADS in parameters.keys():
-        attn_num_heads = parameters.get(Parameters.ATTN_NUM_HEADS, [])
+        attn_num_heads = parameters.get(Parameters.ATTN_NUM_HEADS, ())
 
         # Check typing
         type_checker(attn_num_heads, "attn_num_heads must be an iterable object. ", tuple)
@@ -1218,7 +1172,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # Training accuracy patience
     if Parameters.TR_ACC_PATIENCE in parameters.keys():
-        tr_acc_patience = parameters.get(Parameters.TR_ACC_PATIENCE, False)
+        tr_acc_patience = parameters.get(Parameters.TR_ACC_PATIENCE, 0)
 
         # Check typing
         type_checker(tr_acc_patience, "tr_acc_patience must be an iterable object. ", int)
@@ -1238,7 +1192,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # context save dir
     if Parameters.CONTEXT_SAVE_DIR in parameters.keys():
-        context_save_dir = parameters.get(Parameters.CONTEXT_SAVE_DIR, {})
+        context_save_dir = parameters.get(Parameters.CONTEXT_SAVE_DIR, "")
 
         # check typing
         type_checker(context_save_dir, "context_save_dir must be a string. ", str)
@@ -1248,7 +1202,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # target edge type
     if Parameters.TARGET_RELATION in parameters.keys():
-        target_relation = parameters.get(Parameters.TARGET_RELATION, False)
+        target_relation = parameters.get(Parameters.TARGET_RELATION, "")
 
         # check typing
         if not isinstance(target_relation, str) and not isinstance(target_relation, tuple):
@@ -1260,7 +1214,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # num_neg_per_positive_edge
     if Parameters.NUM_NEG_PER_POS_EDGE in parameters.keys():
-        num_neg_per_pos_edge = parameters.get(Parameters.NUM_NEG_PER_POS_EDGE, False)
+        num_neg_per_pos_edge = parameters.get(Parameters.NUM_NEG_PER_POS_EDGE, 0)
 
         # Check typing
         type_checker(
@@ -1282,7 +1236,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # sampling workers
     if Parameters.SAMPLING_WORKERS in parameters.keys():
-        sampling_workers = parameters.get(Parameters.SAMPLING_WORKERS, [])
+        sampling_workers = parameters.get(Parameters.SAMPLING_WORKERS, 0)
 
         # check typing
         type_checker(sampling_workers, "sampling_workers must be and int", int)
@@ -1291,7 +1245,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # last activation function
     if Parameters.LAST_ACTIVATION_FUNCTION in parameters.keys():
-        last_activation_function = parameters.get(Parameters.LAST_ACTIVATION_FUNCTION, False)
+        last_activation_function = parameters.get(Parameters.LAST_ACTIVATION_FUNCTION, "")
 
         # check typing
         type_checker(last_activation_function, "last_activation_function should be a string", str)
@@ -1301,26 +1255,28 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
     # add reverse edges
     if Parameters.ADD_REVERSE_EDGES in parameters.keys():
-        add_reverse_edges = parameters.get(Parameters.ADD_REVERSE_EDGES, [])
+        add_reverse_edges = parameters.get(Parameters.ADD_REVERSE_EDGES, False)
 
         # check typing
         type_checker(add_reverse_edges, "add_reverse_edges should be a bool. ", bool)
 
     # add_self_loops
     if Parameters.ADD_SELF_LOOPS in parameters.keys():
-        add_self_loops = parameters.get(Parameters.ADD_SELF_LOOPS, [])
+        add_self_loops = parameters.get(Parameters.ADD_SELF_LOOPS, False)
 
         # check typing
         type_checker(add_self_loops, "add_self_loops should be a bool. ", bool)
     return False
 
 
-def validate_effective_parameters(parameters: LinkPredictionParameters) -> bool:
+def validate_effective_parameters(parameters: dict) -> bool:
     """Checks cross-field constraints on the complete configuration an update would publish (current plus requested)."""
-    if parameters.layer_type == Models.GRAPH_ATTN and len(parameters.attn_num_heads) != len(parameters.hidden_features_size):
+    hidden_features_size = parameters.get("hidden_features_size", [])
+    attn_num_heads = parameters.get("attn_num_heads", [])
+    if parameters.get("layer_type", "") == Models.GRAPH_ATTN and len(attn_num_heads) != len(hidden_features_size):
         raise Exception(
-            f"Specified network with {len(parameters.hidden_features_size)} layers but given attention heads data for "
-            f"{len(parameters.attn_num_heads)} layers. "
+            f"Specified network with {len(hidden_features_size)} layers but given attention heads data for "
+            f"{len(attn_num_heads)} layers. "
         )
     return False
 

@@ -43,7 +43,7 @@ from uuid import uuid4 as uuid_uuid4
 
 from neo4j import GraphDatabase
 from networkx import DiGraph as nx_DiGraph
-from networkx import NetworkXError as nx_NetworkXError
+from networkx import PowerIterationFailedConvergence as nx_PowerIterationFailedConvergence
 from networkx import betweenness_centrality as nx_betweenness_centrality
 from networkx import community as nx_community
 from networkx import hits as nx_hits
@@ -78,48 +78,29 @@ COMMUNITY_A = {"A1", "A2", "A3", "A4"}
 COMMUNITY_B = {"B1", "B2", "B3", "B4"}
 # HUB bridges A1 and B1 symmetrically, so an accepted partition may place it with either community or alone.
 TIE_NODE = "HUB"
-
-
-def build_networkx_graph() -> nx_DiGraph:
-    """Build the same test graph in NetworkX for ground truth comparison."""
-    G = nx_DiGraph()
-
-    # Add nodes with names
-    nodes = [(node_id, {"name": name}) for name, node_id in EXPECTED_NODE_IDS.items()]
-    G.add_nodes_from(nodes)
-
-    # Community 1 edges (A1-A4)
-    community1_edges = [
-        (1, 2),
-        (2, 3),
-        (3, 4),
-        (4, 1),  # Ring
-        (1, 3),
-        (2, 4),  # Cross connections
-    ]
-
-    # Community 2 edges (B1-B4)
-    community2_edges = [
-        (5, 6),
-        (6, 7),
-        (7, 8),
-        (8, 5),  # Ring
-        (5, 7),
-        (6, 8),  # Cross connections
-    ]
-
-    # Hub connections
-    hub_edges = [
-        (1, 9),
-        (9, 5),  # A1 -> HUB -> B1
-        (9, 1),
-        (5, 9),  # HUB -> A1, B1 -> HUB
-    ]
-
-    all_edges = [(u, v, {"weight": 1.0}) for u, v in community1_edges + community2_edges + hub_edges]
-    G.add_edges_from(all_edges)
-
-    return G
+# Authored directed edges of the test graph as (source id, target id), each with weight 1.0, in the order the
+# NetworkX reference graph adds them; create_test_graph writes the same edges to Memgraph.
+TEST_GRAPH_EDGES = (
+    # Community A (A1-A4): ring, then cross connections
+    (1, 2),
+    (2, 3),
+    (3, 4),
+    (4, 1),
+    (1, 3),
+    (2, 4),
+    # Community B (B1-B4): ring, then cross connections
+    (5, 6),
+    (6, 7),
+    (7, 8),
+    (8, 5),
+    (5, 7),
+    (6, 8),
+    # HUB bridge: A1 -> HUB -> B1, then HUB -> A1 and B1 -> HUB
+    (1, 9),
+    (9, 5),
+    (9, 1),
+    (5, 9),
+)
 
 
 def get_networkx_ground_truth(G: nx_DiGraph):
@@ -129,24 +110,24 @@ def get_networkx_ground_truth(G: nx_DiGraph):
 
     # PageRank
     pagerank = nx_pagerank(G, alpha=0.85, max_iter=100, tol=1e-5)
-    pagerank_by_name = {id_to_name.get(k, False): v for k, v in pagerank.items()}
+    pagerank_by_name = {id_to_name.get(k, ""): v for k, v in pagerank.items()}
 
     # Betweenness Centrality (normalized, directed)
     betweenness = nx_betweenness_centrality(G, normalized=True)
-    betweenness_by_name = {id_to_name.get(k, False): v for k, v in betweenness.items()}
+    betweenness_by_name = {id_to_name.get(k, ""): v for k, v in betweenness.items()}
 
     # HITS
     hubs, authorities = nx_hits(G, max_iter=100, tol=1e-5, normalized=True)
-    hubs_by_name = {id_to_name.get(k, False): v for k, v in hubs.items()}
-    authorities_by_name = {id_to_name.get(k, False): v for k, v in authorities.items()}
+    hubs_by_name = {id_to_name.get(k, ""): v for k, v in hubs.items()}
+    authorities_by_name = {id_to_name.get(k, ""): v for k, v in authorities.items()}
 
-    # Katz Centrality
+    # Katz Centrality; an empty baseline records that NetworkX did not converge, and test_katz_centrality then
+    # skips the value comparison.
     try:
         katz = nx_katz_centrality(G, alpha=0.1, beta=1.0, max_iter=100, tol=1e-6, normalized=False)
-        katz_by_name = {id_to_name.get(k, False): v for k, v in katz.items()}
-    except nx_NetworkXError:
-        # Katz may not converge for some graphs
-        katz_by_name = ""
+        katz_by_name = {id_to_name.get(k, ""): v for k, v in katz.items()}
+    except nx_PowerIterationFailedConvergence:
+        katz_by_name = {}
 
     # Community detection (Louvain) - use undirected graph
     G_undirected = G.to_undirected()
@@ -154,13 +135,13 @@ def get_networkx_ground_truth(G: nx_DiGraph):
     community_by_name = {}
     for idx, community in enumerate(communities):
         for node in community:
-            community_by_name[id_to_name.get(node, False)] = idx
+            community_by_name[id_to_name.get(node, "")] = idx
 
     # Personalized PageRank from node 1 (A1)
     personalization = dict.fromkeys(G.nodes(), 0.0)
     personalization[1] = 1.0
     ppr = nx_pagerank(G, alpha=0.85, personalization=personalization, max_iter=100, tol=1e-5)
-    ppr_by_name = {id_to_name.get(k, False): v for k, v in ppr.items()}
+    ppr_by_name = {id_to_name.get(k, ""): v for k, v in ppr.items()}
 
     return {
         "pagerank": pagerank_by_name,
@@ -214,6 +195,17 @@ def partition_contract_errors(actual: dict, baseline: dict) -> list[str]:
     if actual_groups != baseline_groups:
         errors.append(f"Partition {actual_groups} differs from the NetworkX baseline {baseline_groups}")
     return errors
+
+
+def require_baseline_scores(ground_truth: dict, algorithm: str) -> dict:
+    """Return one algorithm's per-node NetworkX scores after checking they cover every authored node."""
+    scores = ground_truth.get(algorithm, {})
+    if not isinstance(scores, dict):
+        raise TypeError(f"{algorithm} ground truth must be a dictionary")
+    missing = sorted(EXPECTED_NODES - set(scores))
+    if missing:
+        raise ValueError(f"{algorithm} ground truth lacks nodes {missing}")
+    return scores
 
 
 def run_cmd(cmd: list[str]) -> subprocess_CompletedProcess:
@@ -439,13 +431,13 @@ def test_pagerank(session, ground_truth: dict) -> bool:
         print(f"✓ PageRank: {len(records)} nodes returned")
 
         # Compare against NetworkX ground truth
-        expected = ground_truth.get("pagerank", False)
+        expected = require_baseline_scores(ground_truth, "pagerank")
         all_match = True
 
         for r in records:
             name = r.get("name", "")
             actual = r.get("pagerank", False)
-            exp = expected.get(name, False)
+            exp = expected.get(name, 0.0)
             match, err = values_match(exp, actual, name)
             if not match:
                 print(f"  ✗ {err}")
@@ -455,7 +447,7 @@ def test_pagerank(session, ground_truth: dict) -> bool:
 
         # Verify ranking order matches
         actual_ranking = [r.get("name", "") for r in records]
-        expected_ranking = sorted(expected.keys(), key=lambda x: expected.get(x, False), reverse=True)
+        expected_ranking = sorted(expected, key=lambda x: expected.get(x, 0.0), reverse=True)
 
         # Check top 3 ranking
         if actual_ranking[:3] != expected_ranking[:3]:
@@ -492,13 +484,13 @@ def test_betweenness_centrality(session, ground_truth: dict) -> bool:
 
         print(f"✓ Betweenness Centrality: {len(records)} nodes returned")
 
-        expected = ground_truth.get("betweenness", False)
+        expected = require_baseline_scores(ground_truth, "betweenness")
         all_match = True
 
         for r in records:
             name = r.get("name", "")
             actual = r.get("betweenness", False)
-            exp = expected.get(name, False)
+            exp = expected.get(name, 0.0)
             match, err = values_match(exp, actual, name)
             if not match:
                 print(f"  ✗ {err}")
@@ -556,8 +548,8 @@ def test_hits(session, ground_truth: dict) -> bool:
 
         print(f"✓ HITS: {len(records)} nodes returned")
 
-        expected_hubs = ground_truth.get("hubs", [])
-        expected_auths = ground_truth.get("authorities", [])
+        expected_hubs = require_baseline_scores(ground_truth, "hubs")
+        expected_auths = require_baseline_scores(ground_truth, "authorities")
         all_match = True
 
         for r in records:
@@ -565,7 +557,7 @@ def test_hits(session, ground_truth: dict) -> bool:
 
             # Check hub values
             actual_hub = r.get("hub", False)
-            exp_hub = expected_hubs[name]
+            exp_hub = expected_hubs.get(name, 0.0)
             match, err = values_match(exp_hub, actual_hub, f"{name} hub")
             if not match:
                 print(f"  ✗ {err}")
@@ -573,7 +565,7 @@ def test_hits(session, ground_truth: dict) -> bool:
 
             # Check authority values
             actual_auth = r.get("authority", False)
-            exp_auth = expected_auths[name]
+            exp_auth = expected_auths.get(name, 0.0)
             match, err = values_match(exp_auth, actual_auth, f"{name} authority")
             if not match:
                 print(f"  ✗ {err}")
@@ -696,18 +688,21 @@ def test_katz_centrality(session, ground_truth: dict) -> bool:
 
         print(f"✓ Katz Centrality: {len(records)} nodes returned")
 
-        expected = ground_truth.get("katz", False)
-        if expected is False:
+        katz_baseline = ground_truth.get("katz", {})
+        if not isinstance(katz_baseline, dict):
+            raise TypeError("katz ground truth must be a dictionary")
+        if not katz_baseline:
             print("  ⚠ NetworkX Katz did not converge, skipping value comparison")
             for r in records:
                 print(f"    {r.get('name', '')}: {r.get('katz', False):.6f}")
             return True
 
+        expected = require_baseline_scores(ground_truth, "katz")
         all_match = True
         for r in records:
             name = r.get("name", "")
             actual = r.get("katz", False)
-            exp = expected.get(name, False)
+            exp = expected.get(name, 0.0)
             match, err = values_match(exp, actual, name)
             if not match:
                 print(f"  ✗ {err}")
@@ -746,13 +741,13 @@ def test_personalized_pagerank(session, ground_truth: dict) -> bool:
 
         print(f"✓ Personalized PageRank: {len(records)} nodes returned")
 
-        expected = ground_truth.get("personalized_pagerank", False)
+        expected = require_baseline_scores(ground_truth, "personalized_pagerank")
         all_match = True
 
         for r in records:
             name = r.get("name", "")
             actual = r.get("pagerank", False)
-            exp = expected.get(name, False)
+            exp = expected.get(name, 0.0)
             match, err = values_match(exp, actual, name)
             if not match:
                 print(f"  ✗ {err}")
@@ -785,9 +780,11 @@ def main():
     print("Testing RAPIDS 25.x API with NetworkX Ground Truth")
     print("=" * 60)
 
-    # Build NetworkX graph and compute ground truth
+    # Build the NetworkX reference copy of the test graph and compute ground truth
     print("\n--- Computing NetworkX Ground Truth ---")
-    G = build_networkx_graph()
+    G = nx_DiGraph()
+    G.add_nodes_from((node_id, {"name": name}) for name, node_id in EXPECTED_NODE_IDS.items())
+    G.add_edges_from((source, target, {"weight": 1.0}) for source, target in TEST_GRAPH_EDGES)
     print(f"  NetworkX graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
 
     ground_truth = get_networkx_ground_truth(G)
@@ -795,18 +792,14 @@ def main():
 
     # Show expected values
     print("\n  Expected PageRank (top 3):")
-    pr = ground_truth.get("pagerank", False)
-    if not isinstance(pr, dict):
-        raise TypeError("PageRank ground truth must be a dictionary")
-    for name in sorted(pr.keys(), key=lambda x: pr[x], reverse=True)[:3]:
-        print(f"    {name}: {pr[name]:.6f}")
+    pr = require_baseline_scores(ground_truth, "pagerank")
+    for name, score in sorted(pr.items(), key=lambda item: item[1], reverse=True)[:3]:
+        print(f"    {name}: {score:.6f}")
 
     print("\n  Expected Betweenness (top 3):")
-    bc = ground_truth.get("betweenness", False)
-    if not isinstance(bc, dict):
-        raise TypeError("betweenness ground truth must be a dictionary")
-    for name in sorted(bc.keys(), key=lambda x: bc[x], reverse=True)[:3]:
-        print(f"    {name}: {bc[name]:.6f}")
+    bc = require_baseline_scores(ground_truth, "betweenness")
+    for name, score in sorted(bc.items(), key=lambda item: item[1], reverse=True)[:3]:
+        print(f"    {name}: {score:.6f}")
 
     # Every acquired resource is released in the finally blocks, driver first, then container, then storage.
     run_id = uuid_uuid4().hex

@@ -27,7 +27,8 @@ def color_graph(
     if parameters is DEFAULT_ARGUMENT_DICT:
         parameters = DEFAULT_ARGUMENT_DICT.copy()
     parameters = normalize_parameters(dict(parameters))
-    graph = convert_to_graph(context, edge_property)
+    nodes, adj_list = graph_adjacency(context, edge_property)
+    graph = Graph(nodes, adj_list)
     algorithm = parameters.get(Parameter.ALGORITHM, False)
     solution = algorithm.run(graph, parameters, abort_check=context.check_must_abort)
     computed_return_value = [
@@ -56,7 +57,8 @@ def color_subgraph(
     if parameters is DEFAULT_ARGUMENT_DICT:
         parameters = DEFAULT_ARGUMENT_DICT.copy()
     parameters = normalize_parameters(dict(parameters))
-    graph = convert_to_subgraph(context, vertices, edges, edge_property)
+    nodes, adj_list = subgraph_adjacency(context, vertices, edges, edge_property)
+    graph = Graph(nodes, adj_list)
     algorithm = parameters.get(Parameter.ALGORITHM, False)
     solution = algorithm.run(graph, parameters, abort_check=context.check_must_abort)
     computed_return_value = [
@@ -66,7 +68,8 @@ def color_subgraph(
     return computed_return_value
 
 
-def convert_to_graph(context: mgp_ProcCtx, edge_property: str) -> Graph:
+def graph_adjacency(context: mgp_ProcCtx, edge_property: str) -> tuple[list, dict]:
+    """Returns the graph's vertex ids and undirected weighted adjacency (edge_property, default weight 1)."""
     nodes = []
     adj_list = {}
 
@@ -81,16 +84,17 @@ def convert_to_graph(context: mgp_ProcCtx, edge_property: str) -> Graph:
             adj_list.setdefault(e.from_vertex.id, []).append((e.to_vertex.id, weight))
             adj_list.setdefault(e.to_vertex.id, []).append((e.from_vertex.id, weight))
 
-    computed_return_value = Graph(nodes, adj_list)
-    return computed_return_value
+    adjacency = (nodes, adj_list)
+    return adjacency
 
 
-def convert_to_subgraph(
+def subgraph_adjacency(
     context: mgp_ProcCtx,
     vertices: mgp_List[mgp_Vertex],
     edges: mgp_List[mgp_Edge],
     edge_property: str,
-) -> Graph:
+) -> tuple[list, dict]:
+    """Returns the subgraph's vertex ids (edge endpoints included) and its undirected weighted adjacency."""
     vertices, edges = map(set, [vertices, edges])
 
     nodes = []
@@ -110,5 +114,5 @@ def convert_to_subgraph(
         adj_list.setdefault(e.from_vertex.id, []).append((e.to_vertex.id, weight))
         adj_list.setdefault(e.to_vertex.id, []).append((e.from_vertex.id, weight))
 
-    computed_return_value = Graph(nodes, adj_list)
-    return computed_return_value
+    adjacency = (nodes, adj_list)
+    return adjacency

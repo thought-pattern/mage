@@ -16,9 +16,7 @@ from mgp import read_proc as mgp_read_proc
 # Imported last because it also depends on networkx.
 from mgp_networkx import (
     MemgraphDiGraph,
-    MemgraphGraph,
     MemgraphMultiDiGraph,
-    MemgraphMultiGraph,
     PropertiesDictionary,
 )
 
@@ -158,7 +156,7 @@ def degree_assortativity_coefficient(
 # networkx.algorithms.asteroidal.is_at_free
 @mgp_read_proc
 def is_at_free(ctx: mgp_ProcCtx) -> mgp_Record:
-    computed_return_value = mgp_Record(is_at_free=nx_is_at_free(MemgraphGraph(ctx=ctx)))
+    computed_return_value = mgp_Record(is_at_free=nx_is_at_free(MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True)))
     return computed_return_value
 
 
@@ -183,8 +181,9 @@ def node_boundary(
 # networkx.algorithms.bridges.bridges
 @mgp_read_proc
 def bridges(ctx: mgp_ProcCtx, root: mgp_Nullable[mgp_Vertex] = None) -> mgp_Record:
-    g = MemgraphMultiGraph(ctx=ctx)
-    computed_return_value = mgp_Record(bridges=[next(iter(g[u][v])) for u, v in nx_bridges(MemgraphGraph(ctx=ctx), root=root)])
+    g = MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True)
+    simple_graph = MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True)
+    computed_return_value = mgp_Record(bridges=[next(iter(g[u][v])) for u, v in nx_bridges(simple_graph, root=root)])
     return computed_return_value
 
 
@@ -215,9 +214,10 @@ def betweenness_centrality(
 # networkx.algorithms.chains.chain_decomposition
 @mgp_read_proc
 def chain_decomposition(ctx: mgp_ProcCtx, root: mgp_Nullable[mgp_Vertex] = None) -> mgp_Record:
-    g = MemgraphMultiGraph(ctx=ctx)
+    g = MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True)
+    simple_graph = MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True)
     computed_return_value = mgp_Record(
-        chains=[[next(iter(g[u][v])) for u, v in d] for d in nx_chain_decomposition(MemgraphGraph(ctx=ctx), root=root)]
+        chains=[[next(iter(g[u][v])) for u, v in d] for d in nx_chain_decomposition(simple_graph, root=root)]
     )
     return computed_return_value
 
@@ -225,7 +225,7 @@ def chain_decomposition(ctx: mgp_ProcCtx, root: mgp_Nullable[mgp_Vertex] = None)
 # networkx.algorithms.chordal.is_chordal
 @mgp_read_proc
 def is_chordal(ctx: mgp_ProcCtx) -> mgp_Record:
-    computed_return_value = mgp_Record(is_chordal=nx_is_chordal(MemgraphGraph(ctx=ctx)))
+    computed_return_value = mgp_Record(is_chordal=nx_is_chordal(MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True)))
     return computed_return_value
 
 
@@ -234,7 +234,7 @@ def is_chordal(ctx: mgp_ProcCtx) -> mgp_Record:
 def find_cliques(
     ctx: mgp_ProcCtx,
 ) -> mgp_Record:
-    computed_return_value = mgp_Record(cliques=list(nx_find_cliques(MemgraphMultiGraph(ctx=ctx))))
+    computed_return_value = mgp_Record(cliques=list(nx_find_cliques(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True))))
     return computed_return_value
 
 
@@ -269,7 +269,7 @@ def communicability(
 ) -> list[mgp_Record]:
     computed_return_value = [
         mgp_Record(node1=n1, node2=n2, communicability=v)
-        for n1, d in nx_communicability(MemgraphGraph(ctx=ctx)).items()
+        for n1, d in nx_communicability(MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True)).items()
         for n2, v in d.items()
     ]
     return computed_return_value
@@ -282,16 +282,15 @@ def k_clique_communities(
     k: int,
     cliques: mgp_Nullable[mgp_List[mgp_List[mgp_Vertex]]] = None,
 ) -> mgp_Record:
-    computed_return_value = mgp_Record(
-        communities=[list(s) for s in nx_community.k_clique_communities(MemgraphMultiGraph(ctx=ctx), k, cliques)]
-    )
+    graph = MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True)
+    computed_return_value = mgp_Record(communities=[list(s) for s in nx_community.k_clique_communities(graph, k, cliques)])
     return computed_return_value
 
 
 # networkx.algorithms.approximation.kcomponents.k_components
 @mgp_read_proc
 def k_components(ctx: mgp_ProcCtx, density: mgp_Number = 0.95) -> list[mgp_Record]:
-    kcomps = nx_k_components(MemgraphMultiGraph(ctx=ctx), density)
+    kcomps = nx_k_components(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True), density)
 
     computed_return_value = [mgp_Record(k=k, components=[list(s) for s in comps]) for k, comps in kcomps.items()]
     return computed_return_value
@@ -302,7 +301,7 @@ def k_components(ctx: mgp_ProcCtx, density: mgp_Number = 0.95) -> list[mgp_Recor
 def biconnected_components(
     ctx: mgp_ProcCtx,
 ) -> mgp_Record:
-    comps = nx_biconnected_components(MemgraphMultiGraph(ctx=ctx))
+    comps = nx_biconnected_components(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True))
     computed_return_value = mgp_Record(components=[list(s) for s in comps])
     return computed_return_value
 
@@ -339,7 +338,9 @@ def core_number(ctx: mgp_ProcCtx) -> list[mgp_Record]:
 @mgp_read_proc
 def is_edge_cover(ctx: mgp_ProcCtx, cover: mgp_List[mgp_Edge]) -> mgp_Record:
     cover = set([(e.from_vertex, e.to_vertex) for e in cover])
-    computed_return_value = mgp_Record(is_edge_cover=nx_is_edge_cover(MemgraphMultiGraph(ctx=ctx), cover))
+    computed_return_value = mgp_Record(
+        is_edge_cover=nx_is_edge_cover(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True), cover)
+    )
     return computed_return_value
 
 
@@ -424,14 +425,18 @@ def diameter(ctx: mgp_ProcCtx) -> mgp_Record:
 # networkx.algorithms.distance_regular.is_distance_regular
 @mgp_read_proc
 def is_distance_regular(ctx: mgp_ProcCtx) -> mgp_Record:
-    computed_return_value = mgp_Record(is_distance_regular=nx_is_distance_regular(MemgraphMultiGraph(ctx=ctx)))
+    computed_return_value = mgp_Record(
+        is_distance_regular=nx_is_distance_regular(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True))
+    )
     return computed_return_value
 
 
 # networkx.algorithms.strongly_regular.is_strongly_regular
 @mgp_read_proc
 def is_strongly_regular(ctx: mgp_ProcCtx) -> mgp_Record:
-    computed_return_value = mgp_Record(is_strongly_regular=nx_is_strongly_regular(MemgraphMultiGraph(ctx=ctx)))
+    computed_return_value = mgp_Record(
+        is_strongly_regular=nx_is_strongly_regular(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True))
+    )
     return computed_return_value
 
 
@@ -472,14 +477,18 @@ def dominating_set(
 # networkx.algorithms.efficiency_measures.local_efficiency
 @mgp_read_proc
 def local_efficiency(ctx: mgp_ProcCtx) -> mgp_Record:
-    computed_return_value = mgp_Record(local_efficiency=nx_local_efficiency(MemgraphMultiGraph(ctx=ctx)))
+    computed_return_value = mgp_Record(
+        local_efficiency=nx_local_efficiency(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True))
+    )
     return computed_return_value
 
 
 # networkx.algorithms.efficiency_measures.global_efficiency
 @mgp_read_proc
 def global_efficiency(ctx: mgp_ProcCtx) -> mgp_Record:
-    computed_return_value = mgp_Record(global_efficiency=nx_global_efficiency(MemgraphMultiGraph(ctx=ctx)))
+    computed_return_value = mgp_Record(
+        global_efficiency=nx_global_efficiency(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True))
+    )
     return computed_return_value
 
 
@@ -571,7 +580,8 @@ def pagerank(
 # networkx.algorithms.link_prediction.jaccard_coefficient
 @mgp_read_proc
 def jaccard_coefficient(ctx: mgp_ProcCtx, ebunch: mgp_Nullable[mgp_List[mgp_List[mgp_Vertex]]] = None) -> list[mgp_Record]:
-    computed_return_value = [mgp_Record(u=u, v=v, coef=c) for u, v, c in nx_jaccard_coefficient(MemgraphGraph(ctx=ctx), ebunch)]
+    graph = MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True)
+    computed_return_value = [mgp_Record(u=u, v=v, coef=c) for u, v, c in nx_jaccard_coefficient(graph, ebunch)]
     return computed_return_value
 
 
@@ -588,8 +598,8 @@ def maximal_matching(ctx: mgp_ProcCtx) -> mgp_Record:
     # Matching is defined on the undirected simple graph: parallel edges and both directions of a vertex pair are one
     # candidate pair. Each matched pair is mapped back to one original host edge through the undirected multigraph
     # view, whose adjacency holds every host edge between the pair in either direction.
-    matching = nx_maximal_matching(MemgraphGraph(ctx=ctx))
-    host_edges = MemgraphMultiGraph(ctx=ctx)
+    matching = nx_maximal_matching(MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True))
+    host_edges = MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True)
     computed_return_value = mgp_Record(edges=[next(iter(host_edges[u][v])) for u, v in matching])
     return computed_return_value
 
@@ -606,7 +616,7 @@ def check_planarity(ctx: mgp_ProcCtx) -> mgp_Record:
 # networkx.algorithms.non_randomness.non_randomness
 @mgp_read_proc
 def non_randomness(ctx: mgp_ProcCtx, k: mgp_Nullable[int] = None) -> mgp_Record:
-    nn, rnn = nx_non_randomness(MemgraphGraph(ctx=ctx), k=k)
+    nn, rnn = nx_non_randomness(MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True), k=k)
     computed_return_value = mgp_Record(non_randomness=nn, relative_non_randomness=rnn)
     return computed_return_value
 
@@ -950,7 +960,7 @@ def minimum_spanning_tree(
     algorithm: str = "kruskal",
     ignore_nan: bool = False,
 ) -> mgp_Record:
-    gres = nx_minimum_spanning_tree(MemgraphMultiGraph(ctx=ctx), weight, algorithm, ignore_nan)
+    gres = nx_minimum_spanning_tree(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True), weight, algorithm, ignore_nan)
     computed_return_value = mgp_Record(nodes=list(gres.nodes()), edges=[e for _, _, e in gres.edges(keys=True)])
     return computed_return_value
 

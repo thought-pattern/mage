@@ -1,6 +1,5 @@
 """Utilities for graph analyzer."""
 
-from collections import OrderedDict
 from heapq import nlargest
 from inspect import cleandoc
 from itertools import chain, repeat
@@ -44,20 +43,15 @@ MAX_LIST_SIZE = 10
 @mgp_read_proc
 def help() -> list[mgp_Record]:
     """Shows manual page for graph_analyzer."""
+    documented = [("Procedure '{}'".format(func.__name__), func.__doc__) for func in (help, analyze, analyze_subgraph)]
+    documented.extend(("Analysis '{}'".format(name), analysis.__doc__) for name, analysis in ANALYSES.items())
+
+    # Each documented item's title names its first manual line; its remaining lines carry an empty name.
     records = []
-
-    def make_records(name: str, doc: object):
+    for title, doc in documented:
         doc_text = doc if isinstance(doc, str) else ""
-        computed_return_value = (
-            mgp_Record(name=n, value=v) for n, v in zip(chain([name], repeat("")), cleandoc(doc_text).splitlines(), strict=False)
-        )
-        return computed_return_value
-
-    for func in (help, analyze, analyze_subgraph):
-        records.extend(make_records("Procedure '{}'".format(func.__name__), func.__doc__))
-
-    for m, v in get_analysis_mapping().items():
-        records.extend(make_records("Analysis '{}'".format(m), v.__doc__))
+        lines = cleandoc(doc_text).splitlines()
+        records.extend(mgp_Record(name=name, value=line) for name, line in zip(chain([title], repeat("")), lines, strict=False))
 
     return records
 
@@ -125,46 +119,13 @@ def analyze_subgraph(
     return computed_return_value
 
 
-def get_analysis_mapping() -> OrderedDict[str, object]:
-    computed_return_value: OrderedDict[str, object] = OrderedDict(
-        [
-            ("nodes", internal_number_of_nodes),
-            ("edges", internal_number_of_edges),
-            ("bridges", internal_bridges),
-            ("articulation_points", internal_articulation_points),
-            ("avg_degree", internal_avg_degree),
-            ("sorted_nodes_degree", internal_sorted_nodes_degree),
-            ("self_loops", internal_self_loops),
-            ("is_bipartite", internal_is_bipartite),
-            ("is_planar", internal_is_planar),
-            ("is_biconnected", internal_is_biconnected),
-            ("is_weakly_connected", internal_is_weakly_connected),
-            ("number_of_weakly_components", weakly_components),
-            ("is_strongly_connected", internal_is_strongly_connected),
-            ("strongly_components", internal_strongly_components),
-            ("is_dag", internal_is_dag),
-            ("is_eulerian", internal_is_eulerian),
-            ("is_forest", internal_is_forest),
-            ("is_tree", internal_is_tree),
-        ]
-    )
-    return computed_return_value
-
-
-def get_analysis_func(name: str) -> object:
-    name_to_proc = get_analysis_mapping()
-    computed_return_value = name_to_proc.get(name.lower(), False)
-    return computed_return_value
-
-
-def get_analysis_funcs() -> list[object]:
-    computed_return_value = list(get_analysis_mapping().values())
-    return computed_return_value
-
-
 def analyze_graph(context: mgp_ProcCtx, g: nx_MultiDiGraph, analyses: object) -> list[tuple[str, str]]:
     requested_analyses = analyses if isinstance(analyses, list) else []
-    functions = get_analysis_funcs() if not requested_analyses else [get_analysis_func(name) for name in requested_analyses]
+    # An unsupported name reads as False, which the loop below refuses with the requested spelling.
+    if requested_analyses:
+        functions = [ANALYSES.get(name.lower(), False) for name in requested_analyses]
+    else:
+        functions = list(ANALYSES.values())
 
     records = []
     for index, f in enumerate(functions):
@@ -308,3 +269,26 @@ def internal_strongly_components(g: nx_MultiDiGraph):
     """Returns number of strongly connected components."""
     comps = nx_algorithms.components.number_strongly_connected_components(g)
     return "Number of strongly connected components", comps
+
+
+# The supported analyses by public name, in the order help lists them and analyze runs them by default.
+ANALYSES = {
+    "nodes": internal_number_of_nodes,
+    "edges": internal_number_of_edges,
+    "bridges": internal_bridges,
+    "articulation_points": internal_articulation_points,
+    "avg_degree": internal_avg_degree,
+    "sorted_nodes_degree": internal_sorted_nodes_degree,
+    "self_loops": internal_self_loops,
+    "is_bipartite": internal_is_bipartite,
+    "is_planar": internal_is_planar,
+    "is_biconnected": internal_is_biconnected,
+    "is_weakly_connected": internal_is_weakly_connected,
+    "number_of_weakly_components": weakly_components,
+    "is_strongly_connected": internal_is_strongly_connected,
+    "strongly_components": internal_strongly_components,
+    "is_dag": internal_is_dag,
+    "is_eulerian": internal_is_eulerian,
+    "is_forest": internal_is_forest,
+    "is_tree": internal_is_tree,
+}

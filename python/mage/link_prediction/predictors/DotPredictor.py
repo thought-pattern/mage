@@ -28,8 +28,8 @@ class DotPredictor(nn.Module):
             torch.Tensor: A tensor of edge scores.
         """
         with g.local_scope():
-            for node_type in node_embeddings:  # Iterate over all node_types.
-                g.nodes[node_type].data[Predictors.NODE_EMBEDDINGS] = node_embeddings.get(node_type, False)
+            for node_type, embedding in node_embeddings.items():  # Iterate over all node_types.
+                g.nodes[node_type].data[Predictors.NODE_EMBEDDINGS] = embedding
 
             # Compute a new edge feature named 'score' by a dot-product between the
             # embedding of source node and embedding of destination node.
@@ -45,14 +45,15 @@ class DotPredictor(nn.Module):
             if not isinstance(scores, dict):
                 computed_return_value = scores.view(-1)
                 return computed_return_value
-            if isinstance(target_relation, tuple):  # Tuple[str, str, str] identification
-                computed_return_value = scores[target_relation].view(-1)
-                return computed_return_value
-            if isinstance(target_relation, str):  # edge type identification
-                for key, val in scores.items():
-                    if key[1] == target_relation:
-                        computed_return_value = val.view(-1)
-                        return computed_return_value
+            # With several edge types DGL returns the scores keyed by canonical relation. A canonical (source, edge,
+            # destination) target is admitted by exact key, an edge type name by its middle element; a target with no
+            # scores falls through to the error below.
+            for key, val in scores.items():
+                if (isinstance(target_relation, tuple) and key == target_relation) or (
+                    isinstance(target_relation, str) and key[1] == target_relation
+                ):
+                    computed_return_value = val.view(-1)
+                    return computed_return_value
         raise ValueError("DGL did not return scores for the requested edge relation")
 
     def forward_pred(self, src_embedding: torch_Tensor, dest_embedding: torch_Tensor) -> torch_Tensor:

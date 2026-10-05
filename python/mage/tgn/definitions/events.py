@@ -1,7 +1,5 @@
 """Utilities for events."""
 
-from numpy import ndarray as np_ndarray
-
 
 class Event:
     def __init__(self, source: int, timestamp: int):
@@ -32,23 +30,3 @@ class InteractionEvent(Event):
     def __str__(self):
         computed_return_value = "{source},{timestamp}".format(source=self.source, timestamp=self.timestamp)
         return computed_return_value
-
-
-def create_interaction_events(
-    sources: np_ndarray,
-    destinations: np_ndarray,
-    timestamps: np_ndarray,
-    edge_idxs: np_ndarray,
-) -> dict[int, list[InteractionEvent]]:
-    "Every event has two interaction events"
-    interaction_events: dict[int, list[InteractionEvent]] = {node: [] for node in set(sources).union(set(destinations))}
-    for i in range(len(sources)):
-        interaction_events.get(sources[i], []).append(
-            InteractionEvent(
-                source=sources[i],
-                dest=destinations[i],
-                timestamp=timestamps[i],
-                edge_idx=edge_idxs[i],
-            )
-        )
-    return interaction_events

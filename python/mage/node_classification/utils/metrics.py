@@ -1,6 +1,7 @@
 """Utilities for metrics."""
 
 from torch import Tensor as torch_Tensor
+from torch import zeros as torch_zeros
 from torchmetrics import AUC, Accuracy, F1Score, Precision, Recall
 
 METRICS = {
@@ -33,7 +34,10 @@ def metrics(
         Dict: dictionary of calculated metrics
     """
 
-    pred = out[observed_attribute].argmax(dim=1)  # Use the class with highest probability.
+    # The heterogeneous model returns one output tensor per node type; the observed type must be among them.
+    if observed_attribute not in out:
+        raise KeyError(f"Model output has no node type {observed_attribute!r}")
+    pred = out.get(observed_attribute, torch_zeros((0, 0))).argmax(dim=1)  # Use the class with highest probability.
 
     # node stores are selected by subscription; HeteroData.get reads the global store
     if observed_attribute not in data.node_types:
@@ -45,14 +49,14 @@ def metrics(
     multiclass = True
     num_classes = len(set(data.y.detach().cpu().numpy()))
 
-    for metrics in METRICS:
-        if metrics not in options:
+    for metric_name, metric_class in METRICS.items():
+        if metric_name not in options:
             continue
-        func = METRICS.get(metrics, Accuracy)(
+        func = metric_class(
             num_classes=num_classes,
             multiclass=multiclass,
             average="weighted",
         ).to(device)
-        ret[metrics] = float(func(pred[mask], data.y[mask]).detach().cpu().numpy())
+        ret[metric_name] = float(func(pred[mask], data.y[mask]).detach().cpu().numpy())
 
     return ret

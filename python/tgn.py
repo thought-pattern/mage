@@ -47,8 +47,6 @@
     "according to paper is wrong.\n\n\n"
 )
 
-from dataclasses import astuple as dataclasses_astuple
-from dataclasses import dataclass as dataclasses_dataclass
 from enum import Enum as enum_Enum
 from math import ceil
 from time import time as time_time
@@ -74,7 +72,6 @@ from torch import cat as torch_cat
 from torch import cuda as torch_cuda
 from torch import device as torch_device
 from torch import float as torch_float
-from torch import nn
 from torch import nn as torch_nn
 from torch import no_grad as torch_no_grad
 from torch import ones as torch_ones
@@ -151,51 +148,33 @@ class TGNMode(enum_Enum):
     Eval = "eval"
 
 
-@dataclasses_dataclass
-class QueryModuleTGN:
-    config: dict[str, object]
-    tgn: TGN
-    criterion: nn.BCELoss
-    optimizer: torch_optim.Adam
-    device: torch_device
-    m_loss: list[float]  # mean loss
-    mlp: MLP
-    tgn_mode: TGNMode
-    learning_type: LearningType
-    # used in negative sampling for self_supervised
-    all_edges: set[tuple[int, int]]
-    # to get all embeddings
-    all_embeddings: dict[int, np_ndarray]
-    results_per_epochs: dict[int, list[mgp_Record]]
-    current_epoch: int
-    global_edge_count: int
-    train_eval_index_split: int
-    memgraph_objects_properties: dict[str, object]
-    # the parameters set_params admitted; reset re-establishes the module from them
-    admitted_params: dict[str, object]
-
-
-@dataclasses_dataclass
-class QueryModuleTGNBatch:
-    current_batch_size: int
-    sources: np_ndarray
-    destinations: np_ndarray
-    timestamps: np_ndarray
-    edge_idxs: np_ndarray
-    node_features: dict[int, torch_Tensor]
-    edge_features: dict[int, torch_Tensor]
-    batch_size: int
-    labels: np_ndarray
-
-
 ##############################
 # global tgn training variables
 ##############################
 
-
-query_module_tgn: QueryModuleTGN
-query_module_tgn_batch: QueryModuleTGNBatch
-# query_module_tgn and query_module_tgn_batch exist only after set_params has admitted a configuration
+# The TGN session exists only after set_params has admitted a configuration; tgn_initialized records that.
+# The model, its prediction head, their optimizer and the training device are the session's torch objects.
+tgn_model: TGN
+tgn_head: MLP
+tgn_optimizer: torch_optim.Adam
+tgn_device: torch_device
+# The session's plain state, as set_tgn establishes it:
+#   config (dict): TGN constructor parameters, including the device
+#   m_loss (list[float]): training-batch losses since the session or the current train_and_eval epoch began
+#   tgn_mode (TGNMode): Train or Eval; a session starts in Train
+#   learning_type (LearningType): SelfSupervised (link prediction) or Supervised (node labels)
+#   all_edges (set[tuple[int, int]]): (source, destination) pairs seen, used for negative sampling
+#   all_embeddings (dict[int, np.ndarray]): newest embedding per node
+#   results_per_epochs (dict[int, list[mgp.Record]]): batch result records per epoch
+#   current_epoch (int), global_edge_count (int), train_eval_index_split (int): stream counters; a zero split means
+#       set_eval was not called
+#   memgraph_objects_properties (dict): feature and label property names
+#   admitted_params (dict): the parameters set_params admitted; reset re-establishes the session from them
+query_module_tgn: dict = {}
+# The pending batch, as reset_tgn_batch establishes it: current_batch_size (int), sources, destinations, timestamps
+# and edge_idxs (int arrays), node_features and edge_features (dict of feature tensors per ID), batch_size (int) and
+# labels (an (n, 2) array of source and destination labels).
+query_module_tgn_batch: dict = {}
 tgn_initialized = False
 
 ##############################
@@ -203,6 +182,9 @@ tgn_initialized = False
 ##############################
 
 EPOCH_START = 1
+
+# Both learning types score probabilities against 0/1 targets; the loss holds no parameters or state.
+PREDICTION_LOSS = torch_nn.BCELoss()
 
 DEFINED_INPUT_TYPES = {
     "learning_type": str,
@@ -243,54 +225,55 @@ DEFAULT_VALUES = {
     OtherProperties.DEVICE_TYPE: "cuda",
 }
 
+# A session starts in Train mode, and its learning type defaults to the configured default.
+INITIAL_TGN_MODE = TGNMode.Train
+DEFAULT_LEARNING_TYPE = LearningType(DEFAULT_VALUES.get(OtherProperties.LEARNING_TYPE, ""))
+
 
 #############################
 # global helpers
 #############################
 def update_epoch_counter() -> int:
-    global query_module_tgn
-
-    query_module_tgn.current_epoch += 1
-    return query_module_tgn.current_epoch
+    current_epoch = query_module_tgn.get("current_epoch", 0) + 1
+    query_module_tgn["current_epoch"] = current_epoch
+    return current_epoch
 
 
 def get_current_epoch() -> int:
-    global query_module_tgn
-    return query_module_tgn.current_epoch
+    current_epoch = query_module_tgn.get("current_epoch", 0)
+    return current_epoch
 
 
 def get_current_batch() -> int:
-    global query_module_tgn
-    computed_return_value = len(query_module_tgn.results_per_epochs.get(query_module_tgn.current_epoch, []))
+    results_per_epochs = query_module_tgn.get("results_per_epochs", {})
+    computed_return_value = len(results_per_epochs.get(get_current_epoch(), []))
     return computed_return_value
 
 
 def initialize_results_per_epoch(current_epoch: int) -> bool:
-    global query_module_tgn
-    query_module_tgn.results_per_epochs[current_epoch] = []
+    query_module_tgn.get("results_per_epochs", {})[current_epoch] = []
     return False
 
 
 def set_global_edge_count(new_global_edge_count: int) -> int:
-    global query_module_tgn
-    query_module_tgn.global_edge_count = new_global_edge_count
-    return query_module_tgn.global_edge_count
+    query_module_tgn["global_edge_count"] = new_global_edge_count
+    return new_global_edge_count
 
 
 def append_batch_record_curr_epoch(current_epoch: int, record: mgp_Record) -> dict[int, list[mgp_Record]]:
-    global query_module_tgn
-    assert current_epoch in query_module_tgn.results_per_epochs, "Current epoch not defined"
-    query_module_tgn.results_per_epochs.get(current_epoch, []).append(record)
-    return query_module_tgn.results_per_epochs
+    results_per_epochs = query_module_tgn.get("results_per_epochs", {})
+    assert current_epoch in results_per_epochs, "Current epoch not defined"
+    results_per_epochs.get(current_epoch, []).append(record)
+    return results_per_epochs
 
 
 def get_output_records() -> list[mgp_Record]:
-    global query_module_tgn
+    results_per_epochs = query_module_tgn.get("results_per_epochs", {})
     output_records = []
 
     # epochs without streamed batches have no entry, so recorded epochs need not be contiguous from EPOCH_START
-    for epoch in sorted(query_module_tgn.results_per_epochs):
-        output_records.extend(query_module_tgn.results_per_epochs.get(epoch, []))
+    for epoch in sorted(results_per_epochs):
+        output_records.extend(results_per_epochs.get(epoch, []))
     return output_records
 
 
@@ -300,11 +283,10 @@ def is_tgn_initialized() -> bool:
 
 
 def get_link_score(src_tensor: torch_Tensor, dest_tensor: torch_Tensor) -> torch_Tensor:
-    global query_module_tgn
     # along columns
     x = torch_cat([src_tensor, dest_tensor], dim=1)
     # head output (pairs, 1) -> one score per pair; only the final channel axis is removed, so one pair stays (1,)
-    computed_return_value = query_module_tgn.mlp(x).squeeze(dim=-1)
+    computed_return_value = tgn_head(x).squeeze(dim=-1)
     return computed_return_value
 
 
@@ -323,7 +305,7 @@ def set_tgn(
     memgraph_objects_properties_config: dict,
     admitted_params: dict,
 ) -> bool:
-    global query_module_tgn, EPOCH_START, tgn_initialized
+    global query_module_tgn, tgn_model, tgn_head, tgn_optimizer, tgn_device, tgn_initialized
 
     if device_type == device_type.CUDA and torch_cuda.is_available():
         device = torch_device("cuda")
@@ -332,80 +314,54 @@ def set_tgn(
 
     tgn_config[TGNParameters.DEVICE] = device
 
+    # A node's embedding is its memory followed by its features. Graph sum layers are used only when configured;
+    # every other layer type gets graph attention.
+    is_graph_sum = tgn_config.get(TGNParameters.LAYER_TYPE, TGNLayerType.GraphAttentionEmbedding) == TGNLayerType.GraphSumEmbedding
+    embedding_dimension = tgn_config.get(TGNParameters.MEMORY_DIMENSION, 0) + tgn_config.get(TGNParameters.NUM_NODE_FEATURES, 0)
     if learning_type == LearningType.SelfSupervised:
-        tgn, mlp = get_tgn_self_supervised(tgn_config, device)
+        # Self-supervised learning predicts edges: the head scores the concatenated source and destination
+        # embeddings, as the original implementation does (rather than their Hadamard product).
+        if is_graph_sum:
+            tgn = TGNGraphSumEdgeSelfSupervised(**tgn_config).to(device)
+        else:
+            tgn = TGNGraphAttentionEdgeSelfSupervised(**tgn_config).to(device)
+        head_in_features = embedding_dimension * 2
+        mlp = MLP([head_in_features, head_in_features // 2, 1]).to(device=device)
     else:
-        tgn, mlp = get_tgn_supervised(tgn_config, device)
+        # Supervised learning predicts each node's label probability from its embedding.
+        if is_graph_sum:
+            tgn = TGNGraphSumSupervised(**tgn_config).to(device)
+        else:
+            tgn = TGNGraphAttentionSupervised(**tgn_config).to(device)
+        mlp = MLP([embedding_dimension, 64, 1]).to(device=device)
 
-    criterion = torch_nn.BCELoss()
     # both learning modes compute their loss through the prediction head, so the optimizer owns its parameters too
     optimizer = torch_optim.Adam(
         [*tgn.parameters(), *mlp.parameters()],
-        lr=optimizer_config.get(OptimizerParameters.LEARNING_RATE, False),
-        weight_decay=optimizer_config.get(OptimizerParameters.WEIGHT_DECAY, False),
+        lr=optimizer_config.get(OptimizerParameters.LEARNING_RATE, 0.0),
+        weight_decay=optimizer_config.get(OptimizerParameters.WEIGHT_DECAY, 0.0),
     )
 
-    query_module_tgn = QueryModuleTGN(
-        config=tgn_config,
-        tgn=tgn,
-        criterion=criterion,
-        optimizer=optimizer,
-        device=device,
-        m_loss=[],
-        mlp=mlp,
-        tgn_mode=TGNMode.Train,  # we start in train mode
-        learning_type=learning_type,
-        all_edges=set(),
-        all_embeddings={},
-        results_per_epochs={},
-        current_epoch=EPOCH_START,
-        global_edge_count=0,
-        train_eval_index_split=0,  # this number represent number of edges when set_eval function was called
-        memgraph_objects_properties=memgraph_objects_properties_config,
-        admitted_params=admitted_params,
-    )
+    tgn_model = tgn
+    tgn_head = mlp
+    tgn_optimizer = optimizer
+    tgn_device = device
+    query_module_tgn = {
+        "config": tgn_config,
+        "m_loss": [],
+        "tgn_mode": INITIAL_TGN_MODE,
+        "learning_type": learning_type,
+        "all_edges": set(),
+        "all_embeddings": {},
+        "results_per_epochs": {},
+        "current_epoch": EPOCH_START,
+        "global_edge_count": 0,
+        "train_eval_index_split": 0,  # this number represent number of edges when set_eval function was called
+        "memgraph_objects_properties": memgraph_objects_properties_config,
+        "admitted_params": admitted_params,
+    }
     tgn_initialized = True
     return False
-
-
-def get_tgn_self_supervised(config: dict, device: torch_device) -> tuple[TGN, MLP]:
-    """
-    Set parameters for self supervised learning. Here we try to predict edges.
-    """
-
-    if config.get(TGNParameters.LAYER_TYPE, False) == TGNLayerType.GraphSumEmbedding:
-        tgn = TGNGraphSumEdgeSelfSupervised(**config).to(device)
-    else:
-        tgn = TGNGraphAttentionEdgeSelfSupervised(**config).to(device)
-
-    # When TGN outputs embeddings for source nodes and destination nodes,
-    # since we are working with edges and edge predictions we will concatenate their features together
-    # and get prediction with MLP whether it is edge or it isn't
-    # Other possibility would be Hadamard product
-    # ( https://en.wikipedia.org/wiki/Hadamard_product_(matrices) it is a fancy name for dot product)
-    # of source embeddings and destination embeddings, but we went with concat since author used concatenation
-    # and not Hadamard product, in original implementation
-    mlp_in_features_dim = (config.get(TGNParameters.MEMORY_DIMENSION, 0.0) + config.get(TGNParameters.NUM_NODE_FEATURES, 0.0)) * 2
-
-    mlp = MLP([mlp_in_features_dim, mlp_in_features_dim // 2, 1]).to(device=device)
-
-    return tgn, mlp
-
-
-def get_tgn_supervised(config: dict, device: torch_device) -> tuple[TGN, MLP]:
-    """ """
-
-    if config.get(TGNParameters.LAYER_TYPE, False) == TGNLayerType.GraphSumEmbedding:
-        tgn = TGNGraphSumSupervised(**config).to(device)
-    else:
-        tgn = TGNGraphAttentionSupervised(**config).to(device)
-
-    mlp_in_features_dim = config.get(TGNParameters.MEMORY_DIMENSION, 0.0) + config.get(TGNParameters.NUM_NODE_FEATURES, 0.0)
-
-    # used as probability calculator for label
-    mlp = MLP([mlp_in_features_dim, 64, 1]).to(device=device)
-
-    return tgn, mlp
 
 
 #
@@ -418,8 +374,7 @@ def sample_negative(negative_num: int) -> tuple[np_ndarray, np_ndarray]:
     Currently sampling of negative nodes is done in completely random fashion, and it is possible to sample
     source-dest pair that are real edges
     """
-    global query_module_tgn
-    all_edges = query_module_tgn.all_edges
+    all_edges = query_module_tgn.get("all_edges", set())
     all_src = list(set([src for src, dest in all_edges]))
     all_dest = list(set([dest for src, dest in all_edges]))
 
@@ -430,40 +385,27 @@ def sample_negative(negative_num: int) -> tuple[np_ndarray, np_ndarray]:
     return computed_return_value
 
 
-def unpack_tgn_batch_data():
-    global query_module_tgn_batch
-    computed_return_value = dataclasses_astuple(query_module_tgn_batch)
-    return computed_return_value
-
-
 def update_mode_reset_grads_check_dims() -> bool:
-    global query_module_tgn, query_module_tgn_batch
-
-    if query_module_tgn.tgn_mode == TGNMode.Train:
+    if query_module_tgn.get("tgn_mode", INITIAL_TGN_MODE) == TGNMode.Train:
         # set training mode
-        query_module_tgn.tgn.train()
-        query_module_tgn.mlp.train()
+        tgn_model.train()
+        tgn_head.train()
 
-        query_module_tgn.optimizer.zero_grad()
+        tgn_optimizer.zero_grad()
     else:
-        query_module_tgn.tgn.eval()
-        query_module_tgn.mlp.eval()
+        tgn_model.eval()
+        tgn_head.eval()
 
     # Batch boundary: the previous batch was backpropagated or only evaluated, so stored memory and pending messages
     # keep their values but drop its autograd history in either mode.
-    query_module_tgn.tgn.detach_tensor_grads()
+    tgn_model.detach_tensor_grads()
 
-    (
-        _,
-        sources,
-        destinations,
-        timestamps,
-        edge_idxs,
-        _,
-        edge_features,
-        _,
-        labels,
-    ) = unpack_tgn_batch_data()
+    sources = query_module_tgn_batch.get("sources", np_empty(0, dtype=int))
+    destinations = query_module_tgn_batch.get("destinations", np_empty(0, dtype=int))
+    timestamps = query_module_tgn_batch.get("timestamps", np_empty(0, dtype=int))
+    edge_idxs = query_module_tgn_batch.get("edge_idxs", np_empty(0, dtype=int))
+    edge_features = query_module_tgn_batch.get("edge_features", {})
+    labels = query_module_tgn_batch.get("labels", np_empty((0, 2), dtype=int))
     assert (
         len(sources) == len(destinations) == len(timestamps) == len(edge_features) == len(edge_idxs) == len(labels)
     ), "Batch size training error"
@@ -476,12 +418,12 @@ def update_embeddings(
     sources: np_ndarray,
     destinations: np_ndarray,
 ) -> bool:
-    global query_module_tgn
+    all_embeddings = query_module_tgn.get("all_embeddings", {})
     for i, node in enumerate(sources):
-        query_module_tgn.all_embeddings[node] = embeddings_source[i]
+        all_embeddings[node] = embeddings_source[i]
 
     for i, node in enumerate(destinations):
-        query_module_tgn.all_embeddings[node] = embeddings_dest[i]
+        all_embeddings[node] = embeddings_dest[i]
     return False
 
 
@@ -493,22 +435,15 @@ def process_batch_self_supervised() -> float:
     Uses sources, destinations, timestamps, edge_features and node_features from transactions.
     It is possible that current_batch_size is not always consistent, but it is always greater than minimum required.
     """
-    global query_module_tgn, query_module_tgn_batch
-
     # do all necessary checks and updates of gradients
     update_mode_reset_grads_check_dims()
 
-    (
-        _,
-        sources,
-        destinations,
-        timestamps,
-        edge_idxs,
-        node_features,
-        edge_features,
-        _,
-        _,
-    ) = unpack_tgn_batch_data()
+    sources = query_module_tgn_batch.get("sources", np_empty(0, dtype=int))
+    destinations = query_module_tgn_batch.get("destinations", np_empty(0, dtype=int))
+    timestamps = query_module_tgn_batch.get("timestamps", np_empty(0, dtype=int))
+    edge_idxs = query_module_tgn_batch.get("edge_idxs", np_empty(0, dtype=int))
+    node_features = query_module_tgn_batch.get("node_features", {})
+    edge_features = query_module_tgn_batch.get("edge_features", {})
 
     current_batch_size = len(sources)
     negative_src, negative_dest = sample_negative(current_batch_size)
@@ -524,7 +459,7 @@ def process_batch_self_supervised() -> float:
         node_features,
     )
 
-    embeddings, embeddings_negative = query_module_tgn.tgn(graph_data)
+    embeddings, embeddings_negative = tgn_model(graph_data)
 
     embeddings_source = embeddings[:current_batch_size]
     embeddings_dest = embeddings[current_batch_size:]
@@ -545,17 +480,15 @@ def process_batch_self_supervised() -> float:
     neg_score = score[current_batch_size:]
     pos_prob, neg_prob = pos_score.sigmoid(), neg_score.sigmoid()
 
-    if query_module_tgn.tgn_mode == TGNMode.Train:
-        pos_label = torch_ones(current_batch_size, dtype=torch_float, device=query_module_tgn.device)
-        neg_label = torch_zeros(current_batch_size, dtype=torch_float, device=query_module_tgn.device)
+    if query_module_tgn.get("tgn_mode", INITIAL_TGN_MODE) == TGNMode.Train:
+        pos_label = torch_ones(current_batch_size, dtype=torch_float, device=tgn_device)
+        neg_label = torch_zeros(current_batch_size, dtype=torch_float, device=tgn_device)
         # use reshape to get 1 dimension in every case
-        loss = query_module_tgn.criterion(pos_prob.reshape((-1,)), pos_label) + query_module_tgn.criterion(
-            neg_prob.reshape((-1,)), neg_label
-        )
+        loss = PREDICTION_LOSS(pos_prob.reshape((-1,)), pos_label) + PREDICTION_LOSS(neg_prob.reshape((-1,)), neg_label)
 
         loss.backward()
-        query_module_tgn.optimizer.step()
-        query_module_tgn.m_loss.append(loss.item())
+        tgn_optimizer.step()
+        query_module_tgn.get("m_loss", []).append(loss.item())
     pos_prob_cpu = pos_prob.reshape((-1,)).detach().cpu()
     neg_prob_cpu = neg_prob.reshape((-1,)).detach().cpu()
     # todo antoniofilipovic - update once we have logging API
@@ -594,22 +527,16 @@ def process_batch_self_supervised() -> float:
 
 
 def process_batch_supervised() -> float:
-    global query_module_tgn, query_module_tgn_batch
-
     # do all necessary checks and updates of gradients
     update_mode_reset_grads_check_dims()
 
-    (
-        _,
-        sources,
-        destinations,
-        timestamps,
-        edge_idxs,
-        node_features,
-        edge_features,
-        _,
-        labels,
-    ) = unpack_tgn_batch_data()
+    sources = query_module_tgn_batch.get("sources", np_empty(0, dtype=int))
+    destinations = query_module_tgn_batch.get("destinations", np_empty(0, dtype=int))
+    timestamps = query_module_tgn_batch.get("timestamps", np_empty(0, dtype=int))
+    edge_idxs = query_module_tgn_batch.get("edge_idxs", np_empty(0, dtype=int))
+    node_features = query_module_tgn_batch.get("node_features", {})
+    edge_features = query_module_tgn_batch.get("edge_features", {})
+    labels = query_module_tgn_batch.get("labels", np_empty((0, 2), dtype=int))
 
     current_batch_size = len(sources)
 
@@ -622,7 +549,7 @@ def process_batch_supervised() -> float:
         node_features,
     )
 
-    embeddings = query_module_tgn.tgn(graph_data)
+    embeddings = tgn_model(graph_data)
 
     embeddings_source = embeddings[:current_batch_size]
     embeddings_dest = embeddings[current_batch_size:]
@@ -631,7 +558,7 @@ def process_batch_supervised() -> float:
 
     # head output (2 * batch, 1) -> (2 * batch,); only the final channel axis is removed, so a one-edge batch keeps
     # its batch axis through metrics and loss
-    score = query_module_tgn.mlp(x).squeeze(dim=-1)
+    score = tgn_head(x).squeeze(dim=-1)
 
     src_score = score[:current_batch_size]
     dest_score = score[current_batch_size:]
@@ -656,18 +583,18 @@ def process_batch_supervised() -> float:
         destinations,
     )
 
-    if query_module_tgn.tgn_mode == TGNMode.Eval:
+    if query_module_tgn.get("tgn_mode", INITIAL_TGN_MODE) == TGNMode.Eval:
         return precision
 
     # backprop only in case of training
     with torch_no_grad():
-        src_label = torch_tensor(labels[:, 0], dtype=torch_float, device=query_module_tgn.device)
-        dest_label = torch_tensor(labels[:, 1], dtype=torch_float, device=query_module_tgn.device)
+        src_label = torch_tensor(labels[:, 0], dtype=torch_float, device=tgn_device)
+        dest_label = torch_tensor(labels[:, 1], dtype=torch_float, device=tgn_device)
 
-    loss = query_module_tgn.criterion(src_prob, src_label) + query_module_tgn.criterion(dest_prob, dest_label)
+    loss = PREDICTION_LOSS(src_prob, src_label) + PREDICTION_LOSS(dest_prob, dest_label)
     loss.backward()
-    query_module_tgn.optimizer.step()
-    query_module_tgn.m_loss.append(loss.item())
+    tgn_optimizer.step()
+    query_module_tgn.get("m_loss", []).append(loss.item())
 
     return precision
 
@@ -688,26 +615,25 @@ def create_torch_tensor(properties, feature_property: str, num_features: int) ->
     computed_return_value = torch_tensor(
         np_feature,
         requires_grad=True,
-        device=query_module_tgn.device,
+        device=tgn_device,
         dtype=torch_float,
     )
     return computed_return_value
 
 
-def parse_mgp_edges_into_tgn_batch(edges: mgp_List[mgp_Edge]) -> QueryModuleTGNBatch:
+def parse_mgp_edges_into_tgn_batch(edges: mgp_List[mgp_Edge]) -> dict:
     """
     Admits edges into the pending batch. Every edge is converted and its features validated first; the pending batch
     and the negative-sampling edge set change only after the whole list is admitted, and each batch array grows by
     one concatenation per call. The edge ID is the event timestamp.
     """
-    global query_module_tgn_batch, query_module_tgn
-
-    objects_properties = query_module_tgn.memgraph_objects_properties
+    objects_properties = query_module_tgn.get("memgraph_objects_properties", {})
     node_features_property = objects_properties.get(MemgraphObjectsProperties.NODE_FEATURES_PROPERTY, "")
     edge_features_property = objects_properties.get(MemgraphObjectsProperties.EDGE_FEATURES_PROPERTY, "")
     node_label_property = objects_properties.get(MemgraphObjectsProperties.NODE_LABELS_PROPERTY, "")
-    num_node_features = query_module_tgn.config.get(TGNParameters.NUM_NODE_FEATURES, 0)
-    num_edge_features = query_module_tgn.config.get(TGNParameters.NUM_EDGE_FEATURES, 0)
+    config = query_module_tgn.get("config", {})
+    num_node_features = config.get(TGNParameters.NUM_NODE_FEATURES, 0)
+    num_edge_features = config.get(TGNParameters.NUM_EDGE_FEATURES, 0)
 
     sources: list[int] = []
     destinations: list[int] = []
@@ -733,31 +659,40 @@ def parse_mgp_edges_into_tgn_batch(edges: mgp_List[mgp_Edge]) -> QueryModuleTGNB
 
     # every edge is admitted: commit the batch in one step
     # the edge set is also used later for negative sampling
-    query_module_tgn.all_edges.update(zip(sources, destinations, strict=True))
-    query_module_tgn_batch.node_features.update(node_features)
-    query_module_tgn_batch.edge_features.update(edge_features)
-    query_module_tgn_batch.sources = np_concatenate([query_module_tgn_batch.sources, np_array(sources, dtype=int)])
-    query_module_tgn_batch.destinations = np_concatenate([query_module_tgn_batch.destinations, np_array(destinations, dtype=int)])
-    query_module_tgn_batch.timestamps = np_concatenate([query_module_tgn_batch.timestamps, np_array(edge_idxs, dtype=int)])
-    query_module_tgn_batch.edge_idxs = np_concatenate([query_module_tgn_batch.edge_idxs, np_array(edge_idxs, dtype=int)])
-    query_module_tgn_batch.labels = np_concatenate([query_module_tgn_batch.labels, np_array(labels).reshape((-1, 2))])
-    query_module_tgn_batch.current_batch_size = len(query_module_tgn_batch.sources)
+    query_module_tgn.get("all_edges", set()).update(zip(sources, destinations, strict=True))
+    query_module_tgn_batch.get("node_features", {}).update(node_features)
+    query_module_tgn_batch.get("edge_features", {}).update(edge_features)
+    batch_sources = np_concatenate([query_module_tgn_batch.get("sources", np_empty(0, dtype=int)), np_array(sources, dtype=int)])
+    query_module_tgn_batch["sources"] = batch_sources
+    query_module_tgn_batch["destinations"] = np_concatenate(
+        [query_module_tgn_batch.get("destinations", np_empty(0, dtype=int)), np_array(destinations, dtype=int)]
+    )
+    query_module_tgn_batch["timestamps"] = np_concatenate(
+        [query_module_tgn_batch.get("timestamps", np_empty(0, dtype=int)), np_array(edge_idxs, dtype=int)]
+    )
+    query_module_tgn_batch["edge_idxs"] = np_concatenate(
+        [query_module_tgn_batch.get("edge_idxs", np_empty(0, dtype=int)), np_array(edge_idxs, dtype=int)]
+    )
+    query_module_tgn_batch["labels"] = np_concatenate(
+        [query_module_tgn_batch.get("labels", np_empty((0, 2), dtype=int)), np_array(labels).reshape((-1, 2))]
+    )
+    query_module_tgn_batch["current_batch_size"] = len(batch_sources)
     return query_module_tgn_batch
 
 
 def reset_tgn_batch(batch_size: int) -> bool:
     global query_module_tgn_batch
-    query_module_tgn_batch = QueryModuleTGNBatch(
-        0,
-        np_empty(0, dtype=int),
-        np_empty(0, dtype=int),
-        np_empty(0, dtype=int),
-        np_empty(0, dtype=int),
-        {},
-        {},
-        batch_size,
-        np_empty((0, 2), dtype=int),
-    )
+    query_module_tgn_batch = {
+        "current_batch_size": 0,
+        "sources": np_empty(0, dtype=int),
+        "destinations": np_empty(0, dtype=int),
+        "timestamps": np_empty(0, dtype=int),
+        "edge_idxs": np_empty(0, dtype=int),
+        "node_features": {},
+        "edge_features": {},
+        "batch_size": batch_size,
+        "labels": np_empty((0, 2), dtype=int),
+    }
     return False
 
 
@@ -767,9 +702,7 @@ def reset_tgn() -> bool:
     optimizer; empty memory, message store and temporal neighborhood; no embeddings, edges, results or train/eval
     split; epoch counting from the start in Train mode; and an empty batch of the configured batch size.
     """
-    global query_module_tgn
-
-    initialize_tgn(query_module_tgn.admitted_params)
+    initialize_tgn(query_module_tgn.get("admitted_params", {}))
     return False
 
 
@@ -777,7 +710,7 @@ def process_epoch_batch() -> mgp_Record:
     batch_start_time = time_time()
     precision = (
         process_batch_self_supervised()
-        if query_module_tgn.learning_type == LearningType.SelfSupervised
+        if query_module_tgn.get("learning_type", DEFAULT_LEARNING_TYPE) == LearningType.SelfSupervised
         else process_batch_supervised()
     )
     batch_process_time = time_time() - batch_start_time
@@ -787,7 +720,7 @@ def process_epoch_batch() -> mgp_Record:
         batch_num=get_current_batch() + 1,  # this is a new record batch
         batch_process_time=round(batch_process_time, 2),
         precision=round(precision, 2),
-        batch_type=query_module_tgn.tgn_mode.name,
+        batch_type=query_module_tgn.get("tgn_mode", INITIAL_TGN_MODE).name,
     )
 
     # add same logging as in core
@@ -804,12 +737,10 @@ def process_pending_batch() -> bool:
     Processes the pending batch in the current mode and records its result. The pending batch is consumed whether
     processing succeeds or raises, so a rejected batch is never merged into the next one.
     """
-    global query_module_tgn, query_module_tgn_batch
-
-    batch_size = query_module_tgn_batch.batch_size
+    batch_size = query_module_tgn_batch.get("batch_size", 0)
     try:
         # this is just check if we have initialized list to save records of batches for training or evaluation
-        if get_current_epoch() not in query_module_tgn.results_per_epochs:
+        if get_current_epoch() not in query_module_tgn.get("results_per_epochs", {}):
             initialize_results_per_epoch(get_current_epoch())
 
         # process epoch in self_supervised or supervised mode in a given mode which
@@ -822,9 +753,7 @@ def process_pending_batch() -> bool:
 
 
 def train_eval_epochs(num_epochs: int, train_edges: list[mgp_Edge], eval_edges: list[mgp_Edge]) -> bool:
-    global query_module_tgn, query_module_tgn_batch
-
-    batch_size = query_module_tgn_batch.batch_size
+    batch_size = query_module_tgn_batch.get("batch_size", 0)
     if batch_size < 1:
         raise ValueError(f"batch_size must be positive, received {batch_size}")
     num_train_edges = len(train_edges)
@@ -846,18 +775,18 @@ def train_eval_epochs(num_epochs: int, train_edges: list[mgp_Edge], eval_edges: 
         # temporal neighborhood should be empty and message store should be empty
         # because if it isn't we have problem with information leakage from future
         # to current training samples
-        query_module_tgn.tgn.init_memory()
-        query_module_tgn.tgn.init_temporal_neighborhood()
-        query_module_tgn.tgn.init_message_store()
+        tgn_model.init_memory()
+        tgn_model.init_temporal_neighborhood()
+        tgn_model.init_message_store()
 
-        query_module_tgn.all_edges = set()
-        query_module_tgn.m_loss = []
+        query_module_tgn["all_edges"] = set()
+        query_module_tgn["m_loss"] = []
 
         reset_tgn_batch(batch_size=batch_size)
 
         # when we update here tgn_mode, later when we call process_batch_self_supervised
         # it will change tgn mode to .train() so no worries
-        query_module_tgn.tgn_mode = TGNMode.Train
+        query_module_tgn["tgn_mode"] = TGNMode.Train
 
         for i in range(num_train_batches):
             # sample edges we need
@@ -872,7 +801,7 @@ def train_eval_epochs(num_epochs: int, train_edges: list[mgp_Edge], eval_edges: 
         # here we need to change mode to eval
         # also later when we call process_batch_self_supervised
         # it will change tgn mode to .eval()
-        query_module_tgn.tgn_mode = TGNMode.Eval
+        query_module_tgn["tgn_mode"] = TGNMode.Eval
         for i in range(num_eval_batches):
             # sample edges we need
             start_index_eval_batch = i * batch_size
@@ -901,24 +830,22 @@ def predict_link_score(ctx: mgp_ProcCtx, src: mgp_Vertex, dest: mgp_Vertex) -> m
 
     :return prediction: score between 0 and 1
     """
-    global query_module_tgn
-
     if not is_tgn_initialized():
         raise RuntimeError("TGN is not initialized still. Call `set_params` function in order to initialize it.")
-    if query_module_tgn.learning_type != LearningType.SelfSupervised:
+    if query_module_tgn.get("learning_type", DEFAULT_LEARNING_TYPE) != LearningType.SelfSupervised:
         raise ValueError("Link scores require a TGN trained for self_supervised link prediction")
 
-    embedding_dimension = query_module_tgn.config.get(TGNParameters.MEMORY_DIMENSION, 0) + query_module_tgn.config.get(
-        TGNParameters.NUM_NODE_FEATURES, 0
-    )
+    config = query_module_tgn.get("config", {})
+    embedding_dimension = config.get(TGNParameters.MEMORY_DIMENSION, 0) + config.get(TGNParameters.NUM_NODE_FEATURES, 0)
+    all_embeddings = query_module_tgn.get("all_embeddings", {})
     endpoint_embeddings: list[torch_Tensor] = []
     for role, vertex in (("source", src), ("destination", dest)):
-        embedding = np_array(query_module_tgn.all_embeddings.get(int(vertex.id), np_empty(0)), dtype=float)
+        embedding = np_array(all_embeddings.get(int(vertex.id), np_empty(0)), dtype=float)
         if embedding.shape != (embedding_dimension,):
             raise ValueError(
                 f"No {role} embedding of dimension {embedding_dimension} for vertex {vertex.id}; found shape {embedding.shape}"
             )
-        endpoint_embeddings.append(torch_tensor(embedding, device=query_module_tgn.device, dtype=torch_float).reshape(1, -1))
+        endpoint_embeddings.append(torch_tensor(embedding, device=tgn_device, dtype=torch_float).reshape(1, -1))
 
     with torch_no_grad():
         # column concatenation, then the same probability transform the self-supervised learning path applies
@@ -946,8 +873,6 @@ def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> list[mgp_Record]:
     :return: mgp.Record(): empty record if everything was fine
     """
 
-    global query_module_tgn
-
     if not is_tgn_initialized():
         raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
@@ -960,13 +885,14 @@ def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> list[mgp_Record]:
 
     # note: if you didn't call mode switch to eval, you can't
     # still do epoch training
-    if query_module_tgn.train_eval_index_split == 0:
+    train_eval_index_split = query_module_tgn.get("train_eval_index_split", 0)
+    if train_eval_index_split == 0:
         raise Exception("Can't call train and eval if you didn't change TGN mode to 'eval'")
 
     train_eval_epochs(
         num_epochs=num_epochs,
-        train_edges=curr_all_edges[: query_module_tgn.train_eval_index_split],
-        eval_edges=curr_all_edges[query_module_tgn.train_eval_index_split :],
+        train_edges=curr_all_edges[:train_eval_index_split],
+        eval_edges=curr_all_edges[train_eval_index_split:],
     )
     # get all records for every epoch and every batch inside it as results
     computed_return_value = get_output_records()
@@ -1003,16 +929,15 @@ def set_eval(ctx: mgp_ProcCtx) -> mgp_Record:
 
     :return: mgp.Record(): empty record if everything was fine
     """
-    global query_module_tgn, query_module_tgn_batch
-
     if not is_tgn_initialized():
         raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
-    if query_module_tgn.tgn_mode == TGNMode.Train and query_module_tgn_batch.current_batch_size > 0:
+    in_train_mode = query_module_tgn.get("tgn_mode", INITIAL_TGN_MODE) == TGNMode.Train
+    if in_train_mode and query_module_tgn_batch.get("current_batch_size", 0) > 0:
         process_pending_batch()
 
-    query_module_tgn.train_eval_index_split = query_module_tgn.global_edge_count
-    query_module_tgn.tgn_mode = TGNMode.Eval
+    query_module_tgn["train_eval_index_split"] = query_module_tgn.get("global_edge_count", 0)
+    query_module_tgn["tgn_mode"] = TGNMode.Eval
 
     computed_return_value = mgp_Record(message="TGN mode changed to 'eval'.")
     return computed_return_value
@@ -1066,14 +991,12 @@ def get(ctx: mgp_ProcCtx) -> list[mgp_Record]:
 
     :return: mgp.Record(): empty record if everything was fine
     """
-    global query_module_tgn
-
     if not is_tgn_initialized():
         raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
     embeddings_dict = {}
 
-    for node_id, embedding in query_module_tgn.all_embeddings.items():
+    for node_id, embedding in query_module_tgn.get("all_embeddings", {}).items():
         embeddings_dict[node_id] = [float(e) for e in embedding]
 
     computed_return_value = [
@@ -1108,8 +1031,6 @@ def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record:
         "m edges: list of edges to preprocess, and if current batch size is big enough use for traini"  # Continue literal.
         "ng or evaluation\n\n    :return: mgp.Record(): empty record if everything was fine\n"
     )
-    global query_module_tgn_batch, query_module_tgn
-
     if not is_tgn_initialized():
         raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
@@ -1117,10 +1038,10 @@ def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record:
     parse_mgp_edges_into_tgn_batch(edges)
 
     # we track number of edges so set_eval can record the train/eval split
-    set_global_edge_count(query_module_tgn.global_edge_count + len(edges))
+    set_global_edge_count(query_module_tgn.get("global_edge_count", 0) + len(edges))
 
     # if batch is still not full, we don't go to "train" or "eval" of TGN
-    if query_module_tgn_batch.current_batch_size < query_module_tgn_batch.batch_size:
+    if query_module_tgn_batch.get("current_batch_size", 0) < query_module_tgn_batch.get("batch_size", 0):
         computed_return_value = mgp_Record()
         return computed_return_value
 
@@ -1168,25 +1089,14 @@ def set_params(
     )
     global query_module_tgn_batch, DEFINED_INPUT_TYPES, DEFAULT_VALUES
 
-    # function checks if input values in dictionary are correctly typed
-    def is_correctly_typed(defined_types, input_values):
-        if isinstance(defined_types, dict) and isinstance(input_values, dict):
-            # defined_types is a dict of types
-            computed_return_value = all(
-                k in input_values  # check if exists
-                and is_correctly_typed(defined_types[k], input_values[k])  # check for correct type
-                for k in defined_types
-            )
-            return computed_return_value
-        elif isinstance(defined_types, type):
-            computed_return_value = isinstance(input_values, defined_types)
-            return computed_return_value
-        else:
-            return False
-
     params = {**DEFAULT_VALUES, **params}  # override any default parameters
     print(params)
-    if not is_correctly_typed(DEFINED_INPUT_TYPES, params):
+    # every defined parameter must be present and hold its declared type
+    correctly_typed = all(
+        name in params and isinstance(params.get(name, expected_type()), expected_type)
+        for name, expected_type in DEFINED_INPUT_TYPES.items()
+    )
+    if not correctly_typed:
         raise Exception(f"Input dictionary is not correctly typed. Expected following types {DEFINED_INPUT_TYPES}.")
 
     initialize_tgn(params)
@@ -1205,39 +1115,38 @@ def initialize_tgn(params: dict) -> bool:
     if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
         raise ValueError(f"batch_size must be a positive integer, received {batch_size!r}")
 
+    layer_type = get_tgn_layer_enum(params.get(TGNParameters.LAYER_TYPE, ""))
     tgn_config = {
-        TGNParameters.NUM_OF_LAYERS: params.get(TGNParameters.NUM_OF_LAYERS, False),
-        TGNParameters.MEMORY_DIMENSION: params.get(TGNParameters.MEMORY_DIMENSION, False),
-        TGNParameters.TIME_DIMENSION: params.get(TGNParameters.TIME_DIMENSION, False),
-        TGNParameters.NUM_EDGE_FEATURES: params.get(TGNParameters.NUM_EDGE_FEATURES, False),
-        TGNParameters.NUM_NODE_FEATURES: params.get(TGNParameters.NUM_NODE_FEATURES, False),
-        TGNParameters.MESSAGE_DIMENSION: params.get(TGNParameters.MESSAGE_DIMENSION, False),
-        TGNParameters.NUM_NEIGHBORS: params.get(TGNParameters.NUM_NEIGHBORS, False),
-        TGNParameters.LAYER_TYPE: get_tgn_layer_enum(params.get(TGNParameters.LAYER_TYPE, False)),
-        TGNParameters.EDGE_FUNCTION_TYPE: get_edge_message_function_type(params.get(TGNParameters.EDGE_FUNCTION_TYPE, False)),
-        TGNParameters.MESSAGE_AGGREGATOR_TYPE: get_message_aggregator_type(
-            params.get(TGNParameters.MESSAGE_AGGREGATOR_TYPE, False)
-        ),
-        TGNParameters.MEMORY_UPDATER_TYPE: get_memory_updater_type(params.get(TGNParameters.MEMORY_UPDATER_TYPE, False)),
+        TGNParameters.NUM_OF_LAYERS: params.get(TGNParameters.NUM_OF_LAYERS, 0),
+        TGNParameters.MEMORY_DIMENSION: params.get(TGNParameters.MEMORY_DIMENSION, 0),
+        TGNParameters.TIME_DIMENSION: params.get(TGNParameters.TIME_DIMENSION, 0),
+        TGNParameters.NUM_EDGE_FEATURES: params.get(TGNParameters.NUM_EDGE_FEATURES, 0),
+        TGNParameters.NUM_NODE_FEATURES: params.get(TGNParameters.NUM_NODE_FEATURES, 0),
+        TGNParameters.MESSAGE_DIMENSION: params.get(TGNParameters.MESSAGE_DIMENSION, 0),
+        TGNParameters.NUM_NEIGHBORS: params.get(TGNParameters.NUM_NEIGHBORS, 0),
+        TGNParameters.LAYER_TYPE: layer_type,
+        TGNParameters.EDGE_FUNCTION_TYPE: get_edge_message_function_type(params.get(TGNParameters.EDGE_FUNCTION_TYPE, "")),
+        TGNParameters.MESSAGE_AGGREGATOR_TYPE: get_message_aggregator_type(params.get(TGNParameters.MESSAGE_AGGREGATOR_TYPE, "")),
+        TGNParameters.MEMORY_UPDATER_TYPE: get_memory_updater_type(params.get(TGNParameters.MEMORY_UPDATER_TYPE, "")),
     }
     memgraph_objects_property_config = {
-        MemgraphObjectsProperties.NODE_FEATURES_PROPERTY: params.get(MemgraphObjectsProperties.NODE_FEATURES_PROPERTY, False),
-        MemgraphObjectsProperties.EDGE_FEATURES_PROPERTY: params.get(MemgraphObjectsProperties.EDGE_FEATURES_PROPERTY, False),
-        MemgraphObjectsProperties.NODE_LABELS_PROPERTY: params.get(MemgraphObjectsProperties.NODE_LABELS_PROPERTY, False),
+        MemgraphObjectsProperties.NODE_FEATURES_PROPERTY: params.get(MemgraphObjectsProperties.NODE_FEATURES_PROPERTY, ""),
+        MemgraphObjectsProperties.EDGE_FEATURES_PROPERTY: params.get(MemgraphObjectsProperties.EDGE_FEATURES_PROPERTY, ""),
+        MemgraphObjectsProperties.NODE_LABELS_PROPERTY: params.get(MemgraphObjectsProperties.NODE_LABELS_PROPERTY, ""),
     }
 
     optimizer_config = {
-        OptimizerParameters.LEARNING_RATE: params.get(OptimizerParameters.LEARNING_RATE, False),
-        OptimizerParameters.WEIGHT_DECAY: params.get(OptimizerParameters.WEIGHT_DECAY, False),
+        OptimizerParameters.LEARNING_RATE: params.get(OptimizerParameters.LEARNING_RATE, 0.0),
+        OptimizerParameters.WEIGHT_DECAY: params.get(OptimizerParameters.WEIGHT_DECAY, 0.0),
     }
     # tgn params
 
-    if tgn_config.get(TGNParameters.LAYER_TYPE, False) == TGNLayerType.GraphAttentionEmbedding:
+    if layer_type == TGNLayerType.GraphAttentionEmbedding:
         tgn_config[TGNParameters.NUM_ATTENTION_HEADS] = params.get(TGNParameters.NUM_ATTENTION_HEADS, 1)
 
     # set learning type
     tgn_learning_type = get_learning_type(learning_type)
-    tgn_device_type = get_device_type(params.get(OtherProperties.DEVICE_TYPE, False))
+    tgn_device_type = get_device_type(params.get(OtherProperties.DEVICE_TYPE, ""))
 
     set_tgn(
         tgn_learning_type,

@@ -28,6 +28,7 @@ from torch import nn as torch_nn
 from torch import no_grad as torch_no_grad
 from torch import optim as torch_optim
 from torch import save as torch_save
+from torch import zeros as torch_zeros
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import to_hetero
 from tqdm import tqdm
@@ -204,21 +205,22 @@ POSITIVE_FLOAT_PARAMETERS = (OptimizerParams.LEARNING_RATE,)
 NON_NEGATIVE_FLOAT_PARAMETERS = (OptimizerParams.WEIGHT_DECAY, TrainParams.TIME_BETWEEN_CHECKPOINTS)
 
 # What a checkpoint records next to its weights, so a loaded model keeps the
-# architecture it was trained with and the meaning of each output column.
-CHECKPOINT_TASK_KEYS = (
-    ModelParams.LAYER_TYPE,
-    ModelParams.IN_CHANNELS,
-    ModelParams.HIDDEN_FEATURES_SIZE,
-    ModelParams.OUT_CHANNELS,
-    ModelParams.AGGREGATOR,
-    HeteroParams.NODE_TYPES,
-    HeteroParams.EDGE_TYPES,
-    HeteroParams.OBSERVED_ATTRIBUTE,
-    HeteroParams.LABEL_REINDEXING,
-    HeteroParams.INV_LABEL_REINDEXING,
-    HeteroParams.FEATURES_NAME,
-    HeteroParams.CLASS_NAME,
-)
+# architecture it was trained with and the meaning of each output column. Each
+# field maps to the false value of its type; the values are read-only defaults.
+CHECKPOINT_TASK_FIELDS = {
+    ModelParams.LAYER_TYPE: "",
+    ModelParams.IN_CHANNELS: 0,
+    ModelParams.HIDDEN_FEATURES_SIZE: [],
+    ModelParams.OUT_CHANNELS: 0,
+    ModelParams.AGGREGATOR: "",
+    HeteroParams.NODE_TYPES: [],
+    HeteroParams.EDGE_TYPES: [],
+    HeteroParams.OBSERVED_ATTRIBUTE: "",
+    HeteroParams.LABEL_REINDEXING: {},
+    HeteroParams.INV_LABEL_REINDEXING: {},
+    HeteroParams.FEATURES_NAME: "",
+    HeteroParams.CLASS_NAME: "",
+}
 CHECKPOINT_STATE_DICT = "state_dict"
 # model_<layer type>_<UTC save time to the microsecond>.pt; the fixed-width time sorts chronologically
 CHECKPOINT_TIME_FORMAT = "%Y%m%dT%H%M%S%fZ"
@@ -255,10 +257,10 @@ def declare_data(ctx: mgp_ProcCtx) -> HeteroData:
         current_values[HeteroParams.INV_LABEL_REINDEXING],
     ) = extract_from_database(
         nodes,
-        current_values.get(DataParams.SPLIT_RATIO, False),
-        current_values.get(HeteroParams.FEATURES_NAME, False),
-        current_values.get(HeteroParams.CLASS_NAME, False),
-        current_values.get(OtherParams.DEVICE_TYPE, False),
+        current_values.get(DataParams.SPLIT_RATIO, 0.0),
+        current_values.get(HeteroParams.FEATURES_NAME, ""),
+        current_values.get(HeteroParams.CLASS_NAME, ""),
+        current_values.get(OtherParams.DEVICE_TYPE, ""),
     )
 
     observed_attribute = current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, "")
@@ -285,24 +287,27 @@ def available_device() -> str:
     return device
 
 
-def declare_model(values: dict):
-    """Build the model that values describe: architecture, task width and graph metadata.
+def hetero_network_from_values(values: dict):
+    """The heterogeneous network that values describe: architecture, task width, graph metadata and device.
+
+    Fresh training and checkpoint restore both go through this one translation, so a
+    loaded model always has the architecture it was trained with.
 
     Args:
         values (dict): configuration and task values, as in current_values or a checkpoint
     """
 
     args_gatjk = [
-        values.get(ModelParams.IN_CHANNELS, False),
-        values.get(ModelParams.HIDDEN_FEATURES_SIZE, False),
-        values.get(ModelParams.OUT_CHANNELS, False),
+        values.get(ModelParams.IN_CHANNELS, 0),
+        values.get(ModelParams.HIDDEN_FEATURES_SIZE, []),
+        values.get(ModelParams.OUT_CHANNELS, 0),
     ]
 
     args_inductive = [
-        values.get(ModelParams.IN_CHANNELS, False),
-        values.get(ModelParams.HIDDEN_FEATURES_SIZE, False),
-        values.get(ModelParams.OUT_CHANNELS, False),
-        values.get(ModelParams.AGGREGATOR, False),
+        values.get(ModelParams.IN_CHANNELS, 0),
+        values.get(ModelParams.HIDDEN_FEATURES_SIZE, []),
+        values.get(ModelParams.OUT_CHANNELS, 0),
+        values.get(ModelParams.AGGREGATOR, ""),
     ]
 
     # choose model architecture according to layer type
@@ -323,7 +328,7 @@ def declare_model(values: dict):
     network = to_hetero(network, metadata)
 
     # move model to device
-    network.to(values.get(OtherParams.DEVICE_TYPE, False))
+    network.to(values.get(OtherParams.DEVICE_TYPE, ""))
 
     return network
 
@@ -376,8 +381,7 @@ def set_model_parameters(
     _You_ can change those via **params** dictionary.
     It checks if variables in **params** are defined appropriately. If so,
     map of default global parameters is overridden with user defined dictionary params.
-    After that it executes previously defined functions declare_globals and
-    declare_model_and_data and sets each global variable to some value.
+    After that it prepares the model saving folder and publishes the admitted configuration.
 
     Args:
         ctx: (mgp.ProcCtx): current context,
@@ -408,22 +412,6 @@ def set_model_parameters(
         params = DEFAULT_ARGUMENT_DICT.copy()
     global DEFINED_INPUT_TYPES, DEFAULT_VALUES, current_values
 
-    # function checks if input values in dictionary are correctly typed
-    def is_correctly_typed(defined_types, input_values):
-        if isinstance(defined_types, dict) and isinstance(input_values, dict):
-            # defined_types is a dict of types
-            computed_return_value = all(
-                k in input_values  # check if exists
-                and is_correctly_typed(defined_types[k], input_values[k])  # check for correct type
-                for k in defined_types
-            )
-            return computed_return_value
-        elif isinstance(defined_types, type):
-            computed_return_value = isinstance(input_values, defined_types)
-            return computed_return_value
-        else:
-            return False
-
     # override any default parameters in an isolated candidate; the defaults
     # (including their nested lists and maps) are never shared with run state
     candidate = deepcopy(DEFAULT_VALUES)
@@ -435,8 +423,13 @@ def set_model_parameters(
         if isinstance(candidate.get(list_parameter, []), tuple):
             candidate[list_parameter] = list(candidate.get(list_parameter, []))
 
-    # raise exception if some variable in dictionary params is not defined as it should be
-    if not is_correctly_typed(DEFINED_INPUT_TYPES, candidate):
+    # raise exception if some variable in dictionary params is not defined as it should be:
+    # every defined parameter must be present and hold its declared type
+    correctly_typed = all(
+        name in candidate and isinstance(candidate.get(name, expected_type()), expected_type)
+        for name, expected_type in DEFINED_INPUT_TYPES.items()
+    )
+    if not correctly_typed:
         raise Exception("Input dictionary is not correctly typed.")
     errors = configuration_errors(candidate)
     if errors:
@@ -447,17 +440,17 @@ def set_model_parameters(
     current_values = candidate
 
     computed_return_value = mgp_Record(
-        hidden_features_size=current_values.get(ModelParams.HIDDEN_FEATURES_SIZE, 0),
+        hidden_features_size=current_values.get(ModelParams.HIDDEN_FEATURES_SIZE, []),
         layer_type=current_values.get(ModelParams.LAYER_TYPE, ""),
-        aggregator=current_values.get(ModelParams.AGGREGATOR, False),
+        aggregator=current_values.get(ModelParams.AGGREGATOR, ""),
         learning_rate=current_values.get(OptimizerParams.LEARNING_RATE, 0.0),
-        weight_decay=current_values.get(OptimizerParams.WEIGHT_DECAY, False),
+        weight_decay=current_values.get(OptimizerParams.WEIGHT_DECAY, 0.0),
         split_ratio=current_values.get(DataParams.SPLIT_RATIO, 0.0),
-        metrics=current_values.get(DataParams.METRICS, False),
-        node_id_property=current_values.get(MemgraphParams.NODE_ID_PROPERTY, False),
-        num_epochs=current_values.get(TrainParams.NUM_EPOCHS, False),
-        console_log_freq=current_values.get(TrainParams.CONSOLE_LOG_FREQ, False),
-        checkpoint_freq=current_values.get(TrainParams.CHECKPOINT_FREQ, False),
+        metrics=current_values.get(DataParams.METRICS, []),
+        node_id_property=current_values.get(MemgraphParams.NODE_ID_PROPERTY, ""),
+        num_epochs=current_values.get(TrainParams.NUM_EPOCHS, 0),
+        console_log_freq=current_values.get(TrainParams.CONSOLE_LOG_FREQ, 0),
+        checkpoint_freq=current_values.get(TrainParams.CHECKPOINT_FREQ, 0),
         device_type=current_values.get(OtherParams.DEVICE_TYPE, ""),
         path_to_model=current_values.get(OtherParams.PATH_TO_MODEL, ""),
     )
@@ -505,7 +498,7 @@ def save_model_to_folder() -> str:
     if os_path.exists(path_to_saved_model):
         raise FileExistsError(f"Checkpoint {path_to_saved_model} already exists.")
 
-    checkpoint = {key: current_values.get(key, False) for key in CHECKPOINT_TASK_KEYS}
+    checkpoint = {key: current_values.get(key, default) for key, default in CHECKPOINT_TASK_FIELDS.items()}
     checkpoint[CHECKPOINT_STATE_DICT] = model.state_dict()
 
     descriptor, temporary_path = mkstemp(dir=model_saving_folder, prefix=".checkpoint-", suffix=".tmp")
@@ -558,17 +551,17 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> list[mgp_Record]:
     data = declare_data(ctx)
 
     # define model, optimizer and criterion
-    model = declare_model(current_values)
+    model = hetero_network_from_values(current_values)
     opt = torch_optim.Adam(
         model.parameters(),
-        lr=current_values.get(OptimizerParams.LEARNING_RATE, False),
-        weight_decay=current_values.get(OptimizerParams.WEIGHT_DECAY, False),
+        lr=current_values.get(OptimizerParams.LEARNING_RATE, 0.0),
+        weight_decay=current_values.get(OptimizerParams.WEIGHT_DECAY, 0.0),
     )
     criterion = torch_nn.CrossEntropyLoss()
 
     current_values[TrainParams.NUM_EPOCHS] = num_epochs
-    num_nodes_sample = current_values.get(HeteroParams.NUM_NODES_SAMPLE, False)
-    num_iterations_sample = current_values.get(HeteroParams.NUM_ITERATIONS_SAMPLE, False)
+    num_nodes_sample = current_values.get(HeteroParams.NUM_NODES_SAMPLE, 0)
+    num_iterations_sample = current_values.get(HeteroParams.NUM_ITERATIONS_SAMPLE, 0)
 
     # variables for early stopping
     last_loss = float("inf")
@@ -582,8 +575,8 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> list[mgp_Record]:
             opt,
             data,
             criterion,
-            current_values.get(TrainParams.BATCH_SIZE, False),
-            current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False),
+            current_values.get(TrainParams.BATCH_SIZE, 0),
+            current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, ""),
             {key: [num_nodes_sample] * num_iterations_sample for key in data.node_types},
         )
 
@@ -593,7 +586,7 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> list[mgp_Record]:
 
             drop_epochs = str(trigger_times) + " " + ("consecutive epochs" if trigger_times > 1 else "consecutive epoch")
 
-            times_until_stopping = current_values.get(OtherParams.PATIENCE, 0.0) - trigger_times
+            times_until_stopping = current_values.get(OtherParams.PATIENCE, 0) - trigger_times
 
             stop_after = str(times_until_stopping) + " " + ("more drops" if times_until_stopping > 1 else "more drop")
 
@@ -609,7 +602,7 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> list[mgp_Record]:
         last_loss = val_loss
 
         # log data every console_log_freq epochs
-        if epoch % current_values.get(TrainParams.CONSOLE_LOG_FREQ, 0.0) == 0:
+        if epoch % current_values.get(TrainParams.CONSOLE_LOG_FREQ, 0) == 0:
             model.eval()
             with torch_no_grad():
                 out = model(data.x_dict, data.edge_index_dict)
@@ -617,17 +610,17 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> list[mgp_Record]:
                 data[current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, "")].train_mask,
                 out,
                 data,
-                current_values.get(DataParams.METRICS, False),
-                current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False),
-                current_values.get(OtherParams.DEVICE_TYPE, False),
+                current_values.get(DataParams.METRICS, []),
+                current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, ""),
+                current_values.get(OtherParams.DEVICE_TYPE, ""),
             )
             dict_val = metrics(
                 data[current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, "")].val_mask,
                 out,
                 data,
-                current_values.get(DataParams.METRICS, False),
-                current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, False),
-                current_values.get(OtherParams.DEVICE_TYPE, False),
+                current_values.get(DataParams.METRICS, []),
+                current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, ""),
+                current_values.get(OtherParams.DEVICE_TYPE, ""),
             )
             logged_data.append(
                 {
@@ -642,26 +635,26 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> list[mgp_Record]:
             print(
                 f"Epoch: {epoch:03d}, Loss: {loss:.4f}, Val Loss: {val_loss:.4f},"
                 + (
-                    f"Accuracy: {logged_data[-1].get('train', {}).get('accuracy', False):.4f}, Accuracy: "
-                    f"{logged_data[-1].get('val', {}).get('accuracy', False):.4f}"
+                    f"Accuracy: {logged_data[-1].get('train', {}).get('accuracy', 0.0):.4f}, Accuracy: "
+                    f"{logged_data[-1].get('val', {}).get('accuracy', 0.0):.4f}"
                 )
             )
 
         # save model every checkpoint_freq epochs
-        if epoch % current_values.get(TrainParams.CHECKPOINT_FREQ, 0.0) == 0:
+        if epoch % current_values.get(TrainParams.CHECKPOINT_FREQ, 0) == 0:
             if time() - last_time > current_values.get(TrainParams.TIME_BETWEEN_CHECKPOINTS, 0.0):
                 save_model_to_folder()
                 last_time = time()
 
     computed_return_value = [
         mgp_Record(
-            epoch=data.get("epoch", False),
-            loss=data.get("loss", []),
-            val_loss=data.get("val_loss", []),
-            train_log=data.get("train", False),
-            val_log=data.get("val", False),
+            epoch=entry.get("epoch", 0),
+            loss=entry.get("loss", 0.0),
+            val_loss=entry.get("val_loss", 0.0),
+            train_log=entry.get("train", {}),
+            val_log=entry.get("val", {}),
         )
-        for data in logged_data
+        for entry in logged_data
     ]
     return computed_return_value
 
@@ -690,13 +683,13 @@ def get_training_data() -> list[mgp_Record]:
 
     computed_return_value = [
         mgp_Record(
-            epoch=data.get("epoch", False),
-            loss=data.get("loss", []),
-            val_loss=data.get("val_loss", []),
-            train_log=data.get("train", False),
-            val_log=data.get("val", False),
+            epoch=entry.get("epoch", 0),
+            loss=entry.get("loss", 0.0),
+            val_loss=entry.get("val_loss", 0.0),
+            train_log=entry.get("train", {}),
+            val_log=entry.get("val", {}),
         )
-        for data in logged_data
+        for entry in logged_data
     ]
     return computed_return_value
 
@@ -758,15 +751,17 @@ def load_model(num: int = 0) -> mgp_Record:
 
     device = available_device()
     checkpoint = torch_load(path_to_load_model, map_location=device)
-    missing = [key for key in (*CHECKPOINT_TASK_KEYS, CHECKPOINT_STATE_DICT) if key not in checkpoint]
+    if not isinstance(checkpoint, dict):
+        raise ValueError(f"Checkpoint {path_to_load_model} is not a checkpoint dictionary.")
+    missing = [key for key in (*CHECKPOINT_TASK_FIELDS, CHECKPOINT_STATE_DICT) if key not in checkpoint]
     if missing:
         raise ValueError(f"Checkpoint {path_to_load_model} does not record {', '.join(missing)}.")
 
     # build and fill the model on an isolated copy; publish both only after the weights load
     candidate = deepcopy(current_values)
-    candidate.update({key: checkpoint.get(key, False) for key in CHECKPOINT_TASK_KEYS})
+    candidate.update({key: checkpoint.get(key, default) for key, default in CHECKPOINT_TASK_FIELDS.items()})
     candidate[OtherParams.DEVICE_TYPE] = device
-    loaded_model = declare_model(candidate)
+    loaded_model = hetero_network_from_values(candidate)
     loaded_model.load_state_dict(checkpoint.get(CHECKPOINT_STATE_DICT, {}))
 
     model = loaded_model
@@ -807,10 +802,10 @@ def predict(ctx: mgp_ProcCtx, vertex: mgp_Vertex) -> mgp_Record:
         raise Exception("Graph is empty.")
     data, _, _, inv_reindexing, _, _ = extract_from_database(
         nodes,
-        current_values.get(DataParams.SPLIT_RATIO, False),
-        current_values.get(HeteroParams.FEATURES_NAME, False),
-        current_values.get(HeteroParams.CLASS_NAME, False),
-        current_values.get(OtherParams.DEVICE_TYPE, False),
+        current_values.get(DataParams.SPLIT_RATIO, 0.0),
+        current_values.get(HeteroParams.FEATURES_NAME, ""),
+        current_values.get(HeteroParams.CLASS_NAME, ""),
+        current_values.get(OtherParams.DEVICE_TYPE, ""),
         observed_attribute,
     )
 
@@ -833,7 +828,10 @@ def predict(ctx: mgp_ProcCtx, vertex: mgp_Vertex) -> mgp_Record:
     model.eval()
     with torch_no_grad():
         out = model(data.x_dict, data.edge_index_dict)
-    pred = out[observed_attribute].argmax(dim=1)
+    # the heterogeneous model returns one logits matrix per node type it was built for
+    if observed_attribute not in out:
+        raise KeyError(f"Model produced no output for node type {observed_attribute!r}.")
+    pred = out.get(observed_attribute, torch_zeros((0, 0))).argmax(dim=1)
 
     predicted_index = int(pred.detach().cpu().numpy()[position])
 

@@ -2,7 +2,6 @@
 
 from mgp import Any as mgp_Any
 from mgp import Edge as mgp_Edge
-from mgp import Map as mgp_Map
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
 from mgp import read_proc as mgp_read_proc
@@ -32,8 +31,12 @@ class SchemaGenerator(object):
 
     def get_schema(self) -> object:
         if self.internal_type == OutputType.RAW.value:
-            computed_return_value = self.get_raw_schema()
-            return computed_return_value
+            raw_schema = {
+                Parameter.NODE_PROPS.value: self.all_node_properties_dict,
+                Parameter.REL_PROPS.value: self.all_relationship_properties_dict,
+                Parameter.RELATIONSHIPS.value: self.all_relationships_list,
+            }
+            return raw_schema
         elif self.internal_type == OutputType.PROMPT_READY.value:
             computed_return_value = self.get_prompt_ready_schema()
             return computed_return_value
@@ -86,13 +89,6 @@ class SchemaGenerator(object):
                 )
         return False
 
-    def get_raw_schema(self) -> mgp_Map:
-        return {
-            Parameter.NODE_PROPS.value: self.all_node_properties_dict,
-            Parameter.REL_PROPS.value: self.all_relationship_properties_dict,
-            Parameter.RELATIONSHIPS.value: self.all_relationships_list,
-        }
-
     def get_prompt_ready_schema(self) -> str:
         prompt_ready_schema = "Node properties are the following:\n"
         for label in self.all_node_properties_dict.keys():
@@ -100,7 +96,7 @@ class SchemaGenerator(object):
                 label=label,
                 properties=sorted(
                     self.all_node_properties_dict.get(label, []),
-                    key=lambda prop: prop[Parameter.PROPERTY.value],
+                    key=lambda prop: prop.get(Parameter.PROPERTY.value, ""),
                 ),
             )
 
@@ -110,17 +106,17 @@ class SchemaGenerator(object):
                 name=rel,
                 properties=sorted(
                     self.all_relationship_properties_dict.get(rel, []),
-                    key=lambda prop: prop[Parameter.PROPERTY.value],
+                    key=lambda prop: prop.get(Parameter.PROPERTY.value, ""),
                 ),
             )
 
         prompt_ready_schema += "\nThe relationships are the following:\n"
 
         for relationship in self.all_relationships_list:
-            prompt_ready_schema += (
-                f"['(:{relationship[Parameter.START.value]})-[:{relationship[Parameter.TYPE.value]}]->(:"
-                f"{relationship[Parameter.END.value]})']\n"
-            )
+            start = relationship.get(Parameter.START.value, "")
+            relationship_type = relationship.get(Parameter.TYPE.value, "")
+            end = relationship.get(Parameter.END.value, "")
+            prompt_ready_schema += f"['(:{start})-[:{relationship_type}]->(:{end})']\n"
 
         return prompt_ready_schema
 
@@ -130,25 +126,19 @@ class SchemaGenerator(object):
         all_properties_dict: dict[str, mgp_Any],
         key: str,
     ):
-        for property_name in graph_object.properties.keys():
-            if not all_properties_dict.get(key, False):
-                all_properties_dict[key] = [
-                    {
-                        Parameter.PROPERTY.value: property_name,
-                        Parameter.TYPE.value: type(graph_object.properties.get(property_name, False)).__name__,
-                    }
-                ]
+        for property_name, property_value in graph_object.properties.items():
+            property_record = {
+                Parameter.PROPERTY.value: property_name,
+                Parameter.TYPE.value: type(property_value).__name__,
+            }
+            if not all_properties_dict.get(key, []):
+                all_properties_dict[key] = [property_record]
                 continue
 
-            if property_name in [d.get(Parameter.PROPERTY.value, False) for d in all_properties_dict.get(key, False)]:
+            if property_name in [d.get(Parameter.PROPERTY.value, "") for d in all_properties_dict.get(key, [])]:
                 continue
 
-            all_properties_dict.get(key, []).append(
-                {
-                    Parameter.PROPERTY.value: property_name,
-                    Parameter.TYPE.value: type(graph_object.properties.get(property_name, False)).__name__,
-                }
-            )
+            all_properties_dict.get(key, []).append(property_record)
         return False
 
 

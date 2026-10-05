@@ -89,11 +89,9 @@ def summarize_cves(cves: list[dict]) -> tuple[dict, str]:
     summary = {}
     for cve in cves:
         severity = cve.get("severity", "").upper()
-        if severity not in summary:
-            summary[severity] = 0
-        summary[severity] += 1
+        summary[severity] = summary.get(severity, 0) + 1
 
-    keys = ["UNKNOWN", "NEGLIGIBLE", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    keys =["UNKNOWN", "NEGLIGIBLE", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
     emojis = [
         ":interrobang:",
         ":grinning_face_with_star_eyes:" * 2,
@@ -122,21 +120,7 @@ def summarize_cves(cves: list[dict]) -> tuple[dict, str]:
     return summary, msg
 
 
-def severity_summary(data: list[dict]) -> dict:
-    """
-    count the total number of CVEs per severity level
-    """
-    summary = {}
-    for cve in data:
-        severity = cve.get("severity", "")
-        if severity not in summary:
-            summary[severity] = 0
-        summary[severity] += 1
-
-    return summary
-
-
-def create_slack_message(arch: str, image_type: str, cves: list[dict]) -> str:
+def format_slack_message(arch: str, image_type: str, cves: list[dict]) -> str:
     """
     Formats the Slack message to be sent.
 
@@ -209,7 +193,7 @@ def main(arch: str, image_type: str, send_slack_message: bool) -> None:
     # collect results
     cves = parse_cve_report(f"{CVE_DIR}/combined_report.json")
 
-    msg = create_slack_message(arch, image_type, cves)
+    msg = format_slack_message(arch, image_type, cves)
     if send_slack_message:
         post_message(msg)
     else:

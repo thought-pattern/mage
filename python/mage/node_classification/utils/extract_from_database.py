@@ -1,6 +1,6 @@
 """Utilities for extract from database."""
 
-from collections import Counter, defaultdict
+from collections import Counter
 
 from numpy import add as np_add
 from numpy import array as np_array
@@ -46,7 +46,7 @@ def nodes_fetching(
     # variable for storing node types
     node_types = []
     # variable for storing embedding lengths
-    embedding_lengths = defaultdict(int)
+    embedding_lengths = {}
 
     # class values of the observed type only; labels on other node types are not classes of this task
     observed_classes = set()
@@ -84,7 +84,7 @@ def nodes_fetching(
     node_types = Counter(node_types)
 
     # auxiliary dictionaries for reindexing and inverse reindexing
-    append_counter = defaultdict(int)
+    append_counter = {}
     reindexing = {}
     inv_reindexing = {}
 
@@ -133,7 +133,7 @@ def nodes_fetching(
             data[node_type].y[node_type_counter] = label_reindexing.get(int(node.properties.get(class_name, 0)), 0)
 
         # increase append_counter by 1
-        append_counter[node_type] += 1
+        append_counter[node_type] = node_type_counter + 1
     return (
         data,
         reindexing,
@@ -159,7 +159,7 @@ def edges_fetching(nodes: list, features_name: str, inv_reindexing: dict, data: 
 
     edges = []  # variable for storing edges
     edge_types = []  # variable for storing edge types
-    append_counter = defaultdict(int)  # variable for storing append counter
+    append_counter = {}  # variable for storing append counter
 
     # obtain edges from context
     for vertex in nodes:
@@ -191,10 +191,11 @@ def edges_fetching(nodes: list, features_name: str, inv_reindexing: dict, data: 
             raise KeyError(f"Edge endpoint was not indexed as a {from_vertex_type}/{to_vertex_type} node")
 
         # add edge coordinates to edge_index tensors
-        data[edge_type].edge_index[0][append_counter.get(edge_type, 0)] = from_position
-        data[edge_type].edge_index[1][append_counter.get(edge_type, 0)] = to_position
+        edge_position = append_counter.get(edge_type, 0)
+        data[edge_type].edge_index[0][edge_position] = from_position
+        data[edge_type].edge_index[1][edge_position] = to_position
 
-        append_counter[edge_type] += 1
+        append_counter[edge_type] = edge_position + 1
 
     return data
 

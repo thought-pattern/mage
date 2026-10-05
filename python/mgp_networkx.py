@@ -217,6 +217,8 @@ class MemgraphDiGraphBase:
         # modify the graph's internal attributes and don't try to populate it
         # with initial data or modify it.
 
+        # The *_factory attributes are NetworkX's documented subclass hooks, which its constructor calls to obtain the
+        # graph's mappings; their names and zero-argument calling convention belong to the library.
         self.node_dict_factory = lambda: MemgraphNodeDict(ctx) if ctx else self.internal_error
         self.node_attr_dict_factory = self.internal_error
 
@@ -253,7 +255,8 @@ class MemgraphDiGraphBase:
         # already populated, dictionaries. Because self._pred and self._succ are
         # initialized by the same factory function, they end up storing the
         # same adjacency lists which is not good. We correct that here.
-        # `_pred` is NetworkX's own predecessor attribute name.
+        # `_pred` is NetworkX's own predecessor attribute name: its algorithms read G._pred directly and the subclass
+        # hooks have no separate predecessor factory, so the name is the library's protocol and is kept as is.
         self._pred = MemgraphAdjlistOuterDict(ctx, succ=False, multi=multi)
 
     def internal_error(self):
@@ -261,25 +264,19 @@ class MemgraphDiGraphBase:
 
 
 class MemgraphMultiDiGraph(MemgraphDiGraphBase, nx_MultiDiGraph):
+    """Read-only multigraph view of the host graph. Undirected algorithms use NetworkX's own undirected view of it,
+    MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True), built at the call site."""
+
     def __init__(self, incoming_graph_data=False, ctx=False, **kwargs):
         super().__init__(incoming_graph_data=incoming_graph_data, ctx=ctx, multi=True, **kwargs)
 
 
-def MemgraphMultiGraph(incoming_graph_data=False, ctx=False, **kwargs):
-    computed_return_value = MemgraphMultiDiGraph(incoming_graph_data=incoming_graph_data, ctx=ctx, **kwargs).to_undirected(
-        as_view=True
-    )
-    return computed_return_value
-
-
 class MemgraphDiGraph(MemgraphDiGraphBase, nx_DiGraph):
+    """Read-only simple-graph view of the host graph. Undirected algorithms use NetworkX's own undirected view of it,
+    MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True), built at the call site."""
+
     def __init__(self, incoming_graph_data=False, ctx=False, **kwargs):
         super().__init__(incoming_graph_data=incoming_graph_data, ctx=ctx, multi=False, **kwargs)
-
-
-def MemgraphGraph(incoming_graph_data=False, ctx=False, **kwargs):
-    computed_return_value = MemgraphDiGraph(incoming_graph_data=incoming_graph_data, ctx=ctx, **kwargs).to_undirected(as_view=True)
-    return computed_return_value
 
 
 class PropertiesDictionary(collections_abc.Mapping):
@@ -288,7 +285,8 @@ class PropertiesDictionary(collections_abc.Mapping):
     def __init__(self, ctx, prop):
         self.internal_ctx = ctx
         self.internal_prop = prop
-        self.internal_len = False
+        # Cached property-bearing vertex count; zero means not yet counted (recounting an empty result is harmless).
+        self.internal_len = 0
 
     def __getitem__(self, vertex):
         if vertex not in self:

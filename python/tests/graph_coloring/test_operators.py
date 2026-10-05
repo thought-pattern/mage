@@ -14,6 +14,16 @@ from mage.graph_coloring_module import (
     SimpleMutation,
 )
 
+# Five test nodes; the adjacency maps a node to its (neighbor, weight) pairs. Graph copies what it reads.
+GRAPH_NODES = [0, 1, 2, 3, 4]
+GRAPH_ADJACENCY = {
+    0: [(1, 2), (2, 3)],
+    1: [(0, 2), (2, 2), (4, 5)],
+    2: [(0, 3), (1, 2), (3, 3)],
+    3: [(2, 3)],
+    4: [(1, 5)],
+}
+
 
 @pytest_fixture
 def set_seed():
@@ -21,22 +31,8 @@ def set_seed():
     return False
 
 
-@pytest_fixture
-def graph():
-    computed_return_value = Graph(
-        [0, 1, 2, 3, 4],
-        {
-            0: [(1, 2), (2, 3)],
-            1: [(0, 2), (2, 2), (4, 5)],
-            2: [(0, 3), (1, 2), (3, 3)],
-            3: [(2, 3)],
-            4: [(1, 5)],
-        },
-    )
-    return computed_return_value
-
-
-def test_mis_mutation(set_seed, graph):
+def test_mis_mutation(set_seed):
+    graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
     individual = Individual(no_of_colors=3, graph=graph, chromosome=[0, 1, 0, 2, 0])
     mutated_indv, nodes = MISMutation().mutate(graph, individual)
 
@@ -46,7 +42,8 @@ def test_mis_mutation(set_seed, graph):
     assert sorted(nodes) == sorted(expected_nodes)
 
 
-def test_multiple_mutation(set_seed, graph):
+def test_multiple_mutation(set_seed):
+    graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
     individual = Individual(no_of_colors=3, graph=graph, chromosome=[0, 1, 0, 2, 0])
     mutated_indv, nodes = MultipleMutation().mutate(
         graph,
@@ -60,7 +57,8 @@ def test_multiple_mutation(set_seed, graph):
     assert sorted(nodes) == sorted(expected_nodes)
 
 
-def test_random_mutation_no_conflict(set_seed, graph):
+def test_random_mutation_no_conflict(set_seed):
+    graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
     individual = Individual(no_of_colors=3, graph=graph, chromosome=[0, 1, 2, 1, 0])
     mutated_indv, nodes = RandomMutation().mutate(
         graph,
@@ -76,7 +74,8 @@ def test_random_mutation_no_conflict(set_seed, graph):
     assert sorted(nodes) == sorted(expected_nodes)
 
 
-def test_random_mutation(set_seed, graph):
+def test_random_mutation(set_seed):
+    graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
     individual = Individual(no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1})
     mutated_indv, nodes = RandomMutation().mutate(
         graph,
@@ -92,7 +91,8 @@ def test_random_mutation(set_seed, graph):
     assert sorted(nodes) == sorted(expected_nodes)
 
 
-def test_simple_no_conflict(set_seed, graph):
+def test_simple_no_conflict(set_seed):
+    graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
     individual = Individual(no_of_colors=3, graph=graph, chromosome=[0, 1, 2, 1, 0])
     mutated_indv, nodes = SimpleMutation().mutate(graph, individual)
     expected_mutated_indv_chromosome = [0, 1, 2, 1, 0]
@@ -101,7 +101,8 @@ def test_simple_no_conflict(set_seed, graph):
     assert sorted(nodes) == sorted(expected_nodes)
 
 
-def test_simple_mutation(set_seed, graph):
+def test_simple_mutation(set_seed):
+    graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
     individual = Individual(no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1})
     mutated_indv, nodes = SimpleMutation().mutate(graph, individual)
     expected_mutated_indv_chromosome = [0, 1, 0, 2, 0]

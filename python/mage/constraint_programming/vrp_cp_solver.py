@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from gekko import GEKKO
 from numpy import ndarray as np_ndarray
 
-from mage.geography import InvalidDepotException, VRPPath, VRPResult, VRPSolver
+from mage.geography.vehicle_routing import InvalidDepotException, VRPSolver
 
 
 class VRPConstraintProgrammingSolver(VRPSolver):
@@ -68,18 +68,16 @@ class VRPConstraintProgrammingSolver(VRPSolver):
         self.internal_model.solve()
         return False
 
-    def get_result(self) -> VRPResult:
-        computed_return_value = VRPResult(
-            [
-                VRPPath(
-                    key[0] if key[0] >= 0 else self.depot_index,
-                    key[1] if key[1] >= 0 else self.depot_index,
-                )
-                for key, var in self.edge_chosen_vars.items()
-                if int(var.value[0]) == 1
-            ]
-        )
-        return computed_return_value
+    def get_result(self) -> list:
+        vrp_paths = [
+            {
+                "from_vertex": node_from if node_from >= 0 else self.depot_index,
+                "to_vertex": node_to if node_to >= 0 else self.depot_index,
+            }
+            for (node_from, node_to), var in self.edge_chosen_vars.items()
+            if int(var.value[0]) == 1
+        ]
+        return vrp_paths
 
     def get_distance(self, edge: tuple[int, int]) -> float:
         # Source and sink are the depot's departure and return copies; they are priced from the depot's matrix row and
@@ -144,12 +142,10 @@ class VRPConstraintProgrammingSolver(VRPSolver):
         return edges_vars
 
     def add_variable(self, edge: tuple[int, int]):
-        var = self.edge_chosen_vars.get(edge, False)
+        if edge not in self.edge_chosen_vars:
+            self.edge_chosen_vars[edge] = self.internal_model.Var(value=0, lb=0, ub=1, integer=True)
 
-        if var is False:
-            var = self.internal_model.Var(value=0, lb=0, ub=1, integer=True)
-            self.edge_chosen_vars[edge] = var
-
+        var = self.edge_chosen_vars.get(edge, 0)
         return var
 
     def add_constraints(self):
@@ -232,9 +228,14 @@ class StartInSourceNodeConstraint(VRPConstraint):
         self.internal_source_id = source_id
 
     def apply_constraint(self):
-        self.internal_model.Equation(
-            sum(self.internal_variables[(self.internal_source_id, n)] for n in self.internal_node_ids) == self.internal_no_vehicles
-        )
+        departure_vars = []
+        for node_id in self.internal_node_ids:
+            edge = (self.internal_source_id, node_id)
+            if edge not in self.internal_variables:
+                raise KeyError(f"no departure edge variable for location {node_id}")
+            departure_vars.append(self.internal_variables.get(edge, 0))
+
+        self.internal_model.Equation(sum(departure_vars) == self.internal_no_vehicles)
         return False
 
 
@@ -259,9 +260,14 @@ class EndInSinkNodeConstraint(VRPConstraint):
         self.internal_sink_id = sink_id
 
     def apply_constraint(self):
-        self.internal_model.Equation(
-            sum(self.internal_variables[(n, self.internal_sink_id)] for n in self.internal_node_ids) == self.internal_no_vehicles
-        )
+        return_vars = []
+        for node_id in self.internal_node_ids:
+            edge = (node_id, self.internal_sink_id)
+            if edge not in self.internal_variables:
+                raise KeyError(f"no return edge variable for location {node_id}")
+            return_vars.append(self.internal_variables.get(edge, 0))
+
+        self.internal_model.Equation(sum(return_vars) == self.internal_no_vehicles)
         return False
 
 

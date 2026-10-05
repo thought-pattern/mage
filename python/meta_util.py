@@ -1,37 +1,10 @@
 """Utilities for meta util."""
 
-from collections import defaultdict
-
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
 from mgp import read_proc as mgp_read_proc
 
 from mage.meta_util.parameters import Parameter
-
-
-class Counter:
-    def __init__(self, initial_value: int = 0):
-        self.total_count = initial_value
-        self.count_by_property_name = defaultdict(int)
-
-    def increment(self) -> bool:
-        self.total_count += 1
-        return False
-
-    def increment_property(self, property_name: str) -> bool:
-        self.count_by_property_name[property_name] += 1
-        return False
-
-    def to_dict(self, include_properties):
-        computed_return_value = (
-            {
-                Parameter.COUNT.value: self.total_count,
-                Parameter.PROPERTIES_COUNT.value: self.count_by_property_name,
-            }
-            if include_properties
-            else {Parameter.COUNT.value: self.total_count}
-        )
-        return computed_return_value
 
 
 @mgp_read_proc
@@ -47,8 +20,9 @@ def schema(context: mgp_ProcCtx, include_properties: bool = False) -> mgp_Record
         "eta_util.schema(true) YIELD nodes, relationships RETURN nodes, relationships;`\n"
     )
 
-    node_count_by_labels: dict[tuple, Counter] = {}
-    relationship_count_by_labels: dict[tuple, Counter] = {}
+    # Each key's counts dict is also its schema "properties" value: {count} or, with properties, {count, properties_count}.
+    node_count_by_labels: dict[tuple, dict] = {}
+    relationship_count_by_labels: dict[tuple, dict] = {}
 
     node_counter = 0
 
@@ -76,71 +50,58 @@ def schema(context: mgp_ProcCtx, include_properties: bool = False) -> mgp_Record
         raise Exception("Can't generate a graph schema since there is no data in the database.")
 
     node_index_by_labels = {key: i for i, key in enumerate(node_count_by_labels.keys())}
-    nodes = list(iter_nodes_as_map(node_count_by_labels, node_index_by_labels, include_properties))
-    relationships = list(
-        iter_relationships_as_map(
-            relationship_count_by_labels,
-            node_index_by_labels,
-            include_properties,
+    nodes = [
+        {
+            Parameter.ID.value: node_index,
+            Parameter.LABELS.value: labels,
+            Parameter.PROPERTIES.value: counts,
+            Parameter.TYPE.value: Parameter.NODE.value,
+        }
+        for node_index, (labels, counts) in enumerate(node_count_by_labels.items())
+    ]
+
+    # Relationship IDs number every grouped relationship; one whose endpoint label set has no node entry is omitted
+    # without renumbering the rest.
+    relationships = []
+    for relationship_index, ((source_label, relationship_label, target_label), counts) in enumerate(
+        relationship_count_by_labels.items()
+    ):
+        if source_label not in node_index_by_labels or target_label not in node_index_by_labels:
+            continue
+        relationships.append(
+            {
+                Parameter.ID.value: relationship_index,
+                Parameter.START.value: node_index_by_labels.get(source_label, 0),
+                Parameter.END.value: node_index_by_labels.get(target_label, 0),
+                Parameter.LABEL.value: relationship_label,
+                Parameter.PROPERTIES.value: counts,
+                Parameter.TYPE.value: Parameter.RELATIONSHIP.value,
+            }
         )
-    )
 
     computed_return_value = mgp_Record(nodes=nodes, relationships=relationships)
     return computed_return_value
 
 
 def update_counts(
-    obj_count_by_key: dict[tuple, Counter],
+    obj_count_by_key: dict[tuple, dict],
     key: tuple,
     obj,
     include_properties: bool = False,
 ) -> bool:
+    """Counts one node or relationship under its key and, with properties, each of its property names."""
     if key not in obj_count_by_key:
-        obj_count_by_key[key] = Counter()
+        obj_count_by_key[key] = (
+            {Parameter.COUNT.value: 0, Parameter.PROPERTIES_COUNT.value: {}}
+            if include_properties
+            else {Parameter.COUNT.value: 0}
+        )
 
-    obj_counter = obj_count_by_key.get(key, False)
-    if not isinstance(obj_counter, Counter):
-        raise KeyError(f"Counter was not initialized for key {key!r}")
-    obj_counter.increment()
+    counts = obj_count_by_key.get(key, {})
+    counts[Parameter.COUNT.value] = counts.get(Parameter.COUNT.value, 0) + 1
 
     if include_properties:
+        property_counts = counts.get(Parameter.PROPERTIES_COUNT.value, {})
         for property_name in obj.properties.keys():
-            obj_counter.increment_property(property_name)
+            property_counts[property_name] = property_counts.get(property_name, 0) + 1
     return False
-
-
-def iter_nodes_as_map(
-    node_count_by_labels: dict[tuple, Counter],
-    node_index_by_labels: dict[tuple, int],
-    include_properties: bool,
-):
-    for labels, counter in node_count_by_labels.items():
-        yield {
-            Parameter.ID.value: node_index_by_labels.get(labels, False),
-            Parameter.LABELS.value: labels,
-            Parameter.PROPERTIES.value: counter.to_dict(include_properties),
-            Parameter.TYPE.value: Parameter.NODE.value,
-        }
-
-
-def iter_relationships_as_map(
-    relationship_count_by_labels: dict[tuple, Counter],
-    node_index_by_labels: dict[tuple, int],
-    include_properties: bool,
-):
-    for i, (
-        (source_label, relationship_label, target_label),
-        counter,
-    ) in enumerate(relationship_count_by_labels.items()):
-        source_node_id = node_index_by_labels.get(source_label, False)
-        target_node_id = node_index_by_labels.get(target_label, False)
-
-        if source_node_id is not False and target_node_id is not False:
-            yield {
-                Parameter.ID.value: i,
-                Parameter.START.value: source_node_id,
-                Parameter.END.value: target_node_id,
-                Parameter.LABEL.value: relationship_label,
-                Parameter.PROPERTIES.value: counter.to_dict(include_properties),
-                Parameter.TYPE.value: Parameter.RELATIONSHIP.value,
-            }

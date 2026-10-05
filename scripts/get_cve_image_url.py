@@ -23,16 +23,23 @@ def main(arch: str, image_type: str) -> bool:
         raise ValueError("CURRENT_BUILD_DATE environment variable is required")
     date = int(date_str)
 
-    packages = list_daily_release_packages(date, image_type=image_type)
-
-    # translate to dict key
+    # translate to the daily-build package-map keys
     if image_type == "memgraph":
-        key = "Memgraph"
+        os_key = "docker"
         arch_key = "arm64" if arch == "arm64" else "x86_64"
-        url = packages.get("docker", {})[arch_key]
     elif image_type == "mage":
-        key, arch_key = ("Docker (arm64)", "arm64") if arch == "arm64" else ("Docker (x86_64)", "x86_64")
-        url = packages[key][arch_key]
+        os_key, arch_key = ("Docker (arm64)", "arm64") if arch == "arm64" else ("Docker (x86_64)", "x86_64")
+    else:
+        raise ValueError(f"Unsupported image_type: {image_type}")
+
+    packages = list_daily_release_packages(date, image_type=image_type)
+    os_packages = packages.get(os_key, {})
+    if not isinstance(os_packages, dict):
+        raise RuntimeError(f"daily build {date} package entry for {os_key} must be a mapping")
+    # A missing build fails the scan; another image is never substituted for the requested one.
+    url = os_packages.get(arch_key, "")
+    if not url:
+        raise RuntimeError(f"daily build {date} has no {image_type} image for {os_key} {arch_key}")
 
     print(url)
     return False

@@ -159,8 +159,9 @@ def normalize_parameters(parameters: dict) -> dict:
         Parameter.SIMPLE_TUNNELING_MAX_ATTEMPTS,
         Parameter.CONVERGENCE_CALLBACK_TOLERANCE,
     )
+    # Every validated key is set in normalized above, so the typed read defaults below are never used.
     for parameter in positive_integer_parameters:
-        value = normalized.get(parameter, False)
+        value = normalized.get(parameter, 0)
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise IncorrectParametersException(f"{parameter.value} must be a positive integer")
 
@@ -168,7 +169,7 @@ def normalize_parameters(parameters: dict) -> dict:
     # and infinity makes the differences undefined, so each must be finite before any population or process exists.
     positive_number_parameters = (Parameter.QA_TEMPERATURE,)
     for parameter in positive_number_parameters:
-        value = normalized.get(parameter, False)
+        value = normalized.get(parameter, 0.0)
         if not isinstance(value, (int, float)) or isinstance(value, bool) or not math_isfinite(value) or value <= 0:
             raise IncorrectParametersException(f"{parameter.value} must be a finite positive number")
 
@@ -177,7 +178,7 @@ def normalize_parameters(parameters: dict) -> dict:
         Parameter.SIMPLE_TUNNELING_PROBABILITY,
     )
     for parameter in probability_parameters:
-        value = normalized.get(parameter, False)
+        value = normalized.get(parameter, 0.0)
         if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 1:
             raise IncorrectParametersException(f"{parameter.value} must be between zero and one")
 
@@ -187,7 +188,7 @@ def normalize_parameters(parameters: dict) -> dict:
         Parameter.SIMPLE_TUNNELING_ERROR_CORRECTION,
     )
     for parameter in numeric_parameters:
-        value = normalized.get(parameter, False)
+        value = normalized.get(parameter, 0.0)
         if not isinstance(value, (int, float)) or isinstance(value, bool) or not math_isfinite(value):
             raise IncorrectParametersException(f"{parameter.value} must be a finite number")
 

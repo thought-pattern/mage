@@ -97,7 +97,7 @@ class GraphHolder(Graph):
         return False
 
     def get_edge_transition_probs(self, edge: tuple[int, int]) -> list[float]:
-        computed_return_value = self.internal_preprocessed_transition_probs.get(edge, "")
+        computed_return_value = self.internal_preprocessed_transition_probs.get(edge, [])
         return computed_return_value
 
     def set_node_first_pass_transition_probs(self, source_node_id: int, normalized_probs: list[float]) -> bool:
@@ -105,7 +105,7 @@ class GraphHolder(Graph):
         return False
 
     def get_node_first_pass_transition_probs(self, source_node_id: int) -> list[float]:
-        computed_return_value = self.internal_first_pass_transition_probs.get(source_node_id, "")
+        computed_return_value = self.internal_first_pass_transition_probs.get(source_node_id, [])
         return computed_return_value
 
     def has_edge(self, src_node_id: int, dest_node_id: int) -> bool:
@@ -126,15 +126,16 @@ class GraphHolder(Graph):
     def get_edge_weight(self, src_node_id: int, dest_node_id: int) -> float:
         if not self.has_edge(src_node_id, dest_node_id):
             raise ValueError
-        if (src_node_id, dest_node_id) in self.internal_edges_weights:
-            computed_return_value = self.internal_edges_weights[(src_node_id, dest_node_id)]
-            return computed_return_value
-        computed_return_value = self.internal_edges_weights[(dest_node_id, src_node_id)]
+        # has_edge established that the stored orientation or, for an undirected graph, the reverse one is present.
+        edge = (src_node_id, dest_node_id)
+        if edge not in self.internal_edges_weights:
+            edge = (dest_node_id, src_node_id)
+        computed_return_value = self.internal_edges_weights.get(edge, 0.0)
         return computed_return_value
 
     # Always return nodes in same order
     def get_neighbors(self, node_id: int) -> list[int]:
-        computed_return_value = self.internal_graph.get(node_id, False) if node_id in self.internal_graph else []
+        computed_return_value = self.internal_graph.get(node_id, [])
         return computed_return_value
 
     def init_graph(self) -> bool:

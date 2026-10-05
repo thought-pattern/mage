@@ -6,7 +6,6 @@ from csv import QUOTE_NONE as csv_QUOTE_NONE
 from csv import QUOTE_NONNUMERIC as csv_QUOTE_NONNUMERIC
 from csv import writer as csv_writer
 from collections.abc import Iterator
-from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from functools import partial
 from io import StringIO as io_StringIO
@@ -40,8 +39,8 @@ from mgp import Vertex as mgp_Vertex
 from mgp import read_proc as mgp_read_proc
 
 from mage.export_import_util.duration import to_cypher_duration
-from mage.export_import_util.duration import to_duration_iso_format
 from mage.export_import_util.parameters import Parameter
+from mage.export_import_util.temporal import convert_to_isoformat, convert_to_isoformat_graphML
 
 DEFAULT_ARGUMENT_DICT = {}
 
@@ -53,62 +52,6 @@ CYPHER_STRING_ESCAPES = str.maketrans({"\\": "\\\\", "'": "\\'", "\n": "\\n", "\
 # A double-quoted XML attribute also escapes its quote, and the whitespace attribute-value normalization would fold.
 XML_ATTRIBUTE_ESCAPES = {'"': "&quot;", "\n": "&#10;", "\r": "&#13;", "\t": "&#9;"}
 IMPORT_ID_PREFIX = "_IMPORT_ID_"
-
-
-@dataclass
-class Node:
-    id: int
-    labels: list
-    properties: dict
-
-    def get_dict(self) -> dict:
-        return {
-            Parameter.ID.value: self.id,
-            Parameter.LABELS.value: self.labels,
-            Parameter.PROPERTIES.value: self.properties,
-            Parameter.TYPE.value: Parameter.NODE.value,
-        }
-
-
-@dataclass
-class Relationship:
-    end: int
-    id: int
-    label: str
-    properties: dict
-    start: int
-    id: int
-
-    def get_dict(self) -> dict:
-        return {
-            Parameter.END.value: self.end,
-            Parameter.ID.value: self.id,
-            Parameter.LABEL.value: self.label,
-            Parameter.PROPERTIES.value: self.properties,
-            Parameter.START.value: self.start,
-            Parameter.TYPE.value: Parameter.RELATIONSHIP.value,
-        }
-
-
-def convert_to_isoformat(property: object):
-    if isinstance(property, timedelta):
-        computed_return_value = Parameter.DURATION.value + str(property) + ")"
-        return computed_return_value
-
-    elif isinstance(property, time):
-        computed_return_value = Parameter.LOCALTIME.value + property.isoformat() + ")"
-        return computed_return_value
-
-    elif isinstance(property, datetime):
-        computed_return_value = Parameter.LOCALDATETIME.value + property.isoformat() + ")"
-        return computed_return_value
-
-    elif isinstance(property, date):
-        computed_return_value = Parameter.DATE.value + property.isoformat() + ")"
-        return computed_return_value
-
-    else:
-        return property
 
 
 def cypher_identifier(name: str) -> str:
@@ -217,9 +160,7 @@ def convert_to_cypher_format(property: object) -> str:
 
 def get_properties_cypher(object, write_properties: bool) -> dict:
     computed_return_value = (
-        {key: convert_to_cypher_format(object.properties.get(key, False)) for key in object.properties.keys()}
-        if write_properties
-        else {}
+        {key: convert_to_cypher_format(value) for key, value in object.properties.items()} if write_properties else {}
     )
     return computed_return_value
 
@@ -344,36 +285,35 @@ def cypher_all(
 
 def get_properties_json(object, write_properties: bool):
     computed_return_value = (
-        {key: convert_to_isoformat(object.properties.get(key, False)) for key in object.properties.keys()}
-        if write_properties
-        else {}
+        {key: convert_to_isoformat(value) for key, value in object.properties.items()} if write_properties else {}
     )
     return computed_return_value
 
 
-def convert_to_isoformat_graphML(property: object):
-    if isinstance(property, timedelta):
-        computed_return_value = to_duration_iso_format(property)
-        return computed_return_value
-
-    if isinstance(property, (time, date, datetime)):
-        computed_return_value = property.isoformat()
-        return computed_return_value
-
-    else:
-        return property
-
-
+# Every element generator below writes the same export element shapes, in the key order import_util.json reads:
+# a node is {id, labels, properties, type: node} and a relationship {end, id, label, properties, start, type: relationship}.
 def json_elements(ctx: mgp_ProcCtx, write_properties: bool) -> Iterator[dict]:
     """Yields every node dict, then every relationship dict, reading the graph twice instead of holding it."""
     for vertex in ctx.graph.vertices:
-        labels = [label.name for label in vertex.labels]
-        yield Node(vertex.id, labels, get_properties_json(vertex, write_properties)).get_dict()
+        node = {
+            Parameter.ID.value: vertex.id,
+            Parameter.LABELS.value: [label.name for label in vertex.labels],
+            Parameter.PROPERTIES.value: get_properties_json(vertex, write_properties),
+            Parameter.TYPE.value: Parameter.NODE.value,
+        }
+        yield node
 
     for vertex in ctx.graph.vertices:
         for edge in vertex.out_edges:
-            properties = get_properties_json(edge, write_properties)
-            yield Relationship(edge.to_vertex.id, edge.id, edge.type.name, properties, edge.from_vertex.id).get_dict()
+            relationship = {
+                Parameter.END.value: edge.to_vertex.id,
+                Parameter.ID.value: edge.id,
+                Parameter.LABEL.value: edge.type.name,
+                Parameter.PROPERTIES.value: get_properties_json(edge, write_properties),
+                Parameter.START.value: edge.from_vertex.id,
+                Parameter.TYPE.value: Parameter.RELATIONSHIP.value,
+            }
+            yield relationship
 
 
 def graphml_elements(ctx: mgp_ProcCtx, config: mgp_Map) -> Iterator[dict]:
@@ -391,25 +331,50 @@ def graphml_elements(ctx: mgp_ProcCtx, config: mgp_Map) -> Iterator[dict]:
     leave_out_properties = config.get("leaveOutProperties", False)
 
     for vertex in ctx.graph.vertices:
-        labels = [] if leave_out_labels else [label.name for label in vertex.labels]
-        properties = {} if leave_out_properties else {key: codec(vertex.properties.get(key, False)) for key in vertex.properties.keys()}
-        yield Node(vertex.id, labels, properties).get_dict()
+        properties = {} if leave_out_properties else {key: codec(value) for key, value in vertex.properties.items()}
+        node = {
+            Parameter.ID.value: vertex.id,
+            Parameter.LABELS.value: [] if leave_out_labels else [label.name for label in vertex.labels],
+            Parameter.PROPERTIES.value: properties,
+            Parameter.TYPE.value: Parameter.NODE.value,
+        }
+        yield node
 
     for vertex in ctx.graph.vertices:
         for edge in vertex.out_edges:
-            properties = {} if leave_out_properties else {key: codec(edge.properties.get(key, False)) for key in edge.properties.keys()}
-            yield Relationship(edge.to_vertex.id, edge.id, edge.type.name, properties, edge.from_vertex.id).get_dict()
+            properties = {} if leave_out_properties else {key: codec(value) for key, value in edge.properties.items()}
+            relationship = {
+                Parameter.END.value: edge.to_vertex.id,
+                Parameter.ID.value: edge.id,
+                Parameter.LABEL.value: edge.type.name,
+                Parameter.PROPERTIES.value: properties,
+                Parameter.START.value: edge.from_vertex.id,
+                Parameter.TYPE.value: Parameter.RELATIONSHIP.value,
+            }
+            yield relationship
 
 
 def listed_json_elements(graph_vertices: list, graph_edges: list, write_properties: bool) -> Iterator[dict]:
     """Yields the given nodes, then the given relationships, as export dicts."""
     for vertex in graph_vertices:
-        labels = [label.name for label in vertex.labels]
-        yield Node(vertex.id, labels, get_properties_json(vertex, write_properties)).get_dict()
+        node = {
+            Parameter.ID.value: vertex.id,
+            Parameter.LABELS.value: [label.name for label in vertex.labels],
+            Parameter.PROPERTIES.value: get_properties_json(vertex, write_properties),
+            Parameter.TYPE.value: Parameter.NODE.value,
+        }
+        yield node
 
     for edge in graph_edges:
-        properties = get_properties_json(edge, write_properties)
-        yield Relationship(edge.to_vertex.id, edge.id, edge.type.name, properties, edge.from_vertex.id).get_dict()
+        relationship = {
+            Parameter.END.value: edge.to_vertex.id,
+            Parameter.ID.value: edge.id,
+            Parameter.LABEL.value: edge.type.name,
+            Parameter.PROPERTIES.value: get_properties_json(edge, write_properties),
+            Parameter.START.value: edge.from_vertex.id,
+            Parameter.TYPE.value: Parameter.RELATIONSHIP.value,
+        }
+        yield relationship
 
 
 def write_json_array(out, elements: Iterator[dict], indent: int) -> None:
@@ -545,17 +510,15 @@ def csv_header(node_properties: list[str], relationship_properties: list[str]) -
     return [header]
 
 
-def process_properties(properties: dict[str, mgp_Any], prop: str, write_list: list[mgp_Any]) -> bool:
-    if isinstance(properties.get(prop, False), (set, list, tuple, map)):
-        write_list.append(js_dumps(properties.get(prop, False)))
-        return False
-
-    if isinstance(properties.get(prop, False), timedelta):
-        write_list.append(convert_to_isoformat(properties.get(prop, False)))
-        return False
-
-    write_list.append(properties.get(prop, False))
-    return False
+def csv_cell(value: object) -> object:
+    """Encodes one property value as its CSV cell: collections as JSON, durations as their typed wrapper text."""
+    if isinstance(value, (set, list, tuple, map)):
+        cell = js_dumps(value)
+    elif isinstance(value, timedelta):
+        cell = convert_to_isoformat(value)
+    else:
+        cell = value
+    return cell
 
 
 def csv_property_keys(nodes_list: list[mgp_Vertex], relationships_list: list[mgp_Edge]) -> tuple[list[str], list[str]]:
@@ -574,14 +537,11 @@ def csv_rows(
     """
     Second pass: one row per node, then one per relationship, produced as the csv writer consumes them
     """
+    # A property an element does not have is an empty cell.
     for node in nodes_list:
         # id and labels, the node properties, then empty start, end, type and relationship properties
         write_list = [node.id, "".join(":" + label.name for label in node.labels)]
-        for prop in node_properties:
-            if prop in node.properties:
-                process_properties(node.properties, prop, write_list)
-            else:
-                write_list.append("")
+        write_list.extend(csv_cell(node.properties.get(prop, "")) for prop in node_properties)
         write_list.extend(["", "", ""])
         write_list.extend("" for _ in relationship_properties)
         yield write_list
@@ -590,11 +550,7 @@ def csv_rows(
         write_list = ["", ""]
         write_list.extend("" for _ in node_properties)
         write_list.extend([relationship.from_vertex.id, relationship.to_vertex.id, relationship.type.name])
-        for prop in relationship_properties:
-            if prop in relationship.properties:
-                process_properties(relationship.properties, prop, write_list)
-            else:
-                write_list.append("")
+        write_list.extend(csv_cell(relationship.properties.get(prop, "")) for prop in relationship_properties)
         yield write_list
 
 
@@ -607,13 +563,13 @@ def check_config_valid(config: mgp_Any, type: mgp_Any, name: str):
 def csv_process_config(config: mgp_Map):
     delimiter = ","
     if "delimiter" in config:
-        check_config_valid(config.get("delimiter", False), str, "delimiter")
+        check_config_valid(config.get("delimiter", ""), str, "delimiter")
 
-        delimiter = config.get("delimiter", False)
+        delimiter = config.get("delimiter", "")
 
     quoting_type = csv_QUOTE_ALL
     if "quotes" in config:
-        check_config_valid(config.get("quotes", []), str, "quotes")
+        check_config_valid(config.get("quotes", ""), str, "quotes")
 
         if config.get("quotes", "") == "none":
             quoting_type = csv_QUOTE_NONE
@@ -814,7 +770,7 @@ def get_type_string(variable: mgp_Any) -> tuple[str, bool]:
 
 
 def get_gephi_label_value(element: mgp_Any, config: mgp_Map) -> str:
-    for caption in config.get("caption", False):
+    for caption in config.get("caption", ()):
         if caption in element.get("properties", {}).keys():
             computed_return_value = str(element.get("properties", {}).get(caption, ""))
             return computed_return_value
@@ -970,21 +926,21 @@ def set_default_config(config: mgp_Map) -> mgp_Map:
         config.update({"stream": False})
     if not config.get("format", ""):
         config.update({"format": ""})
-    if not config.get("caption", False):
+    if not config.get("caption", ()):
         config.update({"caption": tuple()})
-    if not config.get("useTypes", []):
+    if not config.get("useTypes", False):
         config.update({"useTypes": False})
-    if not config.get("leaveOutLabels", []):
+    if not config.get("leaveOutLabels", False):
         config.update({"leaveOutLabels": False})
-    if not config.get("leaveOutProperties", []):
+    if not config.get("leaveOutProperties", False):
         config.update({"leaveOutProperties": False})
     if (
         not isinstance(config.get("stream", False), bool)
         or not isinstance(config.get("format", ""), str)
-        or not isinstance(config.get("caption", False), tuple)
-        or not isinstance(config.get("useTypes", []), bool)
-        or not isinstance(config.get("leaveOutLabels", []), bool)
-        or not isinstance(config.get("leaveOutProperties", []), bool)
+        or not isinstance(config.get("caption", ()), tuple)
+        or not isinstance(config.get("useTypes", False), bool)
+        or not isinstance(config.get("leaveOutLabels", False), bool)
+        or not isinstance(config.get("leaveOutProperties", False), bool)
     ):
         raise TypeError("Config parameter must be a map with specific keys and values described in documentation.")
     return config

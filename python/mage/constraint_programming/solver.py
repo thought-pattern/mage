@@ -75,15 +75,13 @@ class GekkoMPSolver(MatchingProblemSolver):
 
         set_ordinal_map = {value: i for i, value in enumerate(set_list)}
 
-        for element in matching_problem.sets_by_elements.keys():
-            containing_sets = matching_problem.sets_by_elements[element]
+        for element, containing_sets in matching_problem.sets_by_elements.items():
             contained_set_variables = []
 
             for contained_set in containing_sets:
-                ordinal_number = set_ordinal_map.get(contained_set, False)
-                if not isinstance(ordinal_number, int) or isinstance(ordinal_number, bool):
+                if contained_set not in set_ordinal_map:
                     raise KeyError(f"unknown containing set {contained_set!r}")
-                contained_set_variables.append(vars[ordinal_number])
+                contained_set_variables.append(vars[set_ordinal_map.get(contained_set, 0)])
 
             if not contained_set_variables:
                 raise ValueError(f"element {element!r} is not contained by any set")

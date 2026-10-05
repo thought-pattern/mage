@@ -15,7 +15,5 @@ from mage.geography.travelling_salesman import (
 )
 from mage.geography.vehicle_routing import (
     InvalidDepotException,  # noqa: F401
-    VRPPath,  # noqa: F401
-    VRPResult,  # noqa: F401
     VRPSolver,  # noqa: F401
 )
