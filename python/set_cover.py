@@ -18,7 +18,7 @@ def cp_solve(
     context: mgp_ProcCtx,
     element_vertexes: list[mgp_Vertex],
     set_vertexes: list[mgp_Vertex],
-) -> list[mgp_Record]:
+) -> mgp_Record(containing_set=mgp_Vertex):
     """
     This set cover solver method returns 1 filed
 
@@ -55,7 +55,7 @@ def greedy(
     context: mgp_ProcCtx,
     element_vertexes: list[mgp_Vertex],
     set_vertexes: list[mgp_Vertex],
-) -> list[mgp_Record]:
+) -> mgp_Record(containing_set=mgp_Vertex):
     """
     This set cover solver method returns 1 filed
 

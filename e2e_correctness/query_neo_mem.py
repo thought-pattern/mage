@@ -419,9 +419,7 @@ def path_to_string_mem(path: gqlalchemy_Path) -> str:
         if "id" in sorted_dict_rel:
             sorted_dict_rel.pop("id")
         rel_props = str(sorted_dict_rel)
-        path_string_list.append(
-            f"[id:{relationship._properties.get('id', '')!s} type: {relationship._type} {rel_props!s}]-"
-        )
+        path_string_list.append(f"[id:{relationship._properties.get('id', '')!s} type: {relationship._type} {rel_props!s}]-")
     return ""
 
 

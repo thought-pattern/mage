@@ -19,7 +19,7 @@ def color_graph(
     context: mgp_ProcCtx,
     parameters: mgp_Map = DEFAULT_ARGUMENT_DICT,
     edge_property: str = "weight",
-) -> list[mgp_Record]:
+) -> mgp_Record(node=mgp_Vertex, color=int):
     """
     Example:
     CALL graph_coloring.color_graph() YIELD *;
@@ -45,7 +45,7 @@ def color_subgraph(
     edges: mgp_List[mgp_Edge],
     parameters: mgp_Map = DEFAULT_ARGUMENT_DICT,
     edge_property: str = "weight",
-) -> list[mgp_Record]:
+) -> mgp_Record(node=mgp_Vertex, color=int):
     """
     Example:
     MATCH (a:Cell)-[e:CLOSE_TO]->(b:Cell)

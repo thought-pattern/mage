@@ -149,7 +149,7 @@ def admit_cypher_import_config(config: mgp_Map) -> dict:
 
 
 @mgp_write_proc
-def cypher(ctx: mgp_ProcCtx, path: str, config: mgp_Map = DEFAULT_CYPHER_IMPORT_CONFIG) -> mgp_Record:
+def cypher(ctx: mgp_ProcCtx, path: str, config: mgp_Map = DEFAULT_CYPHER_IMPORT_CONFIG) -> mgp_Record():
     """
     Procedure to import the one-statement-per-line Cypher created by export_util.cypher_all.
     The lab import feature should be prefered.
@@ -218,7 +218,7 @@ def cypher(ctx: mgp_ProcCtx, path: str, config: mgp_Map = DEFAULT_CYPHER_IMPORT_
 
 
 @mgp_write_proc
-def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
+def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
     """
     Procedure to import the JSON created by the export_util.json procedure.
 
@@ -436,7 +436,7 @@ def graphml(
     ctx: mgp_ProcCtx,
     path: str = "",
     config: mgp_Nullable[mgp_Map] = None,
-) -> mgp_Record:
+) -> mgp_Record(status=str):
     """
     Procedure to export the whole database to a graphML file.
 

@@ -16,7 +16,7 @@ from mage.date.constants import Epoch
 def format(
     temporal: mgp_Any,
     format: str = "ISO",
-) -> mgp_Record:
+) -> mgp_Record(formatted=str):
     if not (
         isinstance(temporal, datetime_datetime)
         or isinstance(temporal, datetime_date)

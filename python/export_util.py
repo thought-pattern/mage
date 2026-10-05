@@ -246,7 +246,7 @@ def cypher_all(
     ctx: mgp_ProcCtx,
     path: str = "",
     config: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record:
+) -> mgp_Record(path=str, data=str):
     (
         "Exports the graph in cypher with all the constraints, indexes and triggers.\n    Args:\n      "  # Continue literal.
         "  context (mgp.ProcCtx): Reference to the context execution.\n        path (str): A path to t"  # Continue literal.
@@ -400,7 +400,7 @@ def write_json_array(out, elements: Iterator[dict], indent: int) -> None:
 
 
 @mgp_read_proc
-def json(ctx: mgp_ProcCtx, path: str = "", config: mgp_Map = DEFAULT_ARGUMENT_DICT) -> mgp_Record:
+def json(ctx: mgp_ProcCtx, path: str = "", config: mgp_Map = DEFAULT_ARGUMENT_DICT) -> mgp_Record(path=str, data=str):
     (
         "\n    Procedure to export the whole database to a JSON file.\n\n    Parameters:\n        context"  # Continue literal.
         ' : mgp.ProcCtx\n            Reference to the context execution.\n        path : str = ""\n     '  # Continue literal.
@@ -435,7 +435,7 @@ def json_graph(
     relationships: list,
     path: str = "",
     config: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record:
+) -> mgp_Record(path=str, data=str):
     (
         "\n    Procedure to export the given graph to a JSON file. The graph is given with a map that "  # Continue literal.
         'contains keys "nodes" and "relationships".\n\n    Parameters:\n        nodes : List[Node]\n     '  # Continue literal.
@@ -602,7 +602,7 @@ def csv_graph(
     relationships_list: mgp_List[mgp_Edge],
     path: str = "",
     config: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record:
+) -> mgp_Record(path=str, data=str):
     """
     Procedure to export the given graph to a csv file.
     The graph is given with two lists, one for nodes,
@@ -646,7 +646,9 @@ def csv_graph(
     header = csv_header(node_properties, relationship_properties)
 
     # A separate header goes to its own file (and never into a stream); otherwise it leads the rows.
-    rows = chain([] if separate_header else header, csv_rows(nodes_list, relationships_list, node_properties, relationship_properties))
+    rows = chain(
+        [] if separate_header else header, csv_rows(nodes_list, relationships_list, node_properties, relationship_properties)
+    )
     render = partial(write_csv_rows, rows=rows, delimiter=delimiter, quoting_type=quoting_type)
 
     data = ""
@@ -654,7 +656,9 @@ def csv_graph(
         data = render_to_string(render)
     else:
         if separate_header:
-            publish_file(header_path(path), partial(write_csv_rows, rows=header, delimiter=delimiter, quoting_type=quoting_type), "")
+            publish_file(
+                header_path(path), partial(write_csv_rows, rows=header, delimiter=delimiter, quoting_type=quoting_type), ""
+            )
         publish_file(path, render, "")
 
     computed_return_value = mgp_Record(path=path, data=data)
@@ -667,7 +671,7 @@ def csv_query(
     query: str,
     file_path: str = "",
     stream: bool = False,
-) -> mgp_Record:
+) -> mgp_Record(file_path=str, data=str):
     """
     Procedure to export query results to a CSV file.
     Args:
@@ -951,7 +955,7 @@ def graphml(
     ctx: mgp_ProcCtx,
     path: str = "",
     config: mgp_Nullable[mgp_Map] = None,
-) -> mgp_Record:
+) -> mgp_Record(status=str):
     """
     Procedure to export the whole database to a graphML file.
 

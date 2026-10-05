@@ -209,7 +209,7 @@ def mysql(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = None,
-) -> list[mgp_Record]:
+) -> mgp_Record(row=mgp_Map):
     """
     With migrate.mysql you can access MySQL and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -275,7 +275,7 @@ def sql_server(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = None,
-) -> list[mgp_Record]:
+) -> mgp_Record(row=mgp_Map):
     """
     With migrate.sql_server you can access SQL Server and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -348,7 +348,7 @@ def oracle_db(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = None,
-) -> list[mgp_Record]:
+) -> mgp_Record(row=mgp_Map):
     """
     With migrate.oracle_db you can access Oracle DB and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -414,7 +414,7 @@ def postgresql(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = None,
-) -> list[mgp_Record]:
+) -> mgp_Record(row=mgp_Map):
     """
     With migrate.postgresql you can access PostgreSQL and execute queries.
     The result table is converted into a stream, and returned rows can be
@@ -504,7 +504,7 @@ def s3(
     file_path: str,
     config: mgp_Map,
     config_path: str = "",
-) -> list[mgp_Record]:
+) -> mgp_Record(row=mgp_Map):
     """
     Fetch rows from an S3 CSV file in batches.
 
@@ -568,7 +568,7 @@ def neo4j(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = None,
-) -> list[mgp_Record]:
+) -> mgp_Record(row=mgp_Map):
     """
     Migrate data from Neo4j to Memgraph. Can migrate a specific node label, relationship type, or execute a custom Cypher query.
 
@@ -676,7 +676,7 @@ def arrow_flight(
     query: str,
     config: mgp_Map,
     config_path: str = "",
-) -> list[mgp_Record]:
+) -> mgp_Record(row=mgp_Map):
     """
     Execute a SQL query on Arrow Flight and stream results into Memgraph.
 
@@ -728,7 +728,7 @@ def init_migrate_duckdb(query: str, setup_queries: mgp_Nullable[list[str]] = Non
     duckdb_streams.open(stream_key(query, setup_queries), open_duckdb_stream, query, setup_queries)
 
 
-def duckdb(query: str, setup_queries: mgp_Nullable[list[str]] = None) -> list[mgp_Record]:
+def duckdb(query: str, setup_queries: mgp_Nullable[list[str]] = None) -> mgp_Record(row=mgp_Map):
     """
     Fetch rows from DuckDB in batches.
 
@@ -784,7 +784,7 @@ def memgraph(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = None,
-) -> list[mgp_Record]:
+) -> mgp_Record(row=mgp_Map):
     """
     Migrate data from Memgraph to another Memgraph instance. Can migrate a specific node label,
     relationship type, or execute a custom Cypher query.
@@ -874,7 +874,7 @@ def servicenow(
     config: mgp_Map,
     config_path: str = "",
     params: mgp_Nullable[mgp_Any] = None,
-) -> list[mgp_Record]:
+) -> mgp_Record(row=mgp_Map):
     """
     Fetch rows from the ServiceNow REST API in batches, following its pagination links.
 
@@ -1009,9 +1009,10 @@ def convert_mysql_value(value: object) -> object:
             computed_return_value = base64_b64encode(value).decode("ascii")
             return computed_return_value
 
-    # Handle geometry types (convert to string representation)
+    # Handle geometry types (convert to string representation). An empty geometry is a missing cell, which the
+    # migrated row map carries as Cypher null rather than as an empty string.
     if hasattr(value, "__class__") and "geometry" in str(value.__class__).lower():
-        computed_return_value = str(value) if value else ""
+        computed_return_value = str(value) if value else None
         return computed_return_value
 
     # Handle MySQL-specific numeric types

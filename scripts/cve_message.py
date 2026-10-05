@@ -91,7 +91,7 @@ def summarize_cves(cves: list[dict]) -> tuple[dict, str]:
         severity = cve.get("severity", "").upper()
         summary[severity] = summary.get(severity, 0) + 1
 
-    keys =["UNKNOWN", "NEGLIGIBLE", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    keys = ["UNKNOWN", "NEGLIGIBLE", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
     emojis = [
         ":interrobang:",
         ":grinning_face_with_star_eyes:" * 2,

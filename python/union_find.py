@@ -29,7 +29,7 @@ def connected(
     nodes2: object,
     mode: str = "pairwise",
     update: bool = True,
-) -> list[mgp_Record]:
+) -> mgp_Record(node1=mgp_Vertex, node2=mgp_Vertex, connected=bool):
     """
     Returns whether two nodes (or each pair in the product of two node lists) belong to the same connected component
     of the graph.

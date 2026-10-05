@@ -13,6 +13,7 @@ from mgp import Any as mgp_Any  # Python API
 from mgp import Label as mgp_Label
 from mgp import List as mgp_List
 from mgp import Map as mgp_Map
+from mgp import Number as mgp_Number
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
 from mgp import Vertex as mgp_Vertex
@@ -135,7 +136,7 @@ def merge_labels(labels: list[mgp_Label]) -> str:
 
 
 @mgp_read_proc
-def set_model_parameters(ctx: mgp_ProcCtx, parameters: mgp_Map) -> mgp_Record:
+def set_model_parameters(ctx: mgp_ProcCtx, parameters: mgp_Map) -> mgp_Record(status=bool, message=str):
     (
         "Saves parameters to the global parameters link_prediction_parameters. Specific parsing is ne"  # Continue literal.
         "eded because we want enable user to call it with a subset of parameters, no need to send the"  # Continue literal.
@@ -215,7 +216,7 @@ def set_model_parameters(ctx: mgp_ProcCtx, parameters: mgp_Map) -> mgp_Record:
 @mgp_read_proc
 def train(
     ctx: mgp_ProcCtx,
-) -> mgp_Record:
+) -> mgp_Record(training_results=mgp_Any, validation_results=mgp_Any):
     (
         "Train method is used for training the module on the dataset provided with ctx. By taking dec"  # Continue literal.
         "ision to split the dataset here and not in the separate method, it is impossible to retrain "  # Continue literal.
@@ -344,7 +345,7 @@ def train(
 
 
 @mgp_read_proc
-def predict(ctx: mgp_ProcCtx, src_vertex: mgp_Vertex, dest_vertex: mgp_Vertex) -> mgp_Record:
+def predict(ctx: mgp_ProcCtx, src_vertex: mgp_Vertex, dest_vertex: mgp_Vertex) -> mgp_Record(score=mgp_Number):
     (
         "Predict method. It is assumed that nodes are added to the original Memgraph graph. It suppor"  # Continue literal.
         "ts both situations, when the edge doesn't exist and when\n    the edge exists.\n\n    Args:\n   "  # Continue literal.
@@ -396,7 +397,7 @@ def recommend(
     src_vertex: mgp_Vertex,
     dest_vertices: mgp_List[mgp_Vertex],
     k: int,
-) -> list[mgp_Record]:
+) -> mgp_Record(score=mgp_Number, recommendation=mgp_Vertex):
     (
         "Recommend method. It is assumed that nodes are already added to the original graph and our g"  # Continue literal.
         "oal is to predict whether there is an edge between two nodes or not. Even if the edge exists"  # Continue literal.
@@ -527,7 +528,7 @@ def recommend(
 @mgp_read_proc
 def get_training_results(
     ctx: mgp_ProcCtx,
-) -> mgp_Record:
+) -> mgp_Record(training_results=mgp_Any, validation_results=mgp_Any):
     (
         "This method is used when user wants to get performance data obtained from the last training."  # Continue literal.
         " It is in the form of list of records where each record is a Dict[metric_name, metric_value]"  # Continue literal.
@@ -545,7 +546,7 @@ def get_training_results(
 
 
 @mgp_read_proc
-def load_model(ctx: mgp_ProcCtx, path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Record:
+def load_model(ctx: mgp_ProcCtx, path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Record(status=mgp_Any):
     """Loads the checkpoint bundle train saved under the given directory. If the path doesn't exist, underlying exception
     is thrown. If the path argument is not given, it loads from the default path. If the user has changed path and the
     context was deleted then he/she needs to send that parameter here.
@@ -573,7 +574,7 @@ def load_model(ctx: mgp_ProcCtx, path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Re
 
 
 @mgp_read_proc
-def reset_parameters(ctx: mgp_ProcCtx) -> mgp_Record:
+def reset_parameters(ctx: mgp_ProcCtx) -> mgp_Record(status=mgp_Any):
     """Resets all parameters.
 
     Args:

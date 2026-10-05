@@ -146,7 +146,7 @@ class SchemaGenerator(object):
 def schema(
     context: mgp_ProcCtx,
     output_type: str = OutputType.PROMPT_READY.value,
-) -> mgp_Record:
+) -> mgp_Record(schema=mgp_Any):
     (
         "\n    Procedure to generate the graph database schema in a prompt-ready or raw format.\n\n    A"  # Continue literal.
         "rgs:\n        context (mgp.ProcCtx): Reference to the context execution.\n        output_type "  # Continue literal.

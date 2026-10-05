@@ -62,7 +62,7 @@ def get_clusters(
     tol: mgp_Number = 1e-4,
     algorithm: str = "lloyd",
     random_state: int = 1998,
-) -> list[mgp_Record]:
+) -> mgp_Record(node=mgp_Vertex, cluster_id=mgp_Number):
     nodes, embeddings = extract_nodes_embeddings(ctx, embedding_property)
 
     nodes_labels_list = get_created_clusters(
@@ -92,7 +92,7 @@ def set_clusters(
     tol: mgp_Number = 1e-4,
     algorithm: str = "lloyd",
     random_state=1998,
-) -> list[mgp_Record]:
+) -> mgp_Record(node=mgp_Vertex, cluster_id=mgp_Number):
     nodes, embeddings = extract_nodes_embeddings(ctx, embedding_property)
 
     nodes_labels_list = get_created_clusters(

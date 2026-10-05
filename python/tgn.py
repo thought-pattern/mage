@@ -54,6 +54,7 @@ from time import time as time_time
 from mgp import Edge as mgp_Edge
 from mgp import List as mgp_List
 from mgp import Map as mgp_Map
+from mgp import Number as mgp_Number
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
 from mgp import Vertex as mgp_Vertex
@@ -820,7 +821,7 @@ def train_eval_epochs(num_epochs: int, train_edges: list[mgp_Edge], eval_edges: 
 
 #####################################################
 @mgp_read_proc
-def predict_link_score(ctx: mgp_ProcCtx, src: mgp_Vertex, dest: mgp_Vertex) -> mgp_Record:
+def predict_link_score(ctx: mgp_ProcCtx, src: mgp_Vertex, dest: mgp_Vertex) -> mgp_Record(prediction=mgp_Number):
     """
     If you were doing link prediction, with this function you can input some of your vertices, and get the predictions
     Be careful to input vertices in correct order (src->dest) otherwise you might get wrong prediction
@@ -858,7 +859,13 @@ def predict_link_score(ctx: mgp_ProcCtx, src: mgp_Vertex, dest: mgp_Vertex) -> m
 
 
 @mgp_read_proc
-def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> list[mgp_Record]:
+def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> mgp_Record(
+    epoch_num=mgp_Number,
+    batch_num=mgp_Number,
+    batch_process_time=mgp_Number,
+    precision=mgp_Number,
+    batch_type=str,
+):
     """
     After calling this function from ctx we will get all edges currently in database, split them in ratio of
     train and eval edges if function set_mode("eval") was called at some point and use training edges to train
@@ -902,7 +909,13 @@ def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> list[mgp_Record]:
 @mgp_read_proc
 def get_results(
     ctx: mgp_ProcCtx,
-) -> list[mgp_Record]:
+) -> mgp_Record(
+    epoch_num=mgp_Number,
+    batch_num=mgp_Number,
+    batch_process_time=mgp_Number,
+    precision=mgp_Number,
+    batch_type=str,
+):
     """
     This method returns all results from training and evaluation on all epochs
 
@@ -918,7 +931,7 @@ def get_results(
 
 
 @mgp_read_proc
-def set_eval(ctx: mgp_ProcCtx) -> mgp_Record:
+def set_eval(ctx: mgp_ProcCtx) -> mgp_Record(message=str):
     """
     Purpose of this function is to switch mode from "train" to "eval" at some point during your stream.
     At that point, we will save current edge count, and this information will later be used in function
@@ -944,7 +957,7 @@ def set_eval(ctx: mgp_ProcCtx) -> mgp_Record:
 
 
 @mgp_read_proc
-def revert_from_database(ctx: mgp_ProcCtx) -> mgp_Record:
+def revert_from_database(ctx: mgp_ProcCtx) -> mgp_Record():
     """
     todo implement
     Revert from database and potential file in var/log/ to which we can save params
@@ -953,7 +966,7 @@ def revert_from_database(ctx: mgp_ProcCtx) -> mgp_Record:
 
 
 @mgp_read_proc
-def save_tgn_params(ctx: mgp_ProcCtx) -> mgp_Record:
+def save_tgn_params(ctx: mgp_ProcCtx) -> mgp_Record():
     """
     todo implement
     After every batch we could add saving params as checkpoints to var/log/memgraph
@@ -963,7 +976,7 @@ def save_tgn_params(ctx: mgp_ProcCtx) -> mgp_Record:
 
 
 @mgp_read_proc
-def reset(ctx: mgp_ProcCtx) -> mgp_Record:
+def reset(ctx: mgp_ProcCtx) -> mgp_Record(message=str):
     """
     Resets TGN to the state `set_params` establishes from its admitted parameters: newly initialized model and
     optimizer, empty temporal state, results and counters, Train mode and the configured batch size.
@@ -976,7 +989,7 @@ def reset(ctx: mgp_ProcCtx) -> mgp_Record:
 
 
 @mgp_read_proc
-def get(ctx: mgp_ProcCtx) -> list[mgp_Record]:
+def get(ctx: mgp_ProcCtx) -> mgp_Record(node=mgp_Vertex, embedding=mgp_List[float]):
     """
     Get all embeddings of nodes created by TGN. These are final embeddings, after num_layers of processing
 
@@ -1006,7 +1019,7 @@ def get(ctx: mgp_ProcCtx) -> list[mgp_Record]:
 
 
 @mgp_read_proc
-def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record:
+def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record():
     (
         "\n    Purpose of following function is to process edges which are created in Memgraph, and ge"  # Continue literal.
         "t features from\n    nodes or edges if they are present and save all that data so when batch "  # Continue literal.
@@ -1055,7 +1068,7 @@ def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record:
 def set_params(
     ctx: mgp_ProcCtx,
     params: mgp_Map,
-) -> mgp_Record:
+) -> mgp_Record():
     (
         "\n    With following function you can define parameters used in TGN, as well as what kind of "  # Continue literal.
         'learning you want\n    to do with TGN module.\n\n    If you set TGN to "self_supervised" mode, '  # Continue literal.

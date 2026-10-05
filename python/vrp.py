@@ -56,7 +56,7 @@ def route(
     context: mgp_ProcCtx,
     depot_node: mgp_Vertex,
     number_of_vehicles: mgp_Nullable[int] = None,
-) -> list[mgp_Record]:
+) -> mgp_Record(from_vertex=mgp_Vertex, to_vertex=mgp_Vertex):
     """
     The VRP routing returns 2 fields.
         * `from_vertex` represents the starting nodes out of all selected routes (edges) in the complete graph

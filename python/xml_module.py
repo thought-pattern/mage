@@ -151,7 +151,7 @@ def load(
     path: str = "",
     xpath: str = "",
     headers: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> list[mgp_Record]:
+) -> mgp_Record(output_map=mgp_Map):
     """
     Procedure to load XML from url or from file to a map.
 

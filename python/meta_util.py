@@ -1,5 +1,7 @@
 """Utilities for meta util."""
 
+from mgp import List as mgp_List
+from mgp import Map as mgp_Map
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
 from mgp import read_proc as mgp_read_proc
@@ -8,7 +10,9 @@ from mage.meta_util.parameters import Parameter
 
 
 @mgp_read_proc
-def schema(context: mgp_ProcCtx, include_properties: bool = False) -> mgp_Record:
+def schema(
+    context: mgp_ProcCtx, include_properties: bool = False
+) -> mgp_Record(nodes=mgp_List[mgp_Map], relationships=mgp_List[mgp_Map]):
     (
         "\n    Procedure to generate the graph database schema.\n\n    Args:\n        context (mgp.ProcCt"  # Continue literal.
         "x): Reference to the context execution.\n        include_properties (bool): If set to True, t"  # Continue literal.
@@ -92,9 +96,7 @@ def update_counts(
     """Counts one node or relationship under its key and, with properties, each of its property names."""
     if key not in obj_count_by_key:
         obj_count_by_key[key] = (
-            {Parameter.COUNT.value: 0, Parameter.PROPERTIES_COUNT.value: {}}
-            if include_properties
-            else {Parameter.COUNT.value: 0}
+            {Parameter.COUNT.value: 0, Parameter.PROPERTIES_COUNT.value: {}} if include_properties else {Parameter.COUNT.value: 0}
         )
 
     counts = obj_count_by_key.get(key, {})

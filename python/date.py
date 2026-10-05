@@ -7,6 +7,7 @@ from enum import IntEnum
 from re import sub as re_sub
 from zoneinfo import ZoneInfo
 
+from mgp import List as mgp_List
 from mgp import Nullable as mgp_Nullable
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
@@ -25,7 +26,7 @@ def parse(
     unit: str = "ms",
     format: str = "%Y-%m-%d %H:%M:%S",
     timezone: str = "UTC",
-) -> mgp_Record:
+) -> mgp_Record(parsed=int):
     first_date = Epoch.UNIX_EPOCH.replace(tzinfo=datetime_timezone.utc)
     input_date = datetime_datetime.strptime(time, format)
 
@@ -64,7 +65,7 @@ def format(
     unit: str = "ms",
     format: str = "%Y-%m-%d %H:%M:%S %Z",
     timezone: str = "UTC",
-) -> mgp_Record:
+) -> mgp_Record(formatted=str):
     first_date = Epoch.UNIX_EPOCH.replace(tzinfo=datetime_timezone.utc)
 
     if unit == "ms":
@@ -266,7 +267,7 @@ def convert_format(temporal: mgp_Nullable[str], current_format: str, convert_to:
 
 
 @mgp_read_proc
-def get_date_formats(context: mgp_ProcCtx) -> mgp_Record:
+def get_date_formats(context: mgp_ProcCtx) -> mgp_Record(formats=mgp_List[str]):
     """
     Returns a list of supported date formats.
 

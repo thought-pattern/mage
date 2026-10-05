@@ -4,8 +4,11 @@ from inspect import cleandoc
 from itertools import chain, repeat
 
 from gensim import models as gensim_models
+from mgp import List as mgp_List
+from mgp import Number as mgp_Number
 from mgp import ProcCtx as mgp_ProcCtx
 from mgp import Record as mgp_Record
+from mgp import Vertex as mgp_Vertex
 from mgp import read_proc as mgp_read_proc
 from mgp import write_proc as mgp_write_proc
 
@@ -112,7 +115,7 @@ def get_embeddings(
     negative=5,
     epochs=5,
     edge_weight_property="weight",
-) -> mgp_Record:
+) -> mgp_Record(nodes=mgp_List[mgp_Vertex], embeddings=mgp_List[mgp_List[mgp_Number]]):
     """
     Function to get node embeddings. Uses gensim.models.Word2Vec params.
 
@@ -209,7 +212,7 @@ def set_embeddings(
     negative=5,
     epochs=5,
     edge_weight_property="weight",
-) -> mgp_Record:
+) -> mgp_Record(nodes=mgp_List[mgp_Vertex], embeddings=mgp_List[mgp_List[mgp_Number]]):
     """
     Function to get node embeddings. Uses gensim.models.Word2Vec params.
 
@@ -293,7 +296,7 @@ def set_embeddings(
 
 
 @mgp_read_proc
-def help() -> list[mgp_Record]:
+def help() -> mgp_Record(name=str, value=str):
     """Shows manual page for node2vec"""
     # Each procedure's title names its first manual line; its remaining lines carry an empty name.
     records = []

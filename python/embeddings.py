@@ -202,7 +202,7 @@ def cpu_compute(
     model_name: str,
     batch_size: int,
     return_embeddings: bool,
-) -> mgp_Record:
+) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
     imported_import_module("transformers")
 
     model = SentenceTransformer(model_name, device="cpu")
@@ -245,7 +245,7 @@ def single_gpu_compute(
     batch_size: int,
     device: int,
     return_embeddings: bool,
-) -> mgp_Record:
+) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
     imported_import_module("transformers")
 
     # Cleanup accounting exists before acquisition so a failed acquisition still reaches its own failure record.
@@ -327,7 +327,7 @@ def multi_gpu_compute(
     chunk_size: int,
     gpus: list[int],
     return_embeddings: bool,
-) -> mgp_Record:
+) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
     n = len(input_items)
 
     # Chunks stay bounded (batch_size * chunk_size items) to limit payload and OOM exposure. Each GPU gets one spawned
@@ -452,13 +452,14 @@ def return_data(
     dimension is the admitted encoder's output dimension, or 0 when no encoder was admitted (empty input or a failure
     before the model loaded).
     """
-    embeddings = []
     if success and not vertex_input:
-        embeddings = input_items
+        computed_return_value = mgp_Record(success=success, embeddings=input_items, dimension=dimension)
     elif success and return_embeddings:
-        embeddings = [v.properties.get(embedding_property_name, []) for v in input_items]
-
-    computed_return_value = mgp_Record(success=success, embeddings=embeddings, dimension=dimension)
+        stored_embeddings = [v.properties.get(embedding_property_name, []) for v in input_items]
+        computed_return_value = mgp_Record(success=success, embeddings=stored_embeddings, dimension=dimension)
+    else:
+        # The nullable embeddings result column reports absent vectors as Memgraph null.
+        computed_return_value = mgp_Record(success=success, embeddings=None, dimension=dimension)
     return computed_return_value
 
 
@@ -580,7 +581,7 @@ def compute_embeddings(
 @mgp_read_proc
 def model_info(
     configuration: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record:
+) -> mgp_Record(info=mgp_Map):
     if configuration is DEFAULT_ARGUMENT_DICT:
         configuration = DEFAULT_ARGUMENT_DICT.copy()
     configuration = validate_configuration(configuration)
@@ -602,7 +603,7 @@ def node_sentence(
     ctx: mgp_ProcCtx,
     input_nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = None,
     configuration: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record:
+) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
     if configuration is DEFAULT_ARGUMENT_DICT:
         configuration = DEFAULT_ARGUMENT_DICT.copy()
     logger.info(f"compute_embeddings: starting (py_exec={sys_executable}, py_ver={sys_version.split()[0]})")
@@ -623,7 +624,7 @@ def text(
     ctx: mgp_ProcCtx,
     input_strings: mgp_List[str],
     configuration: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record:
+) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
     if configuration is DEFAULT_ARGUMENT_DICT:
         configuration = DEFAULT_ARGUMENT_DICT.copy()
     logger.info(f"embed: starting (py_exec={sys_executable}, py_ver={sys_version.split()[0]})")

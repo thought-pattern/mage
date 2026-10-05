@@ -20,7 +20,7 @@ def get_flow(
     start_v: mgp_Vertex,
     end_v: mgp_Vertex,
     edge_property: str = "weight",
-) -> mgp_Record:
+) -> mgp_Record(max_flow=mgp_Number):
     """
     Calculates maximum flow of graph from paths found with method
     ford_fulkerson_capacity_scaling
@@ -53,7 +53,7 @@ def get_paths(
     start_v: mgp_Vertex,
     end_v: mgp_Vertex,
     edge_property: str = "weight",
-) -> list[mgp_Record]:
+) -> mgp_Record(path=mgp_Path, flow=mgp_Number):
     """
     Returns each path and its flow used in max flow of a graph found with
     ford_fulkerson_capacity_scaling

@@ -10,6 +10,7 @@ from time import monotonic as time_monotonic
 from urllib.request import Request, urlopen
 
 from mgp import Edge as mgp_Edge
+from mgp import List as mgp_List
 from mgp import Nullable as mgp_Nullable
 from mgp import Path as mgp_Path
 from mgp import ProcCtx as mgp_ProcCtx
@@ -106,7 +107,7 @@ def from_json_list(json_str: mgp_Nullable[str]):
 
 
 @mgp_read_proc
-def load_from_path(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
+def load_from_path(ctx: mgp_ProcCtx, path: str) -> mgp_Record(objects=mgp_List[object]):
     file = Path(path)
     if file.exists():
         with file.open() as opened_file:
@@ -119,7 +120,7 @@ def load_from_path(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
 
 
 @mgp_read_proc
-def load_from_str(ctx: mgp_ProcCtx, json_str: str) -> mgp_Record:
+def load_from_str(ctx: mgp_ProcCtx, json_str: str) -> mgp_Record(objects=mgp_List[object]):
     """
     Procedure to load JSON from a string.
 
@@ -165,7 +166,7 @@ def fetch_json_bytes(ctx: mgp_ProcCtx, url: str) -> bytes:
 
 
 @mgp_read_proc
-def load_from_url(ctx: mgp_ProcCtx, url: str) -> mgp_Record:
+def load_from_url(ctx: mgp_ProcCtx, url: str) -> mgp_Record(objects=mgp_List[object]):
     objects = json_loads(fetch_json_bytes(ctx, url))
     if type(objects) is dict:
         objects = [objects]

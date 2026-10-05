@@ -41,7 +41,7 @@ MAX_LIST_SIZE = 10
 
 
 @mgp_read_proc
-def help() -> list[mgp_Record]:
+def help() -> mgp_Record(name=str, value=str):
     """Shows manual page for graph_analyzer."""
     documented = [("Procedure '{}'".format(func.__name__), func.__doc__) for func in (help, analyze, analyze_subgraph)]
     documented.extend(("Analysis '{}'".format(name), analysis.__doc__) for name, analysis in ANALYSES.items())
@@ -57,7 +57,7 @@ def help() -> list[mgp_Record]:
 
 
 @mgp_read_proc
-def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = None) -> list[mgp_Record]:
+def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = None) -> mgp_Record(name=str, value=str):
     """
     Shows graph information.
 
@@ -84,7 +84,7 @@ def analyze_subgraph(
     vertices: mgp_List[mgp_Vertex],
     edges: mgp_List[mgp_Edge],
     analyses: mgp_Nullable[list[str]] = None,
-) -> list[mgp_Record]:
+) -> mgp_Record(name=str, value=str):
     """
     Shows subgraph information.
 

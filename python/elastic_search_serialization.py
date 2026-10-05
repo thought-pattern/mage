@@ -293,7 +293,7 @@ def connect(
     ca_certs: str = "",
     elastic_user: str = "",
     elastic_password: str = "",
-) -> mgp_Record:
+) -> mgp_Record(connection_status=mgp_Map):
     (
         "Establishes connection with the Elasticsearch. This configuration needs to be specific to th"  # Continue literal.
         "e Elasticsearch deployment. Uses basic authentication\n    Args:\n        elastic_url (str): U"  # Continue literal.
@@ -348,7 +348,7 @@ def create_index(
     index_name: str,
     schema_path: str,
     schema_parameters: mgp_Map,
-) -> mgp_Record:
+) -> mgp_Record(response=mgp_Map):
     """Creates index with the given index name.
     Args:
         index_name (str): Name of the index that needs to be created.
@@ -400,7 +400,7 @@ def index_db(
     max_backoff: float = 600.0,
     yield_ok: bool = True,
     queue_size: int = 4,
-) -> mgp_Record:
+) -> mgp_Record(nodes=int, edges=int, rejected_nodes=mgp_List[mgp_Map], rejected_edges=mgp_List[mgp_Map]):
     # Now create iterable of documents that need to be indexed
     (
         "The method serializes all vertices and relationships that are in Memgraph DB to an ElasticSe"  # Continue literal.
@@ -503,7 +503,7 @@ def index(
     max_backoff: float = 600.0,
     yield_ok: bool = True,
     queue_size: int = 4,
-) -> mgp_Record:
+) -> mgp_Record(nodes=int, edges=int, rejected_nodes=mgp_List[mgp_Map], rejected_edges=mgp_List[mgp_Map]):
     # Now create iterable of documents that need to be indexed
     (
         "The method serializes all vertices and relationships that came into the Memgraph DB to an El"  # Continue literal.
@@ -600,7 +600,7 @@ def reindex(
     chunk_size: int = 500,
     scroll: str = "5m",
     op_type: mgp_Nullable[str] = None,
-) -> mgp_Record:
+) -> mgp_Record(response=str):
     (
         "Reindex all documents that satisfy a given query from one index to another, potentially (if "  # Continue literal.
         "target_client is specified) on a different cluster. If you don’t specify the query you will "  # Continue literal.
@@ -646,7 +646,7 @@ def scan(
     request_timeout: mgp_Nullable[float] = None,
     clear_scroll: bool = True,
     max_items: mgp_Nullable[int] = None,
-) -> mgp_Record:
+) -> mgp_Record(items=mgp_List[mgp_Map], complete=bool):
     (
         "Runs a query on a index specified by the index_name.\n    Args:\n        context (mgp.ProcCtx)"  # Continue literal.
         ": Reference to the executing context.\n        index_name (str): A name of the index.\n       "  # Continue literal.
@@ -707,7 +707,7 @@ def search(
     from_: int = 0,
     aggregations: mgp_Nullable[mgp_Map] = None,
     aggs: mgp_Nullable[mgp_Map] = None,
-) -> mgp_Record:
+) -> mgp_Record(result=mgp_Map):
     """Searches for all documents by specifying query and index.
     Args:
         context (mgp.ProcCtx): Reference to the executing context.

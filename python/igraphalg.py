@@ -1,5 +1,6 @@
 """Utilities for igraphalg."""
 
+from mgp import List as mgp_List
 from mgp import Nullable as mgp_Nullable
 from mgp import Number as mgp_Number
 from mgp import ProcCtx as mgp_ProcCtx
@@ -24,7 +25,7 @@ def maxflow(
     source: mgp_Vertex,
     target: mgp_Vertex,
     capacity: str = "weight",
-) -> mgp_Record:
+) -> mgp_Record(max_flow=mgp_Number):
     graph = MemgraphIgraph(ctx=ctx, directed=True)
     max_flow_value = graph.maxflow(source=source, target=target, capacity=capacity)
 
@@ -39,7 +40,7 @@ def pagerank(
     weights: mgp_Nullable[str] = None,
     directed: bool = True,
     implementation: str = "prpack",
-) -> list[mgp_Record]:
+) -> mgp_Record(node=mgp_Vertex, rank=float):
     if implementation not in [
         PageRankImplementationOptions.PRPACK.value,
         PageRankImplementationOptions.ARPACK.value,
@@ -63,7 +64,7 @@ def get_all_simple_paths(
     v: mgp_Vertex,
     to: mgp_Vertex,
     cutoff: int = -1,
-) -> list[mgp_Record]:
+) -> mgp_Record(path=mgp_List[mgp_Vertex]):
     graph = MemgraphIgraph(ctx=ctx, directed=True)
 
     computed_return_value = [mgp_Record(path=path) for path in graph.get_all_simple_paths(v=v, to=to, cutoff=cutoff)]
@@ -77,7 +78,7 @@ def mincut(
     target: mgp_Vertex,
     capacity: mgp_Nullable[str] = None,
     directed: bool = True,
-) -> list[mgp_Record]:
+) -> mgp_Record(node=mgp_Vertex, partition_id=int):
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
 
     partition_vertices, _ = graph.mincut(source=source, target=target, capacity=capacity)
@@ -89,7 +90,7 @@ def mincut(
 
 
 @mgp_read_proc
-def topological_sort(ctx: mgp_ProcCtx, mode: str = "out") -> mgp_Record:
+def topological_sort(ctx: mgp_ProcCtx, mode: str = "out") -> mgp_Record(nodes=mgp_List[mgp_Vertex]):
     if mode not in [
         TopologicalSortingModes.IN.value,
         TopologicalSortingModes.OUT.value,
@@ -117,7 +118,7 @@ def community_leiden(
     initial_membership: mgp_Nullable[mgp_Nullable[list[mgp_Nullable[int]]]] = None,
     n_iterations: int = 2,
     node_weights: mgp_Nullable[list[mgp_Nullable[float]]] = None,
-) -> list[mgp_Record]:
+) -> mgp_Record(node=mgp_Vertex, community_id=int):
     if objective_function not in [
         CommunityDetectionObjectiveFunctionOptions.CPM.value,
         CommunityDetectionObjectiveFunctionOptions.MODULARITY.value,
@@ -147,7 +148,9 @@ def community_leiden(
 
 
 @mgp_read_proc
-def spanning_tree(ctx: mgp_ProcCtx, weights: mgp_Nullable[str] = None, directed: bool = False) -> mgp_Record:
+def spanning_tree(
+    ctx: mgp_ProcCtx, weights: mgp_Nullable[str] = None, directed: bool = False
+) -> mgp_Record(tree=mgp_List[mgp_List[mgp_Vertex]]):
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
 
     computed_return_value = mgp_Record(tree=graph.spanning_tree(weights=weights))
@@ -161,7 +164,7 @@ def shortest_path_length(
     target: mgp_Vertex,
     weights: mgp_Nullable[str] = None,
     directed: bool = True,
-) -> mgp_Record:
+) -> mgp_Record(length=float):
     graph = MemgraphIgraph(ctx, directed=directed)
     computed_return_value = mgp_Record(
         length=graph.shortest_path_length(
@@ -178,7 +181,7 @@ def all_shortest_path_lengths(
     ctx: mgp_ProcCtx,
     weights: mgp_Nullable[str] = None,
     directed: bool = False,
-) -> list[mgp_Record]:
+) -> mgp_Record(src_node=mgp_Vertex, dest_node=mgp_Vertex, length=float):
     graph = MemgraphIgraph(ctx, directed=directed)
     lengths = graph.all_shortest_path_lengths(weights=weights)
 
@@ -201,7 +204,7 @@ def get_shortest_path(
     target: mgp_Vertex,
     weights: mgp_Nullable[str] = None,
     directed: bool = True,
-) -> mgp_Record:
+) -> mgp_Record(path=mgp_List[mgp_Vertex]):
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
 
     computed_return_value = mgp_Record(path=graph.get_shortest_path(source=source, target=target, weights=weights))
