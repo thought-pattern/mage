@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Validation script for cuGraph MAGE algorithms after RAPIDS 25.x migration.
 Validates algorithm ACCURACY by comparing against NetworkX ground truth.
@@ -29,26 +28,25 @@ Environment Variables:
     MEMGRAPH_RETAIN      - "true" keeps the run's container and data directory for inspection
 """
 
-from os import environ as os_environ
-from os import getgid as os_getgid
-from os import getuid as os_getuid
+from os import environ as os_environ, getgid as os_getgid, getuid as os_getuid
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
-from subprocess import CompletedProcess as subprocess_CompletedProcess
-from subprocess import run as subprocess_run
+from subprocess import CompletedProcess as subprocess_CompletedProcess, run as subprocess_run
 from sys import exit as sys_exit
 from tempfile import mkdtemp as tempfile_mkdtemp
 from time import sleep as time_sleep
 from uuid import uuid4 as uuid_uuid4
 
 from neo4j import GraphDatabase
-from networkx import DiGraph as nx_DiGraph
-from networkx import PowerIterationFailedConvergence as nx_PowerIterationFailedConvergence
-from networkx import betweenness_centrality as nx_betweenness_centrality
-from networkx import community as nx_community
-from networkx import hits as nx_hits
-from networkx import katz_centrality as nx_katz_centrality
-from networkx import pagerank as nx_pagerank
+from networkx import (
+    DiGraph as nx_DiGraph,
+    PowerIterationFailedConvergence as nx_PowerIterationFailedConvergence,
+    betweenness_centrality as nx_betweenness_centrality,
+    community as nx_community,
+    hits as nx_hits,
+    katz_centrality as nx_katz_centrality,
+    pagerank as nx_pagerank,
+)
 
 # Configuration via environment variables with sensible defaults
 MEMGRAPH_USER = os_environ.get("MEMGRAPH_USER", "")
@@ -456,8 +454,8 @@ def test_pagerank(session, ground_truth: dict) -> bool:
 
         return all_match
 
-    except Exception as e:
-        print(f"✗ PageRank failed: {e}")
+    except Exception as err:
+        print(f"✗ PageRank failed: {err}")
         return False
 
 
@@ -520,8 +518,8 @@ def test_betweenness_centrality(session, ground_truth: dict) -> bool:
 
         return all_match
 
-    except Exception as e:
-        print(f"✗ Betweenness Centrality failed: {e}")
+    except Exception as err:
+        print(f"✗ Betweenness Centrality failed: {err}")
         return False
 
 
@@ -576,8 +574,8 @@ def test_hits(session, ground_truth: dict) -> bool:
 
         return all_match
 
-    except Exception as e:
-        print(f"✗ HITS failed: {e}")
+    except Exception as err:
+        print(f"✗ HITS failed: {err}")
         return False
 
 
@@ -618,8 +616,8 @@ def test_louvain(session, ground_truth: dict) -> bool:
 
         return True
 
-    except Exception as e:
-        print(f"✗ Louvain failed: {e}")
+    except Exception as err:
+        print(f"✗ Louvain failed: {err}")
         return False
 
 
@@ -660,8 +658,8 @@ def test_leiden(session, ground_truth: dict) -> bool:
 
         return True
 
-    except Exception as e:
-        print(f"✗ Leiden failed: {e}")
+    except Exception as err:
+        print(f"✗ Leiden failed: {err}")
         return False
 
 
@@ -712,8 +710,8 @@ def test_katz_centrality(session, ground_truth: dict) -> bool:
 
         return all_match
 
-    except Exception as e:
-        print(f"✗ Katz Centrality failed: {e}")
+    except Exception as err:
+        print(f"✗ Katz Centrality failed: {err}")
         return False
 
 
@@ -769,8 +767,8 @@ def test_personalized_pagerank(session, ground_truth: dict) -> bool:
 
         return all_match
 
-    except Exception as e:
-        print(f"✗ Personalized PageRank failed: {e}")
+    except Exception as err:
+        print(f"✗ Personalized PageRank failed: {err}")
         return False
 
 

@@ -1,15 +1,13 @@
 """Utilities for solver."""
 
-from abc import ABC as abc_ABC
-from abc import abstractmethod as abc_abstractmethod
-from sys import stderr as sys_stderr
-from sys import version as sys_version
+from abc import ABC as abc_ABC, abstractmethod as abc_abstractmethod
+from sys import stderr as sys_stderr, version as sys_version
 
 try:
     from gekko import GEKKO
-except ImportError as import_error:
+except ImportError:
     sys_stderr.write(f"NOTE: Please install gekko in order to be able to use set-cover solver. Using Python: {sys_version}")
-    raise import_error from import_error
+    raise
 
 
 class MatchingProblem:

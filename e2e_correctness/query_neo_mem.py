@@ -12,14 +12,10 @@ Workaround would be to add API to create nodes by ids on Memgraph when importing
 """
 
 from json import loads as json_loads
-from logging import DEBUG as logging_DEBUG
-from logging import basicConfig as logging_basicConfig
-from logging import getLogger as logging_getLogger
+from logging import DEBUG as logging_DEBUG, basicConfig as logging_basicConfig, getLogger as logging_getLogger
 
-from gqlalchemy import Memgraph as gqlalchemy_Memgraph
-from gqlalchemy import Path as gqlalchemy_Path
-from neo4j import BoltDriver as neo4j_BoltDriver
-from neo4j import Query as neo4j_Query
+from gqlalchemy import Memgraph as gqlalchemy_Memgraph, Path as gqlalchemy_Path
+from neo4j import BoltDriver as neo4j_BoltDriver, Query as neo4j_Query
 
 logging_basicConfig(format="%(asctime)-15s [%(levelname)s]: %(message)s")
 logger = logging_getLogger("query_neo_mem")

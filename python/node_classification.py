@@ -1,34 +1,39 @@
 """Utilities for node classification."""
 
 from copy import deepcopy
-from datetime import UTC
-from datetime import datetime
+from datetime import UTC, datetime
 from math import isfinite
-from os import fdopen as os_fdopen
-from os import fsync as os_fsync
-from os import getcwd as os_getcwd
-from os import listdir as os_listdir
-from os import makedirs as os_makedirs
-from os import path as os_path
-from os import remove as os_remove
-from os import replace as os_replace
+from os import (
+    fdopen as os_fdopen,
+    fsync as os_fsync,
+    getcwd as os_getcwd,
+    listdir as os_listdir,
+    makedirs as os_makedirs,
+    path as os_path,
+    remove as os_remove,
+    replace as os_replace,
+)
 from re import compile as re_compile
 from tempfile import mkstemp
 from time import time
 
-from mgp import Any as mgp_Any
-from mgp import List as mgp_List
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
-from torch import cuda as torch_cuda
-from torch import load as torch_load
-from torch import nn as torch_nn
-from torch import no_grad as torch_no_grad
-from torch import optim as torch_optim
-from torch import save as torch_save
-from torch import zeros as torch_zeros
+from mgp import (
+    Any as mgp_Any,
+    List as mgp_List,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
+from torch import (
+    cuda as torch_cuda,
+    load as torch_load,
+    nn as torch_nn,
+    no_grad as torch_no_grad,
+    optim as torch_optim,
+    save as torch_save,
+    zeros as torch_zeros,
+)
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import to_hetero
 from tqdm import tqdm

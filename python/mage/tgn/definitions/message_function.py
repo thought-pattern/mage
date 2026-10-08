@@ -1,11 +1,13 @@
 """Utilities for message function."""
 
-from torch import Tensor as torch_Tensor
-from torch import as_tensor as torch_as_tensor
-from torch import concat as torch_concat
-from torch import device as torch_device
-from torch import float32 as torch_float32
-from torch import nn
+from torch import (
+    Tensor as torch_Tensor,
+    as_tensor as torch_as_tensor,
+    concat as torch_concat,
+    device as torch_device,
+    float32 as torch_float32,
+    nn,
+)
 
 
 class MessageFunction(nn.Module):

@@ -1,9 +1,6 @@
 """Utilities for memory."""
 
-from torch import Tensor as torch_Tensor
-from torch import device as torch_device
-from torch import float32 as torch_float32
-from torch import zeros as torch_zeros
+from torch import Tensor as torch_Tensor, device as torch_device, float32 as torch_float32, zeros as torch_zeros
 
 
 class Memory:

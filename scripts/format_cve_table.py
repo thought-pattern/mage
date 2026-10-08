@@ -3,9 +3,7 @@
 from argparse import ArgumentParser as argparse_ArgumentParser
 from io import StringIO
 from json import load as json_load
-from os import getcwd as os_getcwd
-from os import getenv as os_getenv
-from os import path as os_path
+from os import getcwd as os_getcwd, getenv as os_getenv, path as os_path
 
 from rich.console import Console
 from rich.table import Table

@@ -1,17 +1,16 @@
 """Utilities for tgn."""
 
-from numpy import array as np_array
-from numpy import float32 as np_float32
-from numpy import issubdtype as np_issubdtype
-from numpy import ndarray as np_ndarray
-from torch import Tensor as torch_Tensor
-from torch import concat as torch_concat
-from torch import device as torch_device
-from torch import flatten as torch_flatten
-from torch import float32 as torch_float32
-from torch import nn
-from torch import tensor as torch_tensor
-from torch import zeros as torch_zeros
+from numpy import array as np_array, float32 as np_float32, issubdtype as np_issubdtype, ndarray as np_ndarray
+from torch import (
+    Tensor as torch_Tensor,
+    concat as torch_concat,
+    device as torch_device,
+    flatten as torch_flatten,
+    float32 as torch_float32,
+    nn,
+    tensor as torch_tensor,
+    zeros as torch_zeros,
+)
 
 from mage.tgn.constants import (
     MemoryUpdaterType,

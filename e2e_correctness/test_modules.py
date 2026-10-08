@@ -3,18 +3,13 @@ This module tests modules from this folder one by one by comparing structure aft
 is executed on Neo4j and Memgraph. Be sure to have Neo4j and Memgraph instance running.
 """
 
-from logging import INFO as logging_INFO
-from logging import basicConfig as logging_basicConfig
-from logging import getLogger as logging_getLogger
+from logging import INFO as logging_INFO, basicConfig as logging_basicConfig, getLogger as logging_getLogger
 from os import path as os_path
 from pathlib import Path
 
 from gqlalchemy import Memgraph
-from neo4j import BoltDriver as neo4j_BoltDriver
-from neo4j import GraphDatabase as neo4j_GraphDatabase
-from pytest import fixture as pytest_fixture
-from pytest import mark as pytest_mark
-from pytest import param as pytest_param
+from neo4j import BoltDriver as neo4j_BoltDriver, GraphDatabase as neo4j_GraphDatabase
+from pytest import fixture as pytest_fixture, mark as pytest_mark, param as pytest_param
 from query_neo_mem import (
     Graph,
     clean_memgraph_db,
@@ -29,8 +24,7 @@ from query_neo_mem import (
     run_memgraph_query,
     run_neo4j_query,
 )
-from yaml import Loader as yaml_Loader
-from yaml import load as yaml_load
+from yaml import Loader as yaml_Loader, load as yaml_load
 
 logging_basicConfig(format="%(asctime)-15s [%(levelname)s]: %(message)s")
 logger = logging_getLogger("e2e_correctness")

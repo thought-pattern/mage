@@ -3,8 +3,7 @@
 from math import fabs as math_fabs
 from random import seed as random_seed
 
-from pytest import fixture as pytest_fixture
-from pytest import mark as pytest_mark
+from pytest import fixture as pytest_fixture, mark as pytest_mark
 
 from mage.graph_coloring_module import (
     ChainPopulation,

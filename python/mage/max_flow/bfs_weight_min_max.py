@@ -1,8 +1,7 @@
 """Utilities for bfs weight min max."""
 
 from collections import deque
-from collections.abc import Iterable
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from math import isfinite
 
 

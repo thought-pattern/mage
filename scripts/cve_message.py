@@ -2,14 +2,11 @@
 
 from argparse import ArgumentParser as argparse_ArgumentParser
 from json import load as json_load
-from os import getcwd as os_getcwd
-from os import getenv as os_getenv
-from os import path as os_path
+from os import getcwd as os_getcwd, getenv as os_getenv, path as os_path
 from sys import stderr as sys_stderr
 
 from format_cve_table import format_cyclonedx_data
-from requests import RequestException
-from requests import post as requests_post
+from requests import RequestException, post as requests_post
 
 CVE_DIR = os_getenv("CVE_DIR", os_getcwd())
 # A stalled webhook must fail the notification step instead of holding the CI job until the runner limit.

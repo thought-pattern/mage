@@ -2,9 +2,7 @@
 
 from abc import ABC, abstractmethod
 from logging import getLogger as logging_getLogger
-from multiprocessing import Manager as mp_Manager
-from multiprocessing import Process as mp_Process
-from multiprocessing import Value as mp_Value
+from multiprocessing import Manager as mp_Manager, Process as mp_Process, Value as mp_Value
 from multiprocessing.connection import wait as mp_connection_wait
 from pickle import PicklingError
 
@@ -112,8 +110,8 @@ class ParallelAlgorithm(Algorithm, ABC):
         abort_check()
         try:
             manager_context = mp_Manager()
-        except Exception as error_value:
-            raise RuntimeError("Failed to create graph-coloring process coordination") from error_value
+        except Exception as err:
+            raise RuntimeError("Failed to create graph-coloring process coordination") from err
 
         with manager_context as manager:
             running_flag = mp_Value("i", 1)

@@ -1,42 +1,46 @@
 """Utilities for export util."""
 
-from csv import QUOTE_ALL as csv_QUOTE_ALL
-from csv import QUOTE_MINIMAL as csv_QUOTE_MINIMAL
-from csv import QUOTE_NONE as csv_QUOTE_NONE
-from csv import QUOTE_NONNUMERIC as csv_QUOTE_NONNUMERIC
-from csv import writer as csv_writer
-from collections.abc import Iterator
+from csv import (
+    QUOTE_ALL as csv_QUOTE_ALL,
+    QUOTE_MINIMAL as csv_QUOTE_MINIMAL,
+    QUOTE_NONE as csv_QUOTE_NONE,
+    QUOTE_NONNUMERIC as csv_QUOTE_NONNUMERIC,
+    writer as csv_writer,
+)
 from datetime import date, datetime, time, timedelta
 from functools import partial
 from io import StringIO as io_StringIO
 from itertools import chain
 from json import dumps as js_dumps
-from os import O_RDONLY as os_O_RDONLY
-from os import W_OK as os_W_OK
-from os import access as os_access
-from os import chmod as os_chmod
-from os import close as os_close
-from os import fsync as os_fsync
-from os import open as os_open
-from os import path as os_path
-from os import remove as os_remove
-from os import replace as os_replace
-from os import stat as os_stat
+from os import (
+    O_RDONLY as os_O_RDONLY,
+    W_OK as os_W_OK,
+    access as os_access,
+    chmod as os_chmod,
+    close as os_close,
+    fsync as os_fsync,
+    open as os_open,
+    path as os_path,
+    remove as os_remove,
+    replace as os_replace,
+    stat as os_stat,
+)
 from stat import S_IMODE as stat_S_IMODE
 from uuid import uuid4
 from xml.sax.saxutils import escape as xml_escape
 
-from gqlalchemy import Memgraph
-from gqlalchemy import Memgraph as gqlalchemy_Memgraph
-from mgp import Any as mgp_Any
-from mgp import Edge as mgp_Edge
-from mgp import List as mgp_List
-from mgp import Map as mgp_Map
-from mgp import Nullable as mgp_Nullable
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from gqlalchemy import Memgraph, Memgraph as gqlalchemy_Memgraph
+from mgp import (
+    Any as mgp_Any,
+    Edge as mgp_Edge,
+    List as mgp_List,
+    Map as mgp_Map,
+    Nullable as mgp_Nullable,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
 from mage.export_import_util.duration import to_cypher_duration
 from mage.export_import_util.parameters import Parameter
@@ -170,7 +174,7 @@ def format_properties_cypher(properties) -> str:
     return computed_return_value
 
 
-def cypher_property_list(properties: object) -> str:
+def cypher_property_list(properties) -> str:
     """Renders the n.`property` list of an index or constraint; Memgraph reports one name or a sequence of names."""
     names = [properties] if isinstance(properties, str) else list(properties)
     rendered = ", ".join(f"n.{cypher_identifier(name)}" for name in names)
@@ -292,7 +296,7 @@ def get_properties_json(object, write_properties: bool):
 
 # Every element generator below writes the same export element shapes, in the key order import_util.json reads:
 # a node is {id, labels, properties, type: node} and a relationship {end, id, label, properties, start, type: relationship}.
-def json_elements(ctx: mgp_ProcCtx, write_properties: bool) -> Iterator[dict]:
+def json_elements(ctx: mgp_ProcCtx, write_properties: bool):
     """Yields every node dict, then every relationship dict, reading the graph twice instead of holding it."""
     for vertex in ctx.graph.vertices:
         node = {
@@ -316,7 +320,7 @@ def json_elements(ctx: mgp_ProcCtx, write_properties: bool) -> Iterator[dict]:
             yield relationship
 
 
-def graphml_elements(ctx: mgp_ProcCtx, config: mgp_Map) -> Iterator[dict]:
+def graphml_elements(ctx: mgp_ProcCtx, config: mgp_Map):
     """
     Yields every node dict, then every relationship dict (two reads of the graph). Vertex and relationship property
     values use the same codec: GraphML text when config graphML is set, else the JSON/Cypher wrapper form.
@@ -354,7 +358,7 @@ def graphml_elements(ctx: mgp_ProcCtx, config: mgp_Map) -> Iterator[dict]:
             yield relationship
 
 
-def listed_json_elements(graph_vertices: list, graph_edges: list, write_properties: bool) -> Iterator[dict]:
+def listed_json_elements(graph_vertices: list, graph_edges: list, write_properties: bool):
     """Yields the given nodes, then the given relationships, as export dicts."""
     for vertex in graph_vertices:
         node = {
@@ -377,7 +381,7 @@ def listed_json_elements(graph_vertices: list, graph_edges: list, write_properti
         yield relationship
 
 
-def write_json_array(out, elements: Iterator[dict], indent: int) -> None:
+def write_json_array(out, elements, indent: int) -> None:
     """
     Writes elements as one JSON array, one element at a time. A positive indent reproduces json.dump(..., indent=indent)
     for files; indent 0 reproduces json.dumps' single-line list for streams.
@@ -466,13 +470,13 @@ def json_graph(
     return computed_return_value
 
 
-def write_csv_rows(out, rows: Iterator[list], delimiter: str, quoting_type: mgp_Any) -> None:
+def write_csv_rows(out, rows, delimiter: str, quoting_type: mgp_Any) -> None:
     """Writes rows as the csv writer consumes them."""
     writer = csv_writer(out, delimiter=delimiter, quoting=quoting_type, escapechar="\\")
     writer.writerows(rows)
 
 
-def write_query_rows(rows: Iterator[dict], writers: list) -> None:
+def write_query_rows(rows, writers: list) -> None:
     """Writes the first row's keys as the header, then every row, to each writer as the rows arrive."""
     row_count = 0
     for row in rows:
@@ -489,7 +493,7 @@ def write_query_rows(rows: Iterator[dict], writers: list) -> None:
         raise Exception("Your query yields no results. Check if the database is empty or rewrite the provided query.")
 
 
-def write_query_csv(out, rows: Iterator[dict], stream_writers: list) -> None:
+def write_query_csv(out, rows, stream_writers: list) -> None:
     write_query_rows(rows, [csv_writer(out)] + stream_writers)
 
 
@@ -533,7 +537,7 @@ def csv_rows(
     relationships_list: list[mgp_Edge],
     node_properties: list[str],
     relationship_properties: list[str],
-) -> Iterator[list]:
+):
     """
     Second pass: one row per node, then one per relationship, produced as the csv writer consumes them
     """
@@ -547,7 +551,7 @@ def csv_rows(
         yield write_list
 
     for relationship in relationships_list:
-        write_list = ["", ""]
+        write_list: list = ["", ""]
         write_list.extend("" for _ in node_properties)
         write_list.extend([relationship.from_vertex.id, relationship.to_vertex.id, relationship.type.name])
         write_list.extend(csv_cell(relationship.properties.get(prop, "")) for prop in relationship_properties)
@@ -789,10 +793,9 @@ def get_gephi_label_value(element: mgp_Any, config: mgp_Map) -> str:
 
 def write_labels_as_data(element: mgp_Any, output: io_StringIO, config: mgp_Map, key_ids: dict) -> None:
     labels = element.get("labels", [])
-    if not labels:
-        return
     graph_format = config.get("format", "").upper()
-    if graph_format == "GEPHI":
+    # An unlabelled element writes no label data in any format.
+    if labels and graph_format == "GEPHI":
         output.write(f'<data key="{key_ids.get(("TYPE", "node", "string", False), "")}">')
         output.write(xml_text("".join(f":{label}" for label in labels)))
         output.write("</data>")
@@ -800,11 +803,11 @@ def write_labels_as_data(element: mgp_Any, output: io_StringIO, config: mgp_Map,
             f'<data key="{key_ids.get(("labels", "node", "string", False), "")}">'
             f"{xml_text(get_gephi_label_value(element, config))}</data>"
         )
-    elif graph_format == "TINKERPOP":
+    elif labels and graph_format == "TINKERPOP":
         output.write(f'<data key="{key_ids.get(("labelV", "node", "string", False), "")}">')
         output.write(xml_text(":".join(labels)))
         output.write("</data>")
-    else:
+    elif labels:
         output.write(f'<data key="{key_ids.get(("labels", "node", "string", False), "")}">')
         output.write(xml_text("".join(f":{label}" for label in labels)))
         output.write("</data>")
@@ -840,7 +843,7 @@ def graphml_element_keys(element: dict, config: mgp_Map) -> list[tuple[str, str,
     return keys
 
 
-def write_graphml_keys(output: io_StringIO, elements: Iterator[dict], config: mgp_Map) -> dict:
+def write_graphml_keys(output: io_StringIO, elements, config: mgp_Map) -> dict:
     """
     First pass: declares every key once, in first-use order, and returns each key's id for the second pass. Only the
     key schema is kept, never the graph.
@@ -863,7 +866,7 @@ def write_graphml_keys(output: io_StringIO, elements: Iterator[dict], config: mg
     return key_ids
 
 
-def write_graphml_elements(output: io_StringIO, elements: Iterator[dict], key_ids: dict, config: mgp_Map) -> None:
+def write_graphml_elements(output: io_StringIO, elements, key_ids: dict, config: mgp_Map) -> None:
     """Second pass: writes each node and edge with its data, escaping every attribute and text value."""
     graph_format = config.get("format", "").upper()
     for element in elements:

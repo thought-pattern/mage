@@ -1,8 +1,6 @@
 """Utilities for memory updater."""
 
-from torch import Tensor as torch_Tensor
-from torch import device as torch_device
-from torch import nn
+from torch import Tensor as torch_Tensor, device as torch_device, nn
 
 
 class MemoryUpdater(nn.Module):

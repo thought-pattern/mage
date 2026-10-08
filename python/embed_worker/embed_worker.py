@@ -31,7 +31,7 @@ def encode_chunk(texts: list[str], batch_size: int):
     Runs in a worker process prepared by load_model. Returns (count, embeddings_as_list)
     """
     model = worker_model.get(MODEL, False)
-    if model is False:
+    if not isinstance(model, SentenceTransformer):
         raise RuntimeError("Embedding worker has no loaded model; load_model must run as the pool initializer.")
 
     if not texts:

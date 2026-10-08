@@ -1,25 +1,24 @@
 """Utilities for elastic search serialization."""
 
-from collections.abc import Iterator
-from datetime import datetime
-from datetime import timezone as datetime_timezone
+from datetime import datetime, timezone as datetime_timezone
 from itertools import batched
 from json import loads as json_loads
 from threading import Lock
 
-from elasticsearch import Elasticsearch as elasticsearch_Elasticsearch
-from elasticsearch import helpers as elasticsearch_helpers
+from elasticsearch import Elasticsearch as elasticsearch_Elasticsearch, helpers as elasticsearch_helpers
 from elasticsearch.helpers import parallel_bulk, streaming_bulk
-from mgp import Any as mgp_Any
-from mgp import Edge as mgp_Edge
-from mgp import List as mgp_List
-from mgp import Logger as mgp_Logger
-from mgp import Map as mgp_Map
-from mgp import Nullable as mgp_Nullable
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    Any as mgp_Any,
+    Edge as mgp_Edge,
+    List as mgp_List,
+    Logger as mgp_Logger,
+    Map as mgp_Map,
+    Nullable as mgp_Nullable,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
 # Elasticsearch constants
 ACTION = "action"
@@ -131,17 +130,18 @@ def serialize_properties(properties: mgp_Any) -> dict[str, object]:
     for prop_key, prop_value in properties:
         if isinstance(prop_value, datetime):
             # A naive graph datetime is UTC wall time; an aware one is normalized to UTC first so the single Z suffix
-            # (Zulu, added manually because isoformat has no option for it) states its real offset. Microseconds are dropped.
+            # (Zulu, which isoformat cannot emit, so it replaces the +00:00 offset) states its real offset.
+            # Microseconds are dropped.
             if prop_value.tzinfo is not None:
-                prop_value = prop_value.astimezone(datetime_timezone.utc).replace(tzinfo=None)
-            prop_value = f"{prop_value.replace(microsecond=0).isoformat()}Z"
+                prop_value = prop_value.astimezone(datetime_timezone.utc)
+            prop_value = f"{prop_value.replace(microsecond=0).isoformat().removesuffix('+00:00')}Z"
             source[f"{prop_key}{MEM_DATE}"] = prop_value
         elif type(prop_value) in meme_mapping:
             source[f"{prop_key}{meme_mapping.get(type(prop_value), '')}"] = prop_value
     return source
 
 
-def triggered_vertex_documents(context_objects: list[mgp_Any]) -> Iterator[dict[str, object]]:
+def triggered_vertex_documents(context_objects: list[mgp_Any]):
     """Yields vertex documents for the created-vertex events sent by a create trigger."""
     for context_object in context_objects:
         if context_object.get(EVENT_TYPE, "") == CREATED_VERTEX:
@@ -151,7 +151,7 @@ def triggered_vertex_documents(context_objects: list[mgp_Any]) -> Iterator[dict[
             yield serialize_vertex(context_object.get(VERTEX, False))
 
 
-def triggered_edge_documents(context_objects: list[mgp_Any]) -> Iterator[dict[str, object]]:
+def triggered_edge_documents(context_objects: list[mgp_Any]):
     """Yields edge documents for the created-edge events sent by a create trigger."""
     for context_object in context_objects:
         if context_object.get(EVENT_TYPE, "") == CREATED_EDGE:
@@ -161,27 +161,27 @@ def triggered_edge_documents(context_objects: list[mgp_Any]) -> Iterator[dict[st
             yield serialize_edge(context_object.get(EDGE, False))
 
 
-def database_vertex_documents(context: mgp_ProcCtx) -> Iterator[dict[str, object]]:
+def database_vertex_documents(context: mgp_ProcCtx):
     """Yields one document per database vertex as the bulk helper consumes them, so memory follows the chunk settings."""
     for vertex in context.graph.vertices:
         yield serialize_vertex(vertex)
 
 
-def database_edge_documents(context: mgp_ProcCtx) -> Iterator[dict[str, object]]:
+def database_edge_documents(context: mgp_ProcCtx):
     """Yields one document per database relationship (each counted once, from its source vertex)."""
     for vertex in context.graph.vertices:
         for edge in vertex.out_edges:
             yield serialize_edge(edge)
 
 
-def counted_documents(documents: Iterator[dict[str, object]], receipt: dict[str, object]) -> Iterator[dict[str, object]]:
+def counted_documents(documents, receipt: dict):
     """Passes documents through to a bulk helper while counting how many it consumed."""
     for document in documents:
         receipt[ATTEMPTED] = receipt.get(ATTEMPTED, 0) + 1
         yield document
 
 
-def record_bulk_results(results: Iterator[tuple[bool, dict[str, object]]], receipt: dict[str, object]) -> None:
+def record_bulk_results(results, receipt: dict) -> None:
     """Records every rejected bulk item with its server-reported identity, status and reason."""
     rejected = receipt.get(REJECTED, [])
     for ok, item in results:
@@ -193,7 +193,7 @@ def record_bulk_results(results: Iterator[tuple[bool, dict[str, object]]], recei
 
 
 def elastic_search_streaming_bulk(
-    objects: Iterator[dict[str, object]],
+    objects,
     index: str,
     chunk_size: int = 500,
     max_chunk_bytes: int = 104857600,
@@ -203,7 +203,7 @@ def elastic_search_streaming_bulk(
     initial_backoff: float = 2.0,
     max_backoff: float = 600.0,
     yield_ok: bool = True,
-) -> dict[str, object]:
+) -> dict:
     (
         "\n    Sends streaming_bulk requests for the given objects to the provided index with the para"  # Continue literal.
         "meters specified.\n    Args:\n        objects (List[Any]): serialized nodes and edges that wil"  # Continue literal.
@@ -221,7 +221,7 @@ def elastic_search_streaming_bulk(
         "lse will skip successful documents in the output.\n    Returns:\n        Dict[str, Any]: Receipt"  # Continue literal.
         " with attempted and indexed counts and every rejected item.\n"
     )
-    receipt: dict[str, object] = {ATTEMPTED: 0, REJECTED: []}
+    receipt: dict = {ATTEMPTED: 0, REJECTED: []}
     results = streaming_bulk(
         client=connected_client(),
         index=index,
@@ -241,7 +241,7 @@ def elastic_search_streaming_bulk(
 
 
 def elastic_search_parallel_bulk(
-    objects: Iterator[dict[str, object]],
+    objects,
     index: str,
     thread_count: int = 8,
     chunk_size: int = 500,
@@ -249,7 +249,7 @@ def elastic_search_parallel_bulk(
     raise_on_error: bool = True,
     raise_on_exception: bool = True,
     queue_size: int = 4,
-) -> dict[str, object]:
+) -> dict:
     (
         "\n    Sends parallel_bulk requests for the given objects to the provided index with the param"  # Continue literal.
         "eters specified.\n    Args:\n        objects (List[Any]): Serialized nodes and edges that will"  # Continue literal.
@@ -264,7 +264,7 @@ def elastic_search_parallel_bulk(
         " (producing chunks to send) and the processing threads.\n    Returns:\n        Dict[str, Any]: Rec"  # Continue literal.
         "eipt with attempted and indexed counts and every rejected item.\n"
     )
-    receipt: dict[str, object] = {ATTEMPTED: 0, REJECTED: []}
+    receipt: dict = {ATTEMPTED: 0, REJECTED: []}
     active_client = connected_client()
     # parallel_bulk pulls its actions on a pool thread, so graph objects are serialized here on the procedure thread one
     # window at a time. A window matches what parallel_bulk keeps in flight: one chunk per worker plus its task queue,
@@ -524,9 +524,9 @@ def index(
         "\n        yield_ok (float): If set to False will skip successful documents in the output.\n   "  # Continue literal.
         "     thread_count (int): Size of the threadpool to use for the bulk requests.\n        queue_"  # Continue literal.
         "size (int): Size of the task queue between the main thread (producing chunks to send) and th"  # Continue literal.
-        "e processing threads.\n    Returns:\n        mgp.Record(nodes=int, edges=int, rejected_nodes=mgp.List[mg"  # Continue literal.
-        "p.Map], rejected_edges=mgp.List[mgp.Map]): Numbers of nodes and edges indexed, and every rejec"  # Continue literal.
-        "ted item with its id, status and error.\n"
+        "e processing threads.\n    Returns:\n        mgp.Record(nodes=int, edges=int, rejected_"  # Continue literal.
+        "nodes=mgp.List[mgp.Map], rejected_edges=mgp.List[mgp.Map]): Numbers of nodes and edges indexed, "  # Continue literal.
+        "and every rejected item with its id, status and error.\n"
     )
     # Settings are admitted before any graph object is read; documents are then serialized lazily as they are sent.
     if thread_count < 1:

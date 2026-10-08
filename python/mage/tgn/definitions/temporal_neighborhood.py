@@ -1,12 +1,10 @@
 """Utilities for temporal neighborhood."""
 
-from bisect import bisect_left
-from bisect import insort
+from bisect import bisect_left, insort
 from operator import itemgetter
 from random import sample as random_sample
 
-from numpy import array as np_array
-from numpy import ndarray as np_ndarray
+from numpy import array as np_array, ndarray as np_ndarray
 
 NEIGHBOR_TIMESTAMP = itemgetter(2)
 

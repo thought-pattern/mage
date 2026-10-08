@@ -1,10 +1,7 @@
 """Utilities for MLPPredictor."""
 
 from dgl import graph as dgl_graph
-from torch import Tensor as torch_Tensor
-from torch import cat as torch_cat
-from torch import device as torch_device
-from torch import nn as torch_nn
+from torch import Tensor as torch_Tensor, cat as torch_cat, device as torch_device, nn as torch_nn
 from torch.nn import functional as F
 
 from mage.link_prediction.constants import Predictors

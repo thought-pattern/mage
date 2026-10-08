@@ -2,9 +2,7 @@
 
 from importlib import import_module
 
-from torch import Tensor as torch_Tensor
-from torch import device as torch_device
-from torch import nn as torch_nn
+from torch import Tensor as torch_Tensor, device as torch_device, nn as torch_nn
 
 
 class GraphSAGE(torch_nn.Module):
@@ -41,8 +39,8 @@ class GraphSAGE(torch_nn.Module):
 
         try:
             dgl_nn = import_module("dgl.nn")
-        except ModuleNotFoundError as error:
-            raise ModuleNotFoundError("GraphSAGE requires the DGL package") from error
+        except ModuleNotFoundError as err:
+            raise ModuleNotFoundError("GraphSAGE requires the DGL package") from err
         hetero_graph_conv = getattr(dgl_nn, "HeteroGraphConv", False)
         sage_conv = getattr(dgl_nn, "SAGEConv", False)
         if not callable(hetero_graph_conv) or not callable(sage_conv):

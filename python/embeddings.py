@@ -4,26 +4,24 @@ from concurrent.futures import CancelledError, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from gc import collect as gc_collect
 from importlib import import_module as imported_import_module
-from multiprocessing import get_context as mp_get_context
-from multiprocessing import set_executable as mp_set_executable
+from multiprocessing import get_context as mp_get_context, set_executable as mp_set_executable
 from os import environ as os_environ
-from subprocess import CalledProcessError as subprocess_CalledProcessError
-from subprocess import check_output as subprocess_check_output
-from sys import executable as sys_executable
-from sys import version as sys_version
+from subprocess import CalledProcessError as subprocess_CalledProcessError, check_output as subprocess_check_output
+from sys import executable as sys_executable, version as sys_version
 
-from embed_worker.embed_worker import encode_chunk as embed_worker_encode_chunk
-from embed_worker.embed_worker import load_model as embed_worker_load_model
-from mgp import Any as mgp_Any
-from mgp import List as mgp_List
-from mgp import Logger as mgp_Logger
-from mgp import Map as mgp_Map
-from mgp import Nullable as mgp_Nullable
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
-from mgp import write_proc as mgp_write_proc
+from embed_worker.embed_worker import encode_chunk as embed_worker_encode_chunk, load_model as embed_worker_load_model
+from mgp import (
+    Any as mgp_Any,
+    List as mgp_List,
+    Logger as mgp_Logger,
+    Map as mgp_Map,
+    Nullable as mgp_Nullable,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+    write_proc as mgp_write_proc,
+)
 from sentence_transformers import SentenceTransformer
 from torch import cuda as torch_cuda
 
@@ -70,13 +68,14 @@ def get_visible_gpus():
         out = subprocess_check_output(["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"], text=True)
         computed_return_value = [int(x) for x in out.strip().splitlines() if x.strip()]
         return computed_return_value
-    except (FileNotFoundError, OSError, subprocess_CalledProcessError, ValueError) as error:
-        logger.warning(f"nvidia-smi GPU discovery failed; probing PyTorch instead: {error}")
+    except (FileNotFoundError, OSError, subprocess_CalledProcessError, ValueError) as err:
+        logger.warning(f"nvidia-smi GPU discovery failed; probing PyTorch instead: {err}")
         try:
             computed_return_value = list(range(torch_cuda.device_count())) if torch_cuda.is_available() else []
             return computed_return_value
-        except (AssertionError, RuntimeError) as fallback_error:
-            logger.warning(f"PyTorch GPU discovery failed; no GPU will be used: {fallback_error}")
+        # The nvidia-smi failure is already logged and unused here, so the fallback may rebind the name.
+        except (AssertionError, RuntimeError) as err:
+            logger.warning(f"PyTorch GPU discovery failed; no GPU will be used: {err}")
             return []
 
 
@@ -140,8 +139,8 @@ def select_device(device: mgp_Any):
                 if gpu_index not in available_gpus:
                     raise ValueError(f"GPU {gpu_index} not available. Available GPUs: {available_gpus}")
                 return [gpu_index]
-            except (ValueError, IndexError) as e:
-                raise ValueError(f"Invalid CUDA device format '{device}'. Expected format: 'cuda:X' where X is a number") from e
+            except (ValueError, IndexError) as err:
+                raise ValueError(f"Invalid CUDA device format '{device}'. Expected format: 'cuda:X' where X is a number") from err
         else:
             raise ValueError(f"Invalid device string '{device}'. Expected 'cpu' or 'cuda:X'")
 
@@ -176,10 +175,10 @@ def select_device(device: mgp_Any):
                         if gpu_index not in available_gpus:
                             raise ValueError(f"GPU {gpu_index} not available. Available GPUs: {available_gpus}")
                         gpu_indices.append(gpu_index)
-                    except (ValueError, IndexError) as e:
+                    except (ValueError, IndexError) as err:
                         raise ValueError(
                             f"Invalid CUDA device format '{device_str}'. Expected format: 'cuda:X' where X is a number"
-                        ) from e
+                        ) from err
                 else:
                     raise ValueError(f"Invalid device string '{device_str}'. Expected 'cpu' or 'cuda:X'")
 
@@ -192,6 +191,14 @@ def select_device(device: mgp_Any):
             raise ValueError("Device list must contain only integers or strings, not mixed types")
     else:
         raise TypeError(f"Invalid device type {type(device)}. Expected int, str, or list of int/str")
+
+
+def encoder_dimension(model: SentenceTransformer) -> int:
+    """Return the encoder's declared output dimension, which fills the procedure's integer dimension field."""
+    dimension = model.get_sentence_embedding_dimension()
+    if not isinstance(dimension, int):
+        raise RuntimeError("The admitted encoder declares no sentence embedding dimension")
+    return dimension
 
 
 def cpu_compute(
@@ -231,7 +238,7 @@ def cpu_compute(
         embedding_property,
         return_embeddings,
         True,
-        model.get_sentence_embedding_dimension(),
+        encoder_dimension(model),
     )
     return computed_return_value
 
@@ -296,7 +303,7 @@ def single_gpu_compute(
             embedding_property,
             return_embeddings,
             True,
-            model.get_sentence_embedding_dimension(),
+            encoder_dimension(model),
         )
         return computed_return_value
 

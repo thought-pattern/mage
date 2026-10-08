@@ -3,18 +3,10 @@
 from importlib import import_module as imported_import_module
 from pathlib import Path
 
-from gqlalchemy import Memgraph, Node, Relationship
-from gqlalchemy import Path as path_gql
-from mgclient import DatabaseError as mgclient_DatabaseError
-from mgclient import Node as node_mgclient
-from mgclient import Relationship as relationship_mgclient
-from pytest import approx as pytest_approx
-from pytest import fail as pytest_fail
-from pytest import mark as pytest_mark
-from pytest import param as pytest_param
-from pytest import raises as pytest_raises
-from yaml import Loader as yaml_Loader
-from yaml import load as yaml_load
+from gqlalchemy import Memgraph, Node, Path as path_gql, Relationship
+from mgclient import DatabaseError as mgclient_DatabaseError, Node as node_mgclient, Relationship as relationship_mgclient
+from pytest import approx as pytest_approx, fail as pytest_fail, mark as pytest_mark, param as pytest_param, raises as pytest_raises
+from yaml import Loader as yaml_Loader, load as yaml_load
 
 os = imported_import_module("os")
 

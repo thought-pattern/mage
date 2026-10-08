@@ -1,10 +1,6 @@
 """Utilities for meta util."""
 
-from mgp import List as mgp_List
-from mgp import Map as mgp_Map
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import read_proc as mgp_read_proc
+from mgp import List as mgp_List, Map as mgp_Map, ProcCtx as mgp_ProcCtx, Record as mgp_Record, read_proc as mgp_read_proc
 
 from mage.meta_util.parameters import Parameter
 

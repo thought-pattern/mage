@@ -2,15 +2,9 @@
 
 from collections import Counter
 
-from numpy import add as np_add
-from numpy import array as np_array
-from numpy import shape as np_shape
-from numpy import zeros as np_zeros
-from torch import bool as torch_bool
-from torch import float32 as torch_float32
-from torch import long as torch_long
-from torch import tensor as torch_tensor
+from numpy import add as np_add, array as np_array, shape as np_shape, zeros as np_zeros
 from numpy.random import shuffle as np_shuffle
+from torch import bool as torch_bool, float32 as torch_float32, long as torch_long, tensor as torch_tensor
 from torch_geometric import transforms as T
 from torch_geometric.data import HeteroData
 

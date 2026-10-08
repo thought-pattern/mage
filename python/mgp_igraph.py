@@ -2,12 +2,7 @@
 
 from enum import Enum as enum_Enum
 
-from igraph import EdgeSeq as igraph_EdgeSeq
-from igraph import Graph as igraph_Graph
-
-# igraph's own marker for an attribute that is not set on a vertex or edge. A
-# concrete false value would be read as a numeric 0 weight or capacity.
-IGRAPH_UNSET_ATTRIBUTE = None
+from igraph import EdgeSeq as igraph_EdgeSeq, Graph as igraph_Graph
 
 
 class MemgraphIgraph(igraph_Graph):
@@ -41,7 +36,8 @@ class MemgraphIgraph(igraph_Graph):
             return {}
         if attribute not in self.es.attribute_names():
             raise KeyError(f"no edge provides property {attribute!r}")
-        missing = self.es[attribute].count(IGRAPH_UNSET_ATTRIBUTE)
+        # igraph reports an attribute value that was never set on an edge as None.
+        missing = sum(1 for value in self.es[attribute] if value is None)
         if missing:
             raise ValueError(f"{missing} of {self.ecount()} edges lack property {attribute!r}")
         options = {option: attribute}
@@ -230,26 +226,27 @@ class MemgraphIgraph(igraph_Graph):
                     )
                 )
 
-        super().__init__(
-            directed=directed,
-            n=len(vertices),
-            edges=edge_list,
-            edge_attrs=position_aligned_attributes(edge_properties),
-            vertex_attrs=position_aligned_attributes(vertex_properties),
-        )
+        super().__init__(directed=directed, n=len(vertices), edges=edge_list)
+        assign_present_attributes(self.es, edge_properties)
+        assign_present_attributes(self.vs, vertex_properties)
 
         return id_mapping, inverted_id_mapping
 
 
-def position_aligned_attributes(property_maps: list[dict]) -> dict[str, list]:
-    """One igraph attribute list per property name, with one entry per vertex/edge position.
+def assign_present_attributes(sequence, property_maps: list[dict]) -> None:
+    """Set each property only on the vertices or edges, by position, that carry it.
 
-    A vertex or edge that lacks a property keeps igraph's unset marker at its
-    own position, so values never shift onto another element.
+    igraph leaves every other element of a partially assigned attribute unset, so values
+    never shift onto another element and no concrete false value reads as a 0 weight or capacity.
     """
-    names = dict.fromkeys(name for properties in property_maps for name in properties)
-    attributes = {name: [properties.get(name, IGRAPH_UNSET_ATTRIBUTE) for properties in property_maps] for name in names}
-    return attributes
+    present = {}
+    for position, properties in enumerate(property_maps):
+        for name, value in properties.items():
+            positions, values = present.setdefault(name, ([], []))
+            positions.append(position)
+            values.append(value)
+    for name, (positions, values) in present.items():
+        sequence.select(positions)[name] = values
 
 
 class PageRankImplementationOptions(enum_Enum):

@@ -3,15 +3,17 @@ This class contains implementations of different layers
 """
 
 from numpy import array as np_array
-from torch import Tensor as torch_Tensor
-from torch import cat as torch_cat
-from torch import concat as torch_concat
-from torch import device as torch_device
-from torch import nn
-from torch import rand as torch_rand
-from torch import sum as torch_sum
-from torch import unsqueeze as torch_unsqueeze
-from torch import zeros as torch_zeros
+from torch import (
+    Tensor as torch_Tensor,
+    cat as torch_cat,
+    concat as torch_concat,
+    device as torch_device,
+    nn,
+    rand as torch_rand,
+    sum as torch_sum,
+    unsqueeze as torch_unsqueeze,
+    zeros as torch_zeros,
+)
 
 from mage.tgn.helper.simple_mlp import MLP
 

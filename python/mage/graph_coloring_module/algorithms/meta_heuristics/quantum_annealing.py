@@ -7,8 +7,8 @@ from random import random as random_random
 from mage.graph_coloring_module.algorithms.meta_heuristics.parallel_algorithm import (
     ParallelAlgorithm,
 )
-from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.components.chain_chunk import ChainChunk
+from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.components.population import Population
 from mage.graph_coloring_module.graph import Graph
 from mage.graph_coloring_module.parameters import Parameter

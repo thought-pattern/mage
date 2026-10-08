@@ -3,13 +3,15 @@
 from itertools import chain
 from math import floor, log2
 
-from mgp import Edge as mgp_Edge
-from mgp import Number as mgp_Number
-from mgp import Path as mgp_Path
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    Edge as mgp_Edge,
+    Number as mgp_Number,
+    Path as mgp_Path,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
 from mage.max_flow.bfs_weight_min_max import BFS_find_weight_min_max
 

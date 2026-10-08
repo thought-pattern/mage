@@ -1,12 +1,14 @@
 """Utilities for graph coloring."""
 
-from mgp import Edge as mgp_Edge
-from mgp import List as mgp_List
-from mgp import Map as mgp_Map
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    Edge as mgp_Edge,
+    List as mgp_List,
+    Map as mgp_Map,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
 from mage.graph_coloring_module import Graph, Parameter
 from mage.graph_coloring_module.parameter_boundary import normalize_parameters

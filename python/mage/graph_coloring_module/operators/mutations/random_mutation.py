@@ -1,8 +1,6 @@
 """Utilities for random mutation."""
 
-from random import choice as random_choice
-from random import randint as random_randint
-from random import random as random_random
+from random import choice as random_choice, randint as random_randint, random as random_random
 
 from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.graph import Graph

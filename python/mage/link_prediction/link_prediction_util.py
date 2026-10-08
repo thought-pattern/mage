@@ -1,41 +1,33 @@
 """Utilities for link prediction util."""
 
 from functools import partial as functools_partial
-from os import fdopen as os_fdopen
-from os import fsync as os_fsync
-from os import path as os_path
-from os import replace as os_replace
-from os import unlink as os_unlink
+from os import fdopen as os_fdopen, fsync as os_fsync, path as os_path, replace as os_replace, unlink as os_unlink
 from random import seed as random_seed
 from tempfile import mkstemp
 
-from dgl import dataloading as dgl_dataloading
-from dgl import graph as dgl_graph
-from dgl import heterograph as dgl_heterograph
-from numpy import arange as np_arange
-from numpy import random as np_random
+from dgl import dataloading as dgl_dataloading, graph as dgl_graph, heterograph as dgl_heterograph
+from numpy import arange as np_arange, random as np_random
 from sklearn.metrics import (
     confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
     roc_auc_score,
 )
-from torch import Tensor as torch_Tensor
-from torch import arange as torch_arange
-from torch import cat as torch_cat
-from torch import device as torch_device
-from torch import from_numpy as torch_from_numpy
-from torch import manual_seed as torch_manual_seed
-from torch import nn as torch_nn
-from torch import no_grad as torch_no_grad
-from torch import ones as torch_ones
-from torch import optim as torch_optim
-from torch import save as torch_save
-from torch import sigmoid as torch_sigmoid
-from torch import tensor as torch_tensor
-from torch import unique as torch_unique
-from torch import zeros as torch_zeros
+from torch import (
+    Tensor as torch_Tensor,
+    arange as torch_arange,
+    cat as torch_cat,
+    device as torch_device,
+    from_numpy as torch_from_numpy,
+    manual_seed as torch_manual_seed,
+    nn as torch_nn,
+    no_grad as torch_no_grad,
+    ones as torch_ones,
+    optim as torch_optim,
+    save as torch_save,
+    sigmoid as torch_sigmoid,
+    tensor as torch_tensor,
+    unique as torch_unique,
+    zeros as torch_zeros,
+)
 
 from mage.link_prediction.constants import (
     Context,
@@ -101,9 +93,7 @@ def proj_0(graph: dgl_graph, node_features_property: str) -> bool:
     return False
 
 
-def preprocess(
-    graph: dgl_graph, split_ratio: float, target_relation: str, device: torch_device
-) -> tuple[dict[str, torch_Tensor], dict[str, torch_Tensor]]:
+def preprocess(graph: dgl_graph, split_ratio: float, target_relation, device: torch_device) -> tuple[dict, dict]:
     (
         "Preprocess method splits dataset in training and validation set by creating necessary masks "  # Continue literal.
         "for distinguishing those two.\n        This method is also used for setting numpy and torch r"  # Continue literal.
@@ -149,18 +139,34 @@ def preprocess(
     return train_eid_dict, val_eid_dict
 
 
-def classify(probs: torch_Tensor, threshold: float) -> torch_Tensor:
+def classify(probs, threshold: float):
     """Classifies based on probabilities of the class with the label one.
 
     Args:
-        probs (torch.tensor): Edge probabilities.
+        probs (torch.tensor or numpy.ndarray): Edge probabilities.
 
     Returns:
-        torch.tensor: classes
+        Boolean classes of the same array type as probs.
     """
 
     computed_return_value = probs > threshold
     return computed_return_value
+
+
+def confusion_counts(labels, classes) -> tuple[int, int, int, int]:
+    """Returns (true negatives, false positives, false negatives, true positives) for binary labels and classes.
+
+    Both binary classes are always counted, so an input holding a single class is counted rather than rejected.
+    """
+    tn, fp, fn, tp = (int(count) for count in confusion_matrix(labels, classes, labels=[0, 1]).ravel())
+    counts = tn, fp, fn, tp
+    return counts
+
+
+def zero_safe_rate(numerator: int, denominator: int) -> float:
+    """Returns one classification rate, or 0.0 when its denominator is zero and the rate is undefined."""
+    rate = numerator / denominator if denominator else 0.0
+    return rate
 
 
 def accumulate_batch(statistics: dict, labels: torch_Tensor, probs: torch_Tensor, loss_value: float) -> bool:
@@ -184,7 +190,7 @@ def accumulate_batch(statistics: dict, labels: torch_Tensor, probs: torch_Tensor
     return False
 
 
-def epoch_metrics(metrics: list[str], statistics: dict, threshold: float, epoch: int) -> dict[str, float]:
+def epoch_metrics(metrics: list[str], statistics: dict, threshold: float, epoch: int) -> dict:
     """Returns the epoch number, the example-weighted loss and every requested metric, derived from the whole epoch.
 
     The confusion matrix always has both binary classes, so batches or epochs with a single class (for example no
@@ -204,7 +210,7 @@ def epoch_metrics(metrics: list[str], statistics: dict, threshold: float, epoch:
     probs = torch_cat(statistics.get("probs", [])).numpy()
     classes = classify(probs, threshold).astype(int)
     example_count = labels.shape[0]
-    tn, fp, fn, tp = (int(count) for count in confusion_matrix(labels, classes, labels=[0, 1]).ravel())
+    tn, fp, fn, tp = confusion_counts(labels, classes)
     positive_predictions = int(classes.sum())
     positive_examples = int(labels.sum())
 
@@ -216,11 +222,11 @@ def epoch_metrics(metrics: list[str], statistics: dict, threshold: float, epoch:
             both_classes = 0 < positive_examples < example_count
             result[Metrics.AUC_SCORE] = round(float(roc_auc_score(labels, probs)), 3) if both_classes else float("nan")
         elif metric_name == Metrics.F1:
-            result[Metrics.F1] = round(float(f1_score(labels, classes, zero_division=0.0)), 3)
+            result[Metrics.F1] = round(zero_safe_rate(2 * tp, 2 * tp + fp + fn), 3)
         elif metric_name == Metrics.PRECISION:
-            result[Metrics.PRECISION] = round(float(precision_score(labels, classes, zero_division=0.0)), 3)
+            result[Metrics.PRECISION] = round(zero_safe_rate(tp, tp + fp), 3)
         elif metric_name == Metrics.RECALL:
-            result[Metrics.RECALL] = round(float(recall_score(labels, classes, zero_division=0.0)), 3)
+            result[Metrics.RECALL] = round(zero_safe_rate(tp, tp + fn), 3)
         elif metric_name == Metrics.POS_PRED_EXAMPLES:
             result[Metrics.POS_PRED_EXAMPLES] = positive_predictions
         elif metric_name == Metrics.NEG_PRED_EXAMPLES:
@@ -266,7 +272,7 @@ def batch_forward_pass(
     predictor: torch_nn.Module,
     loss: torch_nn.Module,
     m: torch_nn.Module,
-    target_relation: str,
+    target_relation,
     input_features: dict[str, torch_Tensor],
     pos_graph: dgl_graph,
     neg_graph: dgl_graph,
@@ -313,7 +319,7 @@ def inner_train(
     graph: dgl_graph,
     train_eid_dict,
     val_eid_dict,
-    target_relation: str,
+    target_relation,
     model: torch_nn.Module,
     predictor: torch_nn.Module,
     optimizer: torch_optim.Optimizer,

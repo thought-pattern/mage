@@ -20,10 +20,8 @@ containing all CVEs for those installed packages.
 
 from argparse import ArgumentParser as argparse_ArgumentParser
 from json import loads as json_loads
-from os import getcwd as os_getcwd
-from os import getenv as os_getenv
-from subprocess import PIPE as subprocess_PIPE
-from subprocess import run as subprocess_run
+from os import getcwd as os_getcwd, getenv as os_getenv
+from subprocess import PIPE as subprocess_PIPE, run as subprocess_run
 
 from cve_bin_tool.cvedb import CVEDB
 

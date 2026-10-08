@@ -5,29 +5,35 @@ from itertools import chain as itertools_chain
 from json import loads as js_loads
 from math import isfinite
 
-from dgl import AddReverse
-from dgl import graph as dgl_graph  # geometric deep learning
-from dgl import heterograph as dgl_heterograph
-from dgl import remove_edges as dgl_remove_edges
-from mgp import Any as mgp_Any  # Python API
-from mgp import Label as mgp_Label
-from mgp import List as mgp_List
-from mgp import Map as mgp_Map
-from mgp import Number as mgp_Number
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
-from sklearn.metrics import average_precision_score, precision_score, recall_score
-from torch import cuda as torch_cuda
-from torch import device as torch_device
-from torch import equal as torch_equal
-from torch import float32 as torch_float32
-from torch import isin as torch_isin
-from torch import load as torch_load
-from torch import nn as torch_nn
-from torch import optim as torch_optim
-from torch import tensor as torch_tensor
+from dgl import (  # geometric deep learning
+    AddReverse,
+    graph as dgl_graph,
+    heterograph as dgl_heterograph,
+    remove_edges as dgl_remove_edges,
+)
+from mgp import (  # Python API
+    Any as mgp_Any,
+    Label as mgp_Label,
+    List as mgp_List,
+    Map as mgp_Map,
+    Number as mgp_Number,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
+from sklearn.metrics import average_precision_score
+from torch import (
+    cuda as torch_cuda,
+    device as torch_device,
+    equal as torch_equal,
+    float32 as torch_float32,
+    isin as torch_isin,
+    load as torch_load,
+    nn as torch_nn,
+    optim as torch_optim,
+    tensor as torch_tensor,
+)
 
 from mage.link_prediction import (
     Activations,
@@ -46,7 +52,13 @@ from mage.link_prediction import (
     preprocess,
     proj_0,
 )
-from mage.link_prediction.link_prediction_util import compute_node_embeddings, reverse_relation, score_pair
+from mage.link_prediction.link_prediction_util import (
+    compute_node_embeddings,
+    confusion_counts,
+    reverse_relation,
+    score_pair,
+    zero_safe_rate,
+)
 from mage.link_prediction.models.gat import GAT
 from mage.link_prediction.models.graph_sage import GraphSAGE
 from mage.link_prediction.predictors.DotPredictor import DotPredictor
@@ -502,9 +514,10 @@ def recommend(
     # undefined for an empty selection or a selection without existing edges report 0 instead of aborting the results.
     precision_at_k, recall_at_k = 0.0, 0.0
     if top_scores:
-        top_classes = classify(torch_tensor(top_scores), threshold)
-        precision_at_k = precision_score(top_labels, top_classes, zero_division=0.0)
-        recall_at_k = recall_score(top_labels, top_classes, zero_division=0.0)
+        top_classes = classify(torch_tensor(top_scores), threshold).int().tolist()
+        _, false_positives, false_negatives, true_positives = confusion_counts(top_labels, top_classes)
+        precision_at_k = zero_safe_rate(true_positives, true_positives + false_positives)
+        recall_at_k = zero_safe_rate(true_positives, true_positives + false_negatives)
     f1_denominator = precision_at_k + recall_at_k
     f1_at_k = 2 * precision_at_k * recall_at_k / f1_denominator if f1_denominator > 0 else 0.0
     ap_text = "undefined (no existing edge among the recommendations)"
@@ -721,7 +734,7 @@ def process_help_function(
     type_: str,
     features: object,
     node_features_property: str,
-    reindex: dict[str, dict[str, dict[int, int]]],
+    reindex: dict,
     index_dgl_to_features: dict[str, dict[int, list[float]]],
 ) -> bool:
     """Helper function for mapping original Memgraph graph to DGL representation.
@@ -955,7 +968,7 @@ def reset_train_predict_parameters() -> bool:
 
 def conversion_to_dgl_test(
     graph: dgl_graph,
-    reindex: dict[str, dict[str, dict[int, int]]],
+    reindex: dict,
     ctx: mgp_ProcCtx,
     node_features_property: str,
 ) -> bool:

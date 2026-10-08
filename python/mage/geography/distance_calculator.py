@@ -1,11 +1,6 @@
 """Utilities for distance calculator."""
 
-from math import atan2 as math_atan2
-from math import cos as math_cos
-from math import isfinite as math_isfinite
-from math import pi as math_pi
-from math import sin as math_sin
-from math import sqrt as math_sqrt
+from math import atan2 as math_atan2, cos as math_cos, isfinite as math_isfinite, pi as math_pi, sin as math_sin, sqrt as math_sqrt
 
 KM_MULTIPLIER = 0.001
 LATITUDE = "lat"

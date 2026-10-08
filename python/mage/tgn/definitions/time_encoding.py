@@ -1,11 +1,7 @@
 """Utilities for time encoding."""
 
 from numpy import linspace as np_linspace
-from torch import cos as torch_cos
-from torch import device as torch_device
-from torch import from_numpy as torch_from_numpy
-from torch import nn
-from torch import zeros as torch_zeros
+from torch import cos as torch_cos, device as torch_device, from_numpy as torch_from_numpy, nn, zeros as torch_zeros
 
 
 # time encoding by GAT

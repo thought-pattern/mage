@@ -5,12 +5,14 @@ represents number of clusters you want to get, and "embedding" represents node p
 embedding of node is stored
 """
 
-from mgp import Number as mgp_Number
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
-from mgp import write_proc as mgp_write_proc
+from mgp import (
+    Number as mgp_Number,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+    write_proc as mgp_write_proc,
+)
 from sklearn.cluster import KMeans
 
 

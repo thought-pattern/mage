@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
 import subprocess
-import argparse
 
 WORK_DIRECTORY = os.getcwd()
 E2E_DIRECTORY = f"{WORK_DIRECTORY}/e2e"

@@ -1,21 +1,20 @@
 """Utilities for import util."""
 
 from datetime import date, datetime, time, timedelta
-from json import load as js_load
-from json import loads as js_loads
+from json import load as js_load, loads as js_loads
 from re import compile as re_compile
 
 from defusedxml import ElementTree as ET
 from gqlalchemy.memgraph_constants import MG_ENCRYPTED, MG_HOST, MG_PASSWORD, MG_PORT, MG_USERNAME
-from mgclient import MG_SSLMODE_DISABLE, MG_SSLMODE_REQUIRE
-from mgclient import Error as mgclient_Error
-from mgclient import connect as mgclient_connect
-from mgp import EdgeType as mgp_EdgeType
-from mgp import Map as mgp_Map
-from mgp import Nullable as mgp_Nullable
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import write_proc as mgp_write_proc
+from mgclient import MG_SSLMODE_DISABLE, MG_SSLMODE_REQUIRE, Error as mgclient_Error, connect as mgclient_connect
+from mgp import (
+    EdgeType as mgp_EdgeType,
+    Map as mgp_Map,
+    Nullable as mgp_Nullable,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    write_proc as mgp_write_proc,
+)
 
 from mage.export_import_util.parameters import Parameter
 from mage.export_import_util.temporal import convert_to_isoformat, convert_to_isoformat_graphML
@@ -230,8 +229,8 @@ def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record():
     try:
         with open(path, "r") as file:
             graph_objects = js_load(file)
-    except Exception as caught_error_318:
-        raise OSError("Could not open/read file.") from caught_error_318
+    except Exception as err:
+        raise OSError("Could not open/read file.") from err
 
     vertex_ids = dict()
 
@@ -452,8 +451,8 @@ def graphml(
 
     try:
         tree = ET.parse(path)
-    except Exception as caught_error_488:
-        raise OSError("Could not open/read file.") from caught_error_488
+    except Exception as err:
+        raise OSError("Could not open/read file.") from err
 
     root = tree.getroot()
     if root is None:

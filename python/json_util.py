@@ -2,22 +2,22 @@
 
 from datetime import date, datetime, time, timedelta
 from io import DEFAULT_BUFFER_SIZE, TextIOWrapper
-from json import dumps as json_dumps
-from json import load as json_load
-from json import loads as json_loads
+from json import dumps as json_dumps, load as json_load, loads as json_loads
 from pathlib import Path
 from time import monotonic as time_monotonic
 from urllib.request import Request, urlopen
 
-from mgp import Edge as mgp_Edge
-from mgp import List as mgp_List
-from mgp import Nullable as mgp_Nullable
-from mgp import Path as mgp_Path
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import function as mgp_function
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    Edge as mgp_Edge,
+    List as mgp_List,
+    Nullable as mgp_Nullable,
+    Path as mgp_Path,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    function as mgp_function,
+    read_proc as mgp_read_proc,
+)
 
 # A URL source is remote and unsized until it is read. These bounds own its acquisition: the whole fetch must finish
 # within the deadline (each blocking socket operation also times out at it), and the body may not exceed the byte

@@ -17,19 +17,18 @@ each scan will produce a temporary JSON file containing results.
 
 from argparse import ArgumentParser as argparse_ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from json import JSONDecodeError as json_JSONDecodeError
-from json import dump as json_dump
-from json import load as json_load
-from os import getcwd as os_getcwd
-from os import getenv as os_getenv
-from os import lstat as os_lstat
-from os import makedirs as os_makedirs
-from os import path as os_path
-from os import replace as os_replace
-from os import walk as os_walk
+from json import JSONDecodeError as json_JSONDecodeError, dump as json_dump, load as json_load
+from os import (
+    getcwd as os_getcwd,
+    getenv as os_getenv,
+    lstat as os_lstat,
+    makedirs as os_makedirs,
+    path as os_path,
+    replace as os_replace,
+    walk as os_walk,
+)
 from stat import S_ISLNK as stat_S_ISLNK
-from subprocess import PIPE as subprocess_PIPE
-from subprocess import run as subprocess_run
+from subprocess import PIPE as subprocess_PIPE, run as subprocess_run
 from uuid import uuid4 as uuid_uuid4
 
 from tqdm import tqdm

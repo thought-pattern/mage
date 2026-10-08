@@ -1,13 +1,8 @@
-#!/usr/bin/env python3
-
 """Utilities for test e2e correctness."""
 
 from argparse import ArgumentParser as argparse_ArgumentParser
-from os import chdir as os_chdir
-from os import environ as os_environ
-from os import getcwd as os_getcwd
-from subprocess import CalledProcessError as subprocess_CalledProcessError
-from subprocess import run as subprocess_run
+from os import chdir as os_chdir, environ as os_environ, getcwd as os_getcwd
+from subprocess import CalledProcessError as subprocess_CalledProcessError, run as subprocess_run
 from sys import exit as sys_exit
 
 WORK_DIRECTORY = os_getcwd()
@@ -73,9 +68,9 @@ def main(
 
     try:
         subprocess_run(command, check=True)
-    except subprocess_CalledProcessError as e:
-        print(f"Error: {e}")
-        sys_exit(e.returncode)
+    except subprocess_CalledProcessError as err:
+        print(f"Error: {err}")
+        sys_exit(err.returncode)
     return False
 
 

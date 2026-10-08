@@ -2,8 +2,7 @@
 
 from importlib import import_module
 
-from torch import Tensor as torch_Tensor
-from torch import set_grad_enabled as torch_set_grad_enabled
+from torch import Tensor as torch_Tensor, set_grad_enabled as torch_set_grad_enabled
 
 
 def train_epoch(
@@ -39,8 +38,8 @@ def train_epoch(
         raise ValueError("num_samples must be a non-empty dict")
     try:
         loader_module = import_module("torch_geometric.loader")
-    except ModuleNotFoundError as error:
-        raise ModuleNotFoundError("Node-classification training requires torch-geometric") from error
+    except ModuleNotFoundError as err:
+        raise ModuleNotFoundError("Node-classification training requires torch-geometric") from err
     loader_type = getattr(loader_module, "HGTLoader", False)
     if not callable(loader_type):
         raise ImportError("torch_geometric.loader does not provide HGTLoader")

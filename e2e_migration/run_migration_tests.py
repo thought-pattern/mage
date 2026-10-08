@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Simple migration test runner for e2e_migration tests.
 This script runs pytest directly without Docker management.

@@ -1,8 +1,7 @@
 """Utilities for inductive model."""
 
 from mgp import List as mgp_List
-from torch import nn as torch_nn
-from torch import Tensor as torch_Tensor
+from torch import Tensor as torch_Tensor, nn as torch_nn
 from torch.nn import functional as F
 from torch_geometric import nn as torch_geometric_nn
 

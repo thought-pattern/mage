@@ -2,8 +2,7 @@
 
 from datetime import timedelta as datetime_timedelta
 
-from pytest import mark as pytest_mark
-from pytest import raises as pytest_raises
+from pytest import mark as pytest_mark, raises as pytest_raises
 
 from mage.date.constants import Units
 from mage.date.unit_conversion import to_int, to_timedelta

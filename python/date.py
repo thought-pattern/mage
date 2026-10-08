@@ -1,20 +1,19 @@
 """Utilities for date."""
 
-from datetime import datetime as datetime_datetime
-from datetime import timedelta as datetime_timedelta
-from datetime import timezone as datetime_timezone
+from datetime import datetime as datetime_datetime, timedelta as datetime_timedelta, timezone as datetime_timezone
 from enum import IntEnum
 from re import sub as re_sub
 from zoneinfo import ZoneInfo
 
-from mgp import List as mgp_List
-from mgp import Nullable as mgp_Nullable
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import function as mgp_function
-from mgp import read_proc as mgp_read_proc
-from pytz import all_timezones as pytz_all_timezones
-from pytz import timezone as pytz_timezone
+from mgp import (
+    List as mgp_List,
+    Nullable as mgp_Nullable,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    function as mgp_function,
+    read_proc as mgp_read_proc,
+)
+from pytz import all_timezones as pytz_all_timezones, timezone as pytz_timezone
 
 from mage.date.constants import Epoch
 from mage.date.unit_conversion import to_int, to_timedelta
@@ -262,8 +261,8 @@ def convert_format(temporal: mgp_Nullable[str], current_format: str, convert_to:
 
         return converted
 
-    except Exception as e:
-        raise Exception(f"Error converting '{temporal}' from '{current_format}' to '{convert_to}': {e}") from e
+    except Exception as err:
+        raise Exception(f"Error converting '{temporal}' from '{current_format}' to '{convert_to}': {err}") from err
 
 
 @mgp_read_proc

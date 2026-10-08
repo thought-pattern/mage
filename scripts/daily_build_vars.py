@@ -1,8 +1,7 @@
 """Utilities for daily build vars."""
 
 from argparse import ArgumentParser as argparse_ArgumentParser
-from json import JSONDecodeError as json_JSONDecodeError
-from json import loads as json_loads
+from json import JSONDecodeError as json_JSONDecodeError, loads as json_loads
 from os import path as os_path
 from subprocess import run as subprocess_run
 

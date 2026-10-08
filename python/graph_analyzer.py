@@ -4,37 +4,40 @@ from heapq import nlargest
 from inspect import cleandoc
 from itertools import chain, repeat
 from operator import itemgetter
-from sys import stderr as sys_stderr
-from sys import version as sys_version
+from sys import stderr as sys_stderr, version as sys_version
 
-from mgp import Edge as mgp_Edge
-from mgp import List as mgp_List
-from mgp import Nullable as mgp_Nullable
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    Edge as mgp_Edge,
+    List as mgp_List,
+    Nullable as mgp_Nullable,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
 # Imported last because it also depends on networkx.
 from mgp_networkx import MemgraphMultiDiGraph
 
 try:
-    from networkx import Graph as nx_Graph
-    from networkx import MultiDiGraph as nx_MultiDiGraph
-    from networkx import algorithms as nx_algorithms
-    from networkx import articulation_points as nx_articulation_points
-    from networkx import bridges as nx_bridges
-    from networkx import is_biconnected as nx_is_biconnected
-    from networkx import is_strongly_connected as nx_is_strongly_connected
-    from networkx import is_weakly_connected as nx_is_weakly_connected
-    from networkx import number_of_edges as nx_number_of_edges
-    from networkx import number_of_nodes as nx_number_of_nodes
-    from networkx import subgraph_view as nx_subgraph_view
-except ImportError as import_error:
+    from networkx import (
+        Graph as nx_Graph,
+        MultiDiGraph as nx_MultiDiGraph,
+        algorithms as nx_algorithms,
+        articulation_points as nx_articulation_points,
+        bridges as nx_bridges,
+        is_biconnected as nx_is_biconnected,
+        is_strongly_connected as nx_is_strongly_connected,
+        is_weakly_connected as nx_is_weakly_connected,
+        number_of_edges as nx_number_of_edges,
+        number_of_nodes as nx_number_of_nodes,
+        subgraph_view as nx_subgraph_view,
+    )
+except ImportError:
     sys_stderr.write(
         "\nNOTE: Please install networkx to be able to use graph_analyzer module. Using Python:\n" + sys_version + "\n"
     )
-    raise import_error from import_error
+    raise
 
 
 MAX_LIST_SIZE = 10
@@ -166,7 +169,7 @@ def internal_avg_degree(g: nx_MultiDiGraph) -> tuple[str, float]:
     return "Average degree", avg_degree
 
 
-def internal_sorted_nodes_degree(g: nx_MultiDiGraph) -> tuple[str, list[tuple[object, object]]]:
+def internal_sorted_nodes_degree(g: nx_MultiDiGraph) -> tuple[str, list]:
     """Returns the MAX_LIST_SIZE highest total-degree nodes, descending. [(node_id, degree), ...]"""
     # nlargest equals a stable descending sort truncated to the shown prefix, so ties keep node order.
     nodes_degree = nlargest(MAX_LIST_SIZE, g.degree(), key=itemgetter(1))

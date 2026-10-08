@@ -3,8 +3,8 @@
 from math import isfinite as math_isfinite
 
 from mage.graph_coloring_module.algorithms.greedy.LDO import LDO
-from mage.graph_coloring_module.algorithms.greedy.random import Random
 from mage.graph_coloring_module.algorithms.greedy.SDO import SDO
+from mage.graph_coloring_module.algorithms.greedy.random import Random
 from mage.graph_coloring_module.algorithms.meta_heuristics.quantum_annealing import QA
 from mage.graph_coloring_module.error_functions.conflict_error import ConflictError
 from mage.graph_coloring_module.exceptions import IncorrectParametersException

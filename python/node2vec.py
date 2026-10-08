@@ -4,13 +4,15 @@ from inspect import cleandoc
 from itertools import chain, repeat
 
 from gensim import models as gensim_models
-from mgp import List as mgp_List
-from mgp import Number as mgp_Number
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
-from mgp import write_proc as mgp_write_proc
+from mgp import (
+    List as mgp_List,
+    Number as mgp_Number,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+    write_proc as mgp_write_proc,
+)
 
 from mage.node2vec.graph import Graph, GraphHolder
 from mage.node2vec.second_order_random_walk import SecondOrderRandomWalk
@@ -302,7 +304,8 @@ def help() -> mgp_Record(name=str, value=str):
     records = []
     for func in (help, get_embeddings):
         title = "Procedure '{}'".format(func.__name__)
-        lines = cleandoc(func.__doc__).splitlines()
+        # Python strips docstrings under -OO, which leaves that procedure without manual lines.
+        lines = cleandoc(func.__doc__ or "").splitlines()
         records.extend(mgp_Record(name=name, value=line) for name, line in zip(chain([title], repeat("")), lines, strict=False))
 
     return records

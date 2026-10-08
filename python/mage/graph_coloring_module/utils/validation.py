@@ -1,7 +1,6 @@
 """Utilities for validation."""
 
-from inspect import Parameter as inspect_Parameter
-from inspect import signature as inspect_signature
+from inspect import Parameter as inspect_Parameter, signature as inspect_signature
 
 from mage.graph_coloring_module.exceptions import MissingParametersException
 

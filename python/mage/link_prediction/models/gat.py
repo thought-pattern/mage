@@ -3,10 +3,7 @@
 from dgl import graph as dgl_graph
 from dgl.nn import HeteroGraphConv
 from dgl.nn.pytorch import GATConv
-from torch import Tensor as torch_Tensor
-from torch import device as torch_device
-from torch import mean as torch_mean
-from torch import nn as torch_nn
+from torch import Tensor as torch_Tensor, device as torch_device, mean as torch_mean, nn as torch_nn
 
 
 class GAT(torch_nn.Module):

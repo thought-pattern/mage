@@ -1,13 +1,8 @@
 """Utilities for temporal."""
 
-from datetime import date as datetime_date
-from datetime import datetime as datetime_datetime
-from datetime import time as datetime_time
-from datetime import timedelta as datetime_timedelta
+from datetime import date as datetime_date, datetime as datetime_datetime, time as datetime_time, timedelta as datetime_timedelta
 
-from mgp import Any as mgp_Any
-from mgp import Record as mgp_Record
-from mgp import read_proc as mgp_read_proc
+from mgp import Any as mgp_Any, Record as mgp_Record, read_proc as mgp_read_proc
 
 from mage.date.constants import Epoch
 

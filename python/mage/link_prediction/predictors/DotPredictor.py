@@ -1,10 +1,7 @@
 """Utilities for DotPredictor."""
 
-from dgl import function as fn
-from dgl import graph as dgl_graph
-from torch import Tensor as torch_Tensor
-from torch import dot as torch_dot
-from torch import nn
+from dgl import function as fn, graph as dgl_graph
+from torch import Tensor as torch_Tensor, dot as torch_dot, nn
 
 from mage.link_prediction.constants import Predictors
 

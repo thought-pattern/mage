@@ -1,7 +1,6 @@
 """Tests for test distance calculator."""
 
-from pytest import approx as pytest_approx
-from pytest import raises as pytest_raises
+from pytest import approx as pytest_approx, raises as pytest_raises
 
 from mage.geography import (
     InvalidCoordinatesException,

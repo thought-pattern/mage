@@ -1,18 +1,15 @@
 """Utilities for mgp networkx."""
 
 from collections import abc as collections_abc
-from sys import stderr as sys_stderr
-from sys import version as sys_version
+from sys import stderr as sys_stderr, version as sys_version
 
-from mgp import Edge as mgp_Edge
-from mgp import Vertex as mgp_Vertex
+from mgp import Edge as mgp_Edge, Vertex as mgp_Vertex
 
 try:
-    from networkx import DiGraph as nx_DiGraph
-    from networkx import MultiDiGraph as nx_MultiDiGraph
-except ImportError as import_error:
+    from networkx import DiGraph as nx_DiGraph, MultiDiGraph as nx_MultiDiGraph
+except ImportError:
     sys_stderr.write(f"NOTE: Please install networkx to be able touse graph_analyzer module. Using Python: {sys_version}")
-    raise import_error from import_error
+    raise
 
 
 class MemgraphAdjlistOuterDict(collections_abc.Mapping):

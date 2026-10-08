@@ -1,7 +1,6 @@
 """Utilities for flags."""
 
-from subprocess import PIPE as subprocess_PIPE
-from subprocess import run as subprocess_run
+from subprocess import PIPE as subprocess_PIPE, run as subprocess_run
 from sys import argv as sys_argv
 from xml.etree import ElementTree as ET
 

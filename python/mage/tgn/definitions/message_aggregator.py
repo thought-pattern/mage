@@ -1,9 +1,6 @@
 """Utilities for message aggregator."""
 
-from torch import Tensor as torch_Tensor
-from torch import cat as torch_cat
-from torch import mean as torch_mean
-from torch import nn
+from torch import Tensor as torch_Tensor, cat as torch_cat, mean as torch_mean, nn
 
 
 class MessageAggregator(nn.Module):

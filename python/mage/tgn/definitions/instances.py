@@ -2,11 +2,8 @@
 Instances of TGN
 """
 
-from numpy import concatenate as np_concatenate
-from numpy import ndarray as np_ndarray
-from torch import Tensor as torch_Tensor
-from torch import device as torch_device
-from torch import nn
+from numpy import concatenate as np_concatenate, ndarray as np_ndarray
+from torch import Tensor as torch_Tensor, device as torch_device, nn
 
 from mage.tgn.constants import (
     MemoryUpdaterType,

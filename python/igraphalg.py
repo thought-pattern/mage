@@ -1,12 +1,14 @@
 """Utilities for igraphalg."""
 
-from mgp import List as mgp_List
-from mgp import Nullable as mgp_Nullable
-from mgp import Number as mgp_Number
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    List as mgp_List,
+    Nullable as mgp_Nullable,
+    Number as mgp_Number,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 from mgp_igraph import (
     CommunityDetectionObjectiveFunctionOptions,
     InvalidCommunityDetectionObjectiveFunctionException,

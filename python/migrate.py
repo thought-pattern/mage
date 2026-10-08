@@ -2,15 +2,11 @@
 
 from base64 import b64encode as base64_b64encode
 from csv import reader as csv_reader_2
-from datetime import date as datetime_date
-from datetime import datetime as datetime_datetime
-from datetime import time as datetime_time
-from datetime import timedelta as datetime_timedelta
+from datetime import date as datetime_date, datetime as datetime_datetime, time as datetime_time, timedelta as datetime_timedelta
 from decimal import Decimal
 from functools import partial
 from hashlib import sha256 as hashlib_sha256
-from io import BytesIO as io_BytesIO
-from io import TextIOWrapper as io_TextIOWrapper
+from io import BytesIO as io_BytesIO, TextIOWrapper as io_TextIOWrapper
 from ipaddress import ip_address
 from itertools import islice
 from json import load as json_load
@@ -21,15 +17,16 @@ from threading import Lock
 from boto3 import client as boto3_client
 from duckdb import connect as duckDB_connect
 from gqlalchemy import Memgraph
-from mgp import Any as mgp_Any
-from mgp import Map as mgp_Map
-from mgp import Nullable as mgp_Nullable
-from mgp import Record as mgp_Record
-from mgp import add_batch_read_proc as mgp_add_batch_read_proc
+from mgp import (
+    Any as mgp_Any,
+    Map as mgp_Map,
+    Nullable as mgp_Nullable,
+    Record as mgp_Record,
+    add_batch_read_proc as mgp_add_batch_read_proc,
+)
 from mysql import connector as mysql_connector
 from neo4j import GraphDatabase
-from neo4j.time import Date as Neo4jDate
-from neo4j.time import DateTime as Neo4jDateTime
+from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
 from oracledb import connect as oracledb_connect
 from psycopg2 import connect as psycopg2_connect
 from pyarrow import flight
@@ -537,6 +534,8 @@ def open_neo4j_stream(stream: dict, label_or_rel_or_query: str, config: mgp_Map,
     username = neo4j_config.get(Constants.USERNAME, "neo4j")
     password = neo4j_config.get(Constants.PASSWORD, "password")
     database = neo4j_config.get(Constants.DATABASE, "")
+    if not isinstance(username, str) or not isinstance(password, str):
+        raise ValueError("Neo4j username and password must be strings")
 
     driver = GraphDatabase.driver(build_neo4j_uri(neo4j_config), auth=(username, password))
     stream.setdefault("closers", []).append(driver.close)

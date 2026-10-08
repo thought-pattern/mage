@@ -1,17 +1,18 @@
 """Utilities for nxalg."""
 
 from importlib import import_module as imported_import_module
-from sys import stderr as sys_stderr
-from sys import version as sys_version
+from sys import stderr as sys_stderr, version as sys_version
 
-from mgp import Edge as mgp_Edge
-from mgp import List as mgp_List
-from mgp import Nullable as mgp_Nullable
-from mgp import Number as mgp_Number
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    Edge as mgp_Edge,
+    List as mgp_List,
+    Nullable as mgp_Nullable,
+    Number as mgp_Number,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
 # Imported last because it also depends on networkx.
 from mgp_networkx import (
@@ -21,104 +22,100 @@ from mgp_networkx import (
 )
 
 try:
-    from networkx import DiGraph as nx_DiGraph
-    from networkx import MultiDiGraph as nx_MultiDiGraph
-    from networkx import NetworkXNoCycle as nx_NetworkXNoCycle
-    from networkx import all_shortest_paths as nx_all_shortest_paths
-    from networkx import all_simple_paths as nx_all_simple_paths
-    from networkx import ancestors as nx_ancestors
-    from networkx import betweenness_centrality as nx_betweenness_centrality
-    from networkx import bfs_edges as nx_bfs_edges
-    from networkx import bfs_predecessors as nx_bfs_predecessors
-    from networkx import bfs_successors as nx_bfs_successors
-    from networkx import bfs_tree as nx_bfs_tree
-    from networkx import biconnected_components as nx_biconnected_components
-    from networkx import bridges as nx_bridges
-    from networkx import center as nx_center
-    from networkx import chain_decomposition as nx_chain_decomposition
-    from networkx import check_planarity as nx_check_planarity
-    from networkx import clustering as nx_clustering
-    from networkx import communicability as nx_communicability
-    from networkx import community as nx_community
-    from networkx import core_number as nx_core_number
     from networkx import (
+        DiGraph as nx_DiGraph,
+        MultiDiGraph as nx_MultiDiGraph,
+        NetworkXNoCycle as nx_NetworkXNoCycle,
+        all_shortest_paths as nx_all_shortest_paths,
+        all_simple_paths as nx_all_simple_paths,
+        ancestors as nx_ancestors,
+        betweenness_centrality as nx_betweenness_centrality,
+        bfs_edges as nx_bfs_edges,
+        bfs_predecessors as nx_bfs_predecessors,
+        bfs_successors as nx_bfs_successors,
+        bfs_tree as nx_bfs_tree,
+        biconnected_components as nx_biconnected_components,
+        bridges as nx_bridges,
+        center as nx_center,
+        chain_decomposition as nx_chain_decomposition,
+        check_planarity as nx_check_planarity,
+        clustering as nx_clustering,
+        communicability as nx_communicability,
+        community as nx_community,
+        core_number as nx_core_number,
         degree_assortativity_coefficient as nx_degree_assortativity_coefficient,
-    )
-    from networkx import descendants as nx_descendants
-    from networkx import dfs_postorder_nodes as nx_dfs_postorder_nodes
-    from networkx import dfs_predecessors as nx_dfs_predecessors
-    from networkx import dfs_preorder_nodes as nx_dfs_preorder_nodes
-    from networkx import dfs_successors as nx_dfs_successors
-    from networkx import dfs_tree as nx_dfs_tree
-    from networkx import diameter as nx_diameter
-    from networkx import dominance_frontiers as nx_dominance_frontiers
-    from networkx import dominating_set as nx_dominating_set
-    from networkx import edge_bfs as nx_edge_bfs
-    from networkx import edge_dfs as nx_edge_dfs
-    from networkx import find_cliques as nx_find_cliques
-    from networkx import find_cycle as nx_find_cycle
-    from networkx import flow_hierarchy as nx_flow_hierarchy
-    from networkx import global_efficiency as nx_global_efficiency
-    from networkx import greedy_color as nx_greedy_color
-    from networkx import has_eulerian_path as nx_has_eulerian_path
-    from networkx import has_path as nx_has_path
-    from networkx import immediate_dominators as nx_immediate_dominators
-    from networkx import is_arborescence as nx_is_arborescence
-    from networkx import is_at_free as nx_is_at_free
-    from networkx import is_bipartite as nx_is_bipartite
-    from networkx import is_branching as nx_is_branching
-    from networkx import is_chordal as nx_is_chordal
-    from networkx import is_distance_regular as nx_is_distance_regular
-    from networkx import is_edge_cover as nx_is_edge_cover
-    from networkx import is_eulerian as nx_is_eulerian
-    from networkx import is_forest as nx_is_forest
-    from networkx import is_isolate as nx_is_isolate
-    from networkx import is_isomorphic as nx_is_isomorphic
-    from networkx import is_semieulerian as nx_is_semieulerian
-    from networkx import is_simple_path as nx_is_simple_path
-    from networkx import is_strongly_regular as nx_is_strongly_regular
-    from networkx import is_tree as nx_is_tree
-    from networkx import isolates as nx_isolates
-    from networkx import jaccard_coefficient as nx_jaccard_coefficient
-    from networkx import k_components as nx_k_components
-    from networkx import k_edge_components as nx_k_edge_components
-    from networkx import local_efficiency as nx_local_efficiency
-    from networkx import lowest_common_ancestor as nx_lowest_common_ancestor
-    from networkx import maximal_matching as nx_maximal_matching
-    from networkx import minimum_spanning_tree as nx_minimum_spanning_tree
-    from networkx import multi_source_dijkstra_path as nx_multi_source_dijkstra_path
-    from networkx import (
+        descendants as nx_descendants,
+        dfs_postorder_nodes as nx_dfs_postorder_nodes,
+        dfs_predecessors as nx_dfs_predecessors,
+        dfs_preorder_nodes as nx_dfs_preorder_nodes,
+        dfs_successors as nx_dfs_successors,
+        dfs_tree as nx_dfs_tree,
+        diameter as nx_diameter,
+        dominance_frontiers as nx_dominance_frontiers,
+        dominating_set as nx_dominating_set,
+        edge_bfs as nx_edge_bfs,
+        edge_dfs as nx_edge_dfs,
+        find_cliques as nx_find_cliques,
+        find_cycle as nx_find_cycle,
+        flow_hierarchy as nx_flow_hierarchy,
+        global_efficiency as nx_global_efficiency,
+        greedy_color as nx_greedy_color,
+        has_eulerian_path as nx_has_eulerian_path,
+        has_path as nx_has_path,
+        immediate_dominators as nx_immediate_dominators,
+        is_arborescence as nx_is_arborescence,
+        is_at_free as nx_is_at_free,
+        is_bipartite as nx_is_bipartite,
+        is_branching as nx_is_branching,
+        is_chordal as nx_is_chordal,
+        is_distance_regular as nx_is_distance_regular,
+        is_edge_cover as nx_is_edge_cover,
+        is_eulerian as nx_is_eulerian,
+        is_forest as nx_is_forest,
+        is_isolate as nx_is_isolate,
+        is_isomorphic as nx_is_isomorphic,
+        is_semieulerian as nx_is_semieulerian,
+        is_simple_path as nx_is_simple_path,
+        is_strongly_regular as nx_is_strongly_regular,
+        is_tree as nx_is_tree,
+        isolates as nx_isolates,
+        jaccard_coefficient as nx_jaccard_coefficient,
+        k_components as nx_k_components,
+        k_edge_components as nx_k_edge_components,
+        local_efficiency as nx_local_efficiency,
+        lowest_common_ancestor as nx_lowest_common_ancestor,
+        maximal_matching as nx_maximal_matching,
+        minimum_spanning_tree as nx_minimum_spanning_tree,
+        multi_source_dijkstra_path as nx_multi_source_dijkstra_path,
         multi_source_dijkstra_path_length as nx_multi_source_dijkstra_path_length,
-    )
-    from networkx import node_boundary as nx_node_boundary
-    from networkx import node_connectivity as nx_node_connectivity
-    from networkx import node_expansion as nx_node_expansion
-    from networkx import non_randomness as nx_non_randomness
-    from networkx import pagerank as nx_pagerank
-    from networkx import reciprocity as nx_reciprocity
-    from networkx import shortest_path as nx_shortest_path
-    from networkx import shortest_path_length as nx_shortest_path_length
-    from networkx import simple_cycles as nx_simple_cycles
-    from networkx import (
+        node_boundary as nx_node_boundary,
+        node_connectivity as nx_node_connectivity,
+        node_expansion as nx_node_expansion,
+        non_randomness as nx_non_randomness,
+        pagerank as nx_pagerank,
+        reciprocity as nx_reciprocity,
+        shortest_path as nx_shortest_path,
+        shortest_path_length as nx_shortest_path_length,
+        simple_cycles as nx_simple_cycles,
         strongly_connected_components as nx_strongly_connected_components,
+        subgraph_view as nx_subgraph_view,
+        topological_sort as nx_topological_sort,
+        tournament as nx_tournament,
+        triadic_census as nx_triadic_census,
+        voronoi_cells as nx_voronoi_cells,
+        weakly_connected_components as nx_weakly_connected_components,
+        wiener_index as nx_wiener_index,
     )
-    from networkx import subgraph_view as nx_subgraph_view
-    from networkx import topological_sort as nx_topological_sort
-    from networkx import tournament as nx_tournament
-    from networkx import triadic_census as nx_triadic_census
-    from networkx import voronoi_cells as nx_voronoi_cells
-    from networkx import weakly_connected_components as nx_weakly_connected_components
-    from networkx import wiener_index as nx_wiener_index
 
     numpy = imported_import_module("numpy")
     scipy = imported_import_module("scipy")
-except ImportError as import_error:
+except ImportError:
     sys_stderr.write(
         f"NOTE: Please install networkx, numpy, scipy to be able to "
         f"use proxied NetworkX algorithms. E.g., CALL nxalg.pagerank(...).\n"
         f"Using Python:\n{sys_version}\n"
     )
-    raise import_error from import_error
+    raise
 
 
 # Optional nullable procedure arguments default to Cypher null, the only default Memgraph admits for a nullable
@@ -247,6 +244,8 @@ def clustering(
 ) -> mgp_Record(node=mgp_Vertex, clustering=mgp_Number):
     # A list or null `nodes` always makes NetworkX return a per-node dict.
     clustering_values = nx_clustering(MemgraphDiGraph(ctx=ctx), nodes=nodes, weight=weight)
+    if not isinstance(clustering_values, dict):
+        raise RuntimeError("NetworkX clustering returned one value where a per-node mapping was expected")
     computed_return_value = [mgp_Record(node=n, clustering=c) for n, c in clustering_values.items()]
     return computed_return_value
 

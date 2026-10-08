@@ -3,15 +3,11 @@ Migration testing module for e2e_migration tests.
 Tests the migration of data from various databases to Memgraph using the migrate module.
 """
 
-from logging import INFO as logging_INFO
-from logging import basicConfig as logging_basicConfig
-from logging import getLogger as logging_getLogger
+from logging import INFO as logging_INFO, basicConfig as logging_basicConfig, getLogger as logging_getLogger
 from pathlib import Path
 
 from gqlalchemy import Memgraph
-from pytest import fail as pytest_fail
-from pytest import mark as pytest_mark
-from pytest import param as pytest_param
+from pytest import fail as pytest_fail, mark as pytest_mark, param as pytest_param
 from yaml import safe_load as yaml_safe_load
 
 
@@ -28,8 +24,8 @@ def load_test_config(test_file_path: str) -> dict[str, object]:
                 raise TypeError("migration test configuration keys must be strings")
             normalized_config[key] = value
         return normalized_config
-    except Exception as e:
-        logger.error(f"Failed to load test config from {test_file_path}: {e}")
+    except Exception as err:
+        logger.error(f"Failed to load test config from {test_file_path}: {err}")
         raise
     return {}
 
@@ -122,10 +118,10 @@ def test_migration(test_dir: str, test_file: str):
 
         logger.info("Data migration to Memgraph successfully validated!")
 
-    except Exception as e:
+    except Exception as err:
         if expect_exception:
             # Expected exception - test passes
-            logger.info(f"Migration failed as expected: {e}")
+            logger.info(f"Migration failed as expected: {err}")
             return False
         else:
             # Unexpected failure - re-raise the exception

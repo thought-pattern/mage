@@ -1,7 +1,6 @@
 """Utilities for metrics."""
 
-from torch import Tensor as torch_Tensor
-from torch import zeros as torch_zeros
+from torch import Tensor as torch_Tensor, zeros as torch_zeros
 from torchmetrics import AUC, Accuracy, F1Score, Precision, Recall
 
 METRICS = {

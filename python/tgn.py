@@ -51,34 +51,40 @@ from enum import Enum as enum_Enum
 from math import ceil
 from time import time as time_time
 
-from mgp import Edge as mgp_Edge
-from mgp import List as mgp_List
-from mgp import Map as mgp_Map
-from mgp import Number as mgp_Number
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
-from numpy import array as np_array
-from numpy import ndarray as np_ndarray
-from numpy import concatenate as np_concatenate
-from numpy import empty as np_empty
-from numpy import ones as np_ones
-from numpy import random as np_random
-from numpy import rint as np_rint
-from numpy import sum as np_sum
-from numpy import zeros as np_zeros
-from torch import Tensor as torch_Tensor
-from torch import cat as torch_cat
-from torch import cuda as torch_cuda
-from torch import device as torch_device
-from torch import float as torch_float
-from torch import nn as torch_nn
-from torch import no_grad as torch_no_grad
-from torch import ones as torch_ones
-from torch import optim as torch_optim
-from torch import tensor as torch_tensor
-from torch import zeros as torch_zeros
+from mgp import (
+    Edge as mgp_Edge,
+    List as mgp_List,
+    Map as mgp_Map,
+    Number as mgp_Number,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
+from numpy import (
+    array as np_array,
+    concatenate as np_concatenate,
+    empty as np_empty,
+    ndarray as np_ndarray,
+    ones as np_ones,
+    random as np_random,
+    rint as np_rint,
+    sum as np_sum,
+    zeros as np_zeros,
+)
+from torch import (
+    Tensor as torch_Tensor,
+    cat as torch_cat,
+    cuda as torch_cuda,
+    device as torch_device,
+    float as torch_float,
+    nn as torch_nn,
+    no_grad as torch_no_grad,
+    ones as torch_ones,
+    optim as torch_optim,
+    tensor as torch_tensor,
+    zeros as torch_zeros,
+)
 
 from mage.tgn.constants import (
     MemoryUpdaterType,

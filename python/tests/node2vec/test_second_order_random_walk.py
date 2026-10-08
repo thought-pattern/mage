@@ -1,8 +1,6 @@
 """Tests for test second order random walk."""
 
-from numpy import all as np_all
-from numpy import array as np_array
-from numpy import isclose as np_isclose
+from numpy import all as np_all, array as np_array, isclose as np_isclose
 from pytest import mark as pytest_mark
 
 from mage.node2vec.graph import GraphHolder

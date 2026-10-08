@@ -15,10 +15,7 @@ from time import monotonic as time_monotonic
 from urllib import request as urllib_request
 
 from defusedxml import ElementTree as ET
-from mgp import Map as mgp_Map
-from mgp import Record as mgp_Record
-from mgp import function as mgp_function
-from mgp import read_proc as mgp_read_proc
+from mgp import Map as mgp_Map, Record as mgp_Record, function as mgp_function, read_proc as mgp_read_proc
 
 DEFAULT_ARGUMENT_DICT = {}
 
@@ -140,8 +137,8 @@ def xpath_search(root, xpath_expression):
     try:
         result = root.findall(xpath_expression)
         return result
-    except Exception as e:
-        raise ValueError(f"XPath search error: {e}") from e
+    except Exception as err:
+        raise ValueError(f"XPath search error: {err}") from err
 
 
 @mgp_read_proc

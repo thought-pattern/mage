@@ -1,25 +1,24 @@
 """Utilities for travelling salesman."""
 
 from itertools import combinations as itertools_combinations
-from sys import stderr as sys_stderr
-from sys import version as sys_version
+from sys import stderr as sys_stderr, version as sys_version
 
-from numpy import ndarray as np_ndarray
-from numpy import shape as np_shape
-from numpy import zeros as np_zeros
+from numpy import ndarray as np_ndarray, shape as np_shape, zeros as np_zeros
 
 from mage.geography import calculate_distance_between_points
 
 try:
-    from networkx import Graph as nx_Graph
-    from networkx import MultiGraph as nx_MultiGraph
-    from networkx import dfs_preorder_nodes as nx_dfs_preorder_nodes
-    from networkx import eulerian_path as nx_eulerian_path
-    from networkx import max_weight_matching as nx_max_weight_matching
-    from networkx import minimum_spanning_tree as nx_minimum_spanning_tree
-except ImportError as import_error:
+    from networkx import (
+        Graph as nx_Graph,
+        MultiGraph as nx_MultiGraph,
+        dfs_preorder_nodes as nx_dfs_preorder_nodes,
+        eulerian_path as nx_eulerian_path,
+        max_weight_matching as nx_max_weight_matching,
+        minimum_spanning_tree as nx_minimum_spanning_tree,
+    )
+except ImportError:
     sys_stderr.write(f"NOTE: Please install networkx to be able touse graph_analyzer module. Using Python: {sys_version}")
-    raise import_error from import_error
+    raise
 
 
 def create_distance_matrix(points: list[dict[str, float]]):

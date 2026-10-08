@@ -1,7 +1,6 @@
 """Tests for test individual."""
 
-from pytest import mark as pytest_mark
-from pytest import raises as pytest_raises
+from pytest import mark as pytest_mark, raises as pytest_raises
 
 from mage.graph_coloring_module import Graph, Individual
 from mage.graph_coloring_module.exceptions import (

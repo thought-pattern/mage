@@ -207,8 +207,8 @@ def main(image_type: str) -> bool:
         raise RuntimeError("CURRENT_BUILD_DATE must be set")
     try:
         date = int(date_value)
-    except ValueError as caught_error:
-        raise RuntimeError("CURRENT_BUILD_DATE must be an integer in YYYYMMDD form") from caught_error
+    except ValueError as err:
+        raise RuntimeError("CURRENT_BUILD_DATE must be an integer in YYYYMMDD form") from err
 
     # TODO: add individual test results and URL to each one
     tests = os_getenv("TEST_RESULT")

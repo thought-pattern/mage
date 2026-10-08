@@ -14,17 +14,17 @@ metadata files which cve-bin-tool would normally look for (`valid_files`).
 """
 
 from argparse import ArgumentParser as argparse_ArgumentParser
-from json import JSONDecodeError as json_JSONDecodeError
-from json import load as json_load
-from os import getcwd as os_getcwd
-from os import getenv as os_getenv
-from os import makedirs as os_makedirs
-from os import path as os_path
-from os import replace as os_replace
-from os import walk as os_walk
+from json import JSONDecodeError as json_JSONDecodeError, load as json_load
+from os import (
+    getcwd as os_getcwd,
+    getenv as os_getenv,
+    makedirs as os_makedirs,
+    path as os_path,
+    replace as os_replace,
+    walk as os_walk,
+)
 from shutil import copy2 as shutil_copy2
-from subprocess import PIPE as subprocess_PIPE
-from subprocess import run as subprocess_run
+from subprocess import PIPE as subprocess_PIPE, run as subprocess_run
 from tempfile import TemporaryDirectory
 
 from cve_bin_tool.parsers.parse import valid_files as cbt_valid_files

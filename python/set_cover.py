@@ -1,9 +1,6 @@
 """Utilities for set cover."""
 
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from mgp import ProcCtx as mgp_ProcCtx, Record as mgp_Record, Vertex as mgp_Vertex, read_proc as mgp_read_proc
 
 from mage.constraint_programming.solver import (
     GekkoMatchingProblem,
