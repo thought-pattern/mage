@@ -1,7 +1,7 @@
 """Utilities for nxalg."""
 
 from importlib import import_module as imported_import_module
-from sys import stderr as sys_stderr, version as sys_version
+from sys import stderr as sys_stderr
 
 from mgp import (
     Edge as mgp_Edge,
@@ -111,9 +111,8 @@ try:
     scipy = imported_import_module("scipy")
 except ImportError:
     sys_stderr.write(
-        f"NOTE: Please install networkx, numpy, scipy to be able to "
-        f"use proxied NetworkX algorithms. E.g., CALL nxalg.pagerank(...).\n"
-        f"Using Python:\n{sys_version}\n"
+        "NOTE: Please install networkx, numpy, scipy to be able to "
+        "use proxied NetworkX algorithms. E.g., CALL nxalg.pagerank(...).\n"
     )
     raise
 

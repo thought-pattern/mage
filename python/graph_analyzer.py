@@ -4,7 +4,7 @@ from heapq import nlargest
 from inspect import cleandoc
 from itertools import chain, repeat
 from operator import itemgetter
-from sys import stderr as sys_stderr, version as sys_version
+from sys import stderr as sys_stderr
 
 from mgp import (
     Edge as mgp_Edge,
@@ -34,9 +34,7 @@ try:
         subgraph_view as nx_subgraph_view,
     )
 except ImportError:
-    sys_stderr.write(
-        "\nNOTE: Please install networkx to be able to use graph_analyzer module. Using Python:\n" + sys_version + "\n"
-    )
+    sys_stderr.write("\nNOTE: Please install networkx to be able to use graph_analyzer module.\n")
     raise
 
 

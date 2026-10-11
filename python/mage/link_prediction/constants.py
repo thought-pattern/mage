@@ -48,8 +48,6 @@ class Reindex(BaseEnum):
 
 class Context(BaseEnum):
     CHECKPOINT_NAME = "link_prediction.pt"
-    # Version of the checkpoint bundle layout written by save_context and admitted by load_model.
-    CHECKPOINT_FORMAT = "state-dict-manifest-1"
 
 
 class Models(BaseEnum):

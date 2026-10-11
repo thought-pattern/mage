@@ -286,7 +286,6 @@ def train(
 
     # Plain values only (no enum members), so the manifest loads under torch.load(weights_only=True).
     checkpoint_manifest = {
-        "format": Context.CHECKPOINT_FORMAT.value,
         "layer_type": parameters.get("layer_type", "").lower(),
         "in_feats": in_feats,
         "hidden_features_size": list(hidden_features_size),
@@ -649,8 +648,8 @@ def admit_checkpoint_manifest(bundle: object) -> dict:
     if not isinstance(bundle, dict):
         raise ValueError("The link prediction checkpoint is not a checkpoint bundle. ")
     manifest = bundle.get("manifest", {})
-    if not isinstance(manifest, dict) or manifest.get("format", "") != Context.CHECKPOINT_FORMAT:
-        raise ValueError(f"The link prediction checkpoint is not in the {Context.CHECKPOINT_FORMAT.value} format. ")
+    if not isinstance(manifest, dict):
+        raise ValueError("The link prediction checkpoint has no manifest. ")
     if not isinstance(bundle.get("model", False), dict) or not isinstance(bundle.get("predictor", False), dict):
         raise ValueError("The link prediction checkpoint lacks model or predictor state. ")
     manifest_types = {

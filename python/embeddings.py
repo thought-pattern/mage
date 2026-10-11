@@ -7,7 +7,7 @@ from importlib import import_module as imported_import_module
 from multiprocessing import get_context as mp_get_context, set_executable as mp_set_executable
 from os import environ as os_environ
 from subprocess import CalledProcessError as subprocess_CalledProcessError, check_output as subprocess_check_output
-from sys import executable as sys_executable, version as sys_version
+from sys import executable as sys_executable
 
 from embed_worker.embed_worker import encode_chunk as embed_worker_encode_chunk, load_model as embed_worker_load_model
 from mgp import (
@@ -613,7 +613,7 @@ def node_sentence(
 ) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
     if configuration is DEFAULT_ARGUMENT_DICT:
         configuration = DEFAULT_ARGUMENT_DICT.copy()
-    logger.info(f"compute_embeddings: starting (py_exec={sys_executable}, py_ver={sys_version.split()[0]})")
+    logger.info(f"compute_embeddings: starting (py_exec={sys_executable})")
 
     configuration = validate_configuration(configuration)
     # A null input_nodes (Memgraph's nullable-argument default) or an empty list selects every graph vertex.
@@ -634,7 +634,7 @@ def text(
 ) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
     if configuration is DEFAULT_ARGUMENT_DICT:
         configuration = DEFAULT_ARGUMENT_DICT.copy()
-    logger.info(f"embed: starting (py_exec={sys_executable}, py_ver={sys_version.split()[0]})")
+    logger.info(f"embed: starting (py_exec={sys_executable})")
 
     configuration = validate_configuration(configuration)
 

@@ -1,7 +1,7 @@
 """Utilities for travelling salesman."""
 
 from itertools import combinations as itertools_combinations
-from sys import stderr as sys_stderr, version as sys_version
+from sys import stderr as sys_stderr
 
 from numpy import ndarray as np_ndarray, shape as np_shape, zeros as np_zeros
 
@@ -17,7 +17,7 @@ try:
         minimum_spanning_tree as nx_minimum_spanning_tree,
     )
 except ImportError:
-    sys_stderr.write(f"NOTE: Please install networkx to be able touse graph_analyzer module. Using Python: {sys_version}")
+    sys_stderr.write("NOTE: Please install networkx to be able touse graph_analyzer module.")
     raise
 
 

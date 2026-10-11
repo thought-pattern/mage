@@ -975,7 +975,7 @@ def name_row_cells_mysql(row_cells, column_names):
     return computed_return_value
 
 
-def convert_mysql_value(value: object) -> object:
+def convert_mysql_value(value: object) -> mgp_Nullable[mgp_Any]:
     """
     Convert a MySQL value to a Memgraph-compatible type.
     SQL NULL stays null; a value with no string form is refused.
