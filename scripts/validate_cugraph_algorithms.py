@@ -31,7 +31,10 @@ Environment Variables:
 from os import environ as os_environ, getgid as os_getgid, getuid as os_getuid
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
-from subprocess import CompletedProcess as subprocess_CompletedProcess, run as subprocess_run
+from subprocess import (
+    CompletedProcess as subprocess_CompletedProcess,
+    run as subprocess_run,
+)
 from sys import exit as sys_exit
 from tempfile import mkdtemp as tempfile_mkdtemp
 from time import sleep as time_sleep
@@ -70,7 +73,17 @@ TOLERANCE = 0.05  # 5% relative tolerance
 ABS_TOLERANCE = 1e-6  # Absolute tolerance for near-zero values
 
 # Authored node identities of the test graph (name -> id), shared by the NetworkX graph and the identity check
-EXPECTED_NODE_IDS = {"A1": 1, "A2": 2, "A3": 3, "A4": 4, "B1": 5, "B2": 6, "B3": 7, "B4": 8, "HUB": 9}
+EXPECTED_NODE_IDS = {
+    "A1": 1,
+    "A2": 2,
+    "A3": 3,
+    "A4": 4,
+    "B1": 5,
+    "B2": 6,
+    "B3": 7,
+    "B4": 8,
+    "HUB": 9,
+}
 EXPECTED_NODES = set(EXPECTED_NODE_IDS)
 COMMUNITY_A = {"A1", "A2", "A3", "A4"}
 COMMUNITY_B = {"B1", "B2", "B3", "B4"}

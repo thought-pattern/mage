@@ -3,7 +3,11 @@ Migration testing module for e2e_migration tests.
 Tests the migration of data from various databases to Memgraph using the migrate module.
 """
 
-from logging import INFO as logging_INFO, basicConfig as logging_basicConfig, getLogger as logging_getLogger
+from logging import (
+    INFO as logging_INFO,
+    basicConfig as logging_basicConfig,
+    getLogger as logging_getLogger,
+)
 from pathlib import Path
 
 from gqlalchemy import Memgraph

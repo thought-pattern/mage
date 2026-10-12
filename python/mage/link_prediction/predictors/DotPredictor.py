@@ -25,7 +25,10 @@ class DotPredictor(nn.Module):
             torch.Tensor: A tensor of edge scores.
         """
         with g.local_scope():
-            for node_type, embedding in node_embeddings.items():  # Iterate over all node_types.
+            for (
+                node_type,
+                embedding,
+            ) in node_embeddings.items():  # Iterate over all node_types.
                 g.nodes[node_type].data[Predictors.NODE_EMBEDDINGS] = embedding
 
             # Compute a new edge feature named 'score' by a dot-product between the

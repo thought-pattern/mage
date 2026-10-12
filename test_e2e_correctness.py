@@ -2,7 +2,10 @@
 
 from argparse import ArgumentParser as argparse_ArgumentParser
 from os import chdir as os_chdir, environ as os_environ, getcwd as os_getcwd
-from subprocess import CalledProcessError as subprocess_CalledProcessError, run as subprocess_run
+from subprocess import (
+    CalledProcessError as subprocess_CalledProcessError,
+    run as subprocess_run,
+)
 from sys import exit as sys_exit
 
 WORK_DIRECTORY = os_getcwd()

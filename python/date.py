@@ -1,6 +1,10 @@
 """Utilities for date."""
 
-from datetime import datetime as datetime_datetime, timedelta as datetime_timedelta, timezone as datetime_timezone
+from datetime import (
+    datetime as datetime_datetime,
+    timedelta as datetime_timedelta,
+    timezone as datetime_timezone,
+)
 from enum import IntEnum
 from re import sub as re_sub
 from zoneinfo import ZoneInfo

@@ -4,8 +4,18 @@ from importlib import import_module as imported_import_module
 from pathlib import Path
 
 from gqlalchemy import Memgraph, Node, Path as path_gql, Relationship
-from mgclient import DatabaseError as mgclient_DatabaseError, Node as node_mgclient, Relationship as relationship_mgclient
-from pytest import approx as pytest_approx, fail as pytest_fail, mark as pytest_mark, param as pytest_param, raises as pytest_raises
+from mgclient import (
+    DatabaseError as mgclient_DatabaseError,
+    Node as node_mgclient,
+    Relationship as relationship_mgclient,
+)
+from pytest import (
+    approx as pytest_approx,
+    fail as pytest_fail,
+    mark as pytest_mark,
+    param as pytest_param,
+    raises as pytest_raises,
+)
 from yaml import Loader as yaml_Loader, load as yaml_load
 
 os = imported_import_module("os")
@@ -216,7 +226,10 @@ def internal_test_export(test_dir: Path, db: Memgraph):
     old_nodes, old_relationships = get_nodes_and_relationships(nodes_query, relationships_query, db)
 
     test_dict = load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
-    required_test = (TestConstants.EXPORT_TEST_E2E_EXPORT_QUERY, TestConstants.EXPORT_TEST_E2E_IMPORT_QUERY)
+    required_test = (
+        TestConstants.EXPORT_TEST_E2E_EXPORT_QUERY,
+        TestConstants.EXPORT_TEST_E2E_IMPORT_QUERY,
+    )
     missing_test = [key for key in required_test if key not in test_dict]
     if missing_test:
         pytest_fail(f"Export test file declares no {', '.join(missing_test)} query.")

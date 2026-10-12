@@ -62,7 +62,11 @@ class TemporalNeighborhood:
         sampled_neighbors = np_array([entry[0] for entry in sampled], dtype=int)
         sampled_edge_idxs = np_array([entry[1] for entry in sampled], dtype=int)
         sampled_timestamps = np_array([entry[2] for entry in sampled], dtype=int)
-        sampled_neighborhood = (sampled_neighbors, sampled_edge_idxs, sampled_timestamps)
+        sampled_neighborhood = (
+            sampled_neighbors,
+            sampled_edge_idxs,
+            sampled_timestamps,
+        )
         return sampled_neighborhood
 
     def find_neighborhood(self, nodes: list[int], num_neighbors: int) -> dict[int, list[tuple[int, int, float]]]:

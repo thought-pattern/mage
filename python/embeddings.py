@@ -4,12 +4,21 @@ from concurrent.futures import CancelledError, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from gc import collect as gc_collect
 from importlib import import_module as imported_import_module
-from multiprocessing import get_context as mp_get_context, set_executable as mp_set_executable
+from multiprocessing import (
+    get_context as mp_get_context,
+    set_executable as mp_set_executable,
+)
 from os import environ as os_environ
-from subprocess import CalledProcessError as subprocess_CalledProcessError, check_output as subprocess_check_output
+from subprocess import (
+    CalledProcessError as subprocess_CalledProcessError,
+    check_output as subprocess_check_output,
+)
 from sys import executable as sys_executable
 
-from embed_worker.embed_worker import encode_chunk as embed_worker_encode_chunk, load_model as embed_worker_load_model
+from embed_worker.embed_worker import (
+    encode_chunk as embed_worker_encode_chunk,
+    load_model as embed_worker_load_model,
+)
 from mgp import (
     Any as mgp_Any,
     List as mgp_List,
@@ -68,7 +77,12 @@ def get_visible_gpus():
         out = subprocess_check_output(["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"], text=True)
         computed_return_value = [int(x) for x in out.strip().splitlines() if x.strip()]
         return computed_return_value
-    except (FileNotFoundError, OSError, subprocess_CalledProcessError, ValueError) as err:
+    except (
+        FileNotFoundError,
+        OSError,
+        subprocess_CalledProcessError,
+        ValueError,
+    ) as err:
         logger.warning(f"nvidia-smi GPU discovery failed; probing PyTorch instead: {err}")
         try:
             computed_return_value = list(range(torch_cuda.device_count())) if torch_cuda.is_available() else []
@@ -266,7 +280,14 @@ def single_gpu_compute(
             logger.info(f"Allocated memory: {allocated_memory / 1024 / 1024:.2f} MB")
         except Exception as err:
             logger.error(f"Failed to load model {model_name}: {err}")
-            computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
+            computed_return_value = return_data(
+                input_items,
+                vertex_input,
+                embedding_property,
+                return_embeddings,
+                False,
+                0,
+            )
             return computed_return_value
         item_iter = iter(input_items)
         n = len(input_items)
@@ -512,7 +533,14 @@ def compute_embeddings(
         n = len(input_items)
         if n == 0:
             logger.info("No vertices to process.")
-            computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, True, 0)
+            computed_return_value = return_data(
+                input_items,
+                vertex_input,
+                embedding_property,
+                return_embeddings,
+                True,
+                0,
+            )
             return computed_return_value
 
         # Validate and select target GPU(s)
@@ -520,7 +548,14 @@ def compute_embeddings(
             gpus = select_device(configuration.get("device", False))
         except (ValueError, TypeError, RuntimeError) as err:
             logger.error(f"Invalid device parameter: {err}")
-            computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
+            computed_return_value = return_data(
+                input_items,
+                vertex_input,
+                embedding_property,
+                return_embeddings,
+                False,
+                0,
+            )
             return computed_return_value
 
         logger.info(f"Selected {len(gpus) if gpus else 0} GPU(s): {gpus}")
@@ -539,7 +574,14 @@ def compute_embeddings(
                 return computed_return_value
             except Exception as err:
                 logger.error(f"CPU path failed: {err}")
-                computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
+                computed_return_value = return_data(
+                    input_items,
+                    vertex_input,
+                    embedding_property,
+                    return_embeddings,
+                    False,
+                    0,
+                )
                 return computed_return_value
 
         if len(gpus) == 1:
@@ -557,7 +599,14 @@ def compute_embeddings(
                 return computed_return_value
             except Exception as err:
                 logger.error(f"Single GPU path failed: {err}")
-                computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
+                computed_return_value = return_data(
+                    input_items,
+                    vertex_input,
+                    embedding_property,
+                    return_embeddings,
+                    False,
+                    0,
+                )
                 return computed_return_value
 
         if len(gpus) > 1:
@@ -576,7 +625,14 @@ def compute_embeddings(
                 return computed_return_value
             except Exception as err:
                 logger.error(f"Multi GPU path failed: {err}")
-                computed_return_value = return_data(input_items, vertex_input, embedding_property, return_embeddings, False, 0)
+                computed_return_value = return_data(
+                    input_items,
+                    vertex_input,
+                    embedding_property,
+                    return_embeddings,
+                    False,
+                    0,
+                )
                 return computed_return_value
     except Exception as err:
         logger.error(f"Failed to compute embeddings: {err}")

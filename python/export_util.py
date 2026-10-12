@@ -44,7 +44,10 @@ from mgp import (
 
 from mage.export_import_util.duration import to_cypher_duration
 from mage.export_import_util.parameters import Parameter
-from mage.export_import_util.temporal import convert_to_isoformat, convert_to_isoformat_graphML
+from mage.export_import_util.temporal import (
+    convert_to_isoformat,
+    convert_to_isoformat_graphML,
+)
 
 DEFAULT_ARGUMENT_DICT = {}
 
@@ -181,7 +184,13 @@ def cypher_property_list(properties) -> str:
     return rendered
 
 
-def write_cypher_export(out, ctx: mgp_ProcCtx, memgraph: gqlalchemy_Memgraph, config: mgp_Map, import_id: str) -> None:
+def write_cypher_export(
+    out,
+    ctx: mgp_ProcCtx,
+    memgraph: gqlalchemy_Memgraph,
+    config: mgp_Map,
+    import_id: str,
+) -> None:
     """
     Writes the export one statement per line. The graph is read twice, nodes then relationships, so neither the graph
     nor the rendered script is held in memory.
@@ -273,7 +282,13 @@ def cypher_all(
     # or property of any name, and the final cleanup matches only the nodes this import created, even in a populated
     # target graph.
     import_id = f"{IMPORT_ID_PREFIX}{uuid4().hex}"
-    render = partial(write_cypher_export, ctx=ctx, memgraph=gqlalchemy_Memgraph(), config=config, import_id=import_id)
+    render = partial(
+        write_cypher_export,
+        ctx=ctx,
+        memgraph=gqlalchemy_Memgraph(),
+        config=config,
+        import_id=import_id,
+    )
 
     data = ""
     if config.get("stream", False):
@@ -338,7 +353,7 @@ def graphml_elements(ctx: mgp_ProcCtx, config: mgp_Map):
         properties = {} if leave_out_properties else {key: codec(value) for key, value in vertex.properties.items()}
         node = {
             Parameter.ID.value: vertex.id,
-            Parameter.LABELS.value: [] if leave_out_labels else [label.name for label in vertex.labels],
+            Parameter.LABELS.value: ([] if leave_out_labels else [label.name for label in vertex.labels]),
             Parameter.PROPERTIES.value: properties,
             Parameter.TYPE.value: Parameter.NODE.value,
         }
@@ -422,11 +437,25 @@ def json(ctx: mgp_ProcCtx, path: str = "", config: mgp_Map = DEFAULT_ARGUMENT_DI
     write_properties = config.get("write_properties", True)
     if path:
         elements = json_elements(ctx, write_properties)
-        publish_file(path, partial(write_json_array, elements=elements, indent=Parameter.STANDARD_INDENT.value), "\n")
+        publish_file(
+            path,
+            partial(
+                write_json_array,
+                elements=elements,
+                indent=Parameter.STANDARD_INDENT.value,
+            ),
+            "\n",
+        )
 
     data = ""
     if config.get("stream", False):
-        data = render_to_string(partial(write_json_array, elements=json_elements(ctx, write_properties), indent=0))
+        data = render_to_string(
+            partial(
+                write_json_array,
+                elements=json_elements(ctx, write_properties),
+                indent=0,
+            )
+        )
 
     computed_return_value = mgp_Record(path=path, data=data)
     return computed_return_value
@@ -459,7 +488,15 @@ def json_graph(
     write_properties = config.get("write_properties", True)
     if path:
         elements = listed_json_elements(nodes, relationships, write_properties)
-        publish_file(path, partial(write_json_array, elements=elements, indent=Parameter.STANDARD_INDENT.value), "\n")
+        publish_file(
+            path,
+            partial(
+                write_json_array,
+                elements=elements,
+                indent=Parameter.STANDARD_INDENT.value,
+            ),
+            "\n",
+        )
 
     data = ""
     if config.get("stream", False):
@@ -553,7 +590,13 @@ def csv_rows(
     for relationship in relationships_list:
         write_list: list = ["", ""]
         write_list.extend("" for _ in node_properties)
-        write_list.extend([relationship.from_vertex.id, relationship.to_vertex.id, relationship.type.name])
+        write_list.extend(
+            [
+                relationship.from_vertex.id,
+                relationship.to_vertex.id,
+                relationship.type.name,
+            ]
+        )
         write_list.extend(csv_cell(relationship.properties.get(prop, "")) for prop in relationship_properties)
         yield write_list
 
@@ -651,7 +694,8 @@ def csv_graph(
 
     # A separate header goes to its own file (and never into a stream); otherwise it leads the rows.
     rows = chain(
-        [] if separate_header else header, csv_rows(nodes_list, relationships_list, node_properties, relationship_properties)
+        [] if separate_header else header,
+        csv_rows(nodes_list, relationships_list, node_properties, relationship_properties),
     )
     render = partial(write_csv_rows, rows=rows, delimiter=delimiter, quoting_type=quoting_type)
 
@@ -661,7 +705,14 @@ def csv_graph(
     else:
         if separate_header:
             publish_file(
-                header_path(path), partial(write_csv_rows, rows=header, delimiter=delimiter, quoting_type=quoting_type), ""
+                header_path(path),
+                partial(
+                    write_csv_rows,
+                    rows=header,
+                    delimiter=delimiter,
+                    quoting_type=quoting_type,
+                ),
+                "",
             )
         publish_file(path, render, "")
 
@@ -721,7 +772,11 @@ def csv_query(
     stream_buffer = io_StringIO()
     stream_writers = [csv_writer(stream_buffer, quoting=csv_QUOTE_NONNUMERIC, escapechar="\\")] if stream else []
     if file_path:
-        publish_file(file_path, partial(write_query_csv, rows=rows, stream_writers=stream_writers), "")
+        publish_file(
+            file_path,
+            partial(write_query_csv, rows=rows, stream_writers=stream_writers),
+            "",
+        )
     else:
         write_query_rows(rows, stream_writers)
     data = stream_buffer.getvalue()
@@ -830,12 +885,26 @@ def graphml_element_keys(element: dict, config: mgp_Map) -> list[tuple[str, str,
         if graph_format == "GEPHI":
             keys.append(("TYPE", is_for, "string", False))
         if element.get("labels", []):
-            keys.append(("labelV" if graph_format == "TINKERPOP" else "labels", is_for, "string", False))
+            keys.append(
+                (
+                    "labelV" if graph_format == "TINKERPOP" else "labels",
+                    is_for,
+                    "string",
+                    False,
+                )
+            )
     else:
         is_for = "edge"
         if graph_format == "GEPHI":
             keys.append(("TYPE", is_for, "string", False))
-        keys.append(("labelE" if graph_format == "TINKERPOP" else "label", is_for, "string", False))
+        keys.append(
+            (
+                "labelE" if graph_format == "TINKERPOP" else "label",
+                is_for,
+                "string",
+                False,
+            )
+        )
 
     for name, value in element.get("properties", {}).items():
         type_string, is_list = get_type_string(value)
@@ -891,7 +960,12 @@ def write_graphml_elements(output: io_StringIO, elements, key_ids: dict, config:
             )
             if graph_format == "GEPHI":
                 output.write(f'<data key="{key_ids.get(("TYPE", is_for, "string", False), "")}">{xml_text(label)}</data>')
-            label_key = ("labelE" if graph_format == "TINKERPOP" else "label", is_for, "string", False)
+            label_key = (
+                "labelE" if graph_format == "TINKERPOP" else "label",
+                is_for,
+                "string",
+                False,
+            )
             output.write(f'<data key="{key_ids.get(label_key, "")}">{xml_text(label)}</data>')
 
         for name, value in element.get("properties", {}).items():

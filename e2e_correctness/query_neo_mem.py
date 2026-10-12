@@ -12,7 +12,11 @@ Workaround would be to add API to create nodes by ids on Memgraph when importing
 """
 
 from json import loads as json_loads
-from logging import DEBUG as logging_DEBUG, basicConfig as logging_basicConfig, getLogger as logging_getLogger
+from logging import (
+    DEBUG as logging_DEBUG,
+    basicConfig as logging_basicConfig,
+    getLogger as logging_getLogger,
+)
 
 from gqlalchemy import Memgraph as gqlalchemy_Memgraph, Path as gqlalchemy_Path
 from neo4j import BoltDriver as neo4j_BoltDriver, Query as neo4j_Query
@@ -37,7 +41,10 @@ def canonical_value(value) -> tuple:
     elif isinstance(value, list):
         computed_return_value = ("list", tuple(canonical_value(item) for item in value))
     elif isinstance(value, dict):
-        computed_return_value = ("map", tuple(sorted((key, canonical_value(item)) for key, item in value.items())))
+        computed_return_value = (
+            "map",
+            tuple(sorted((key, canonical_value(item)) for key, item in value.items())),
+        )
     else:
         computed_return_value = ("other", repr(value))
     return computed_return_value

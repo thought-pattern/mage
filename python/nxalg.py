@@ -993,7 +993,12 @@ def minimum_spanning_tree(
     algorithm: str = "kruskal",
     ignore_nan: bool = False,
 ) -> mgp_Record(nodes=mgp_List[mgp_Vertex], edges=mgp_List[mgp_Edge]):
-    gres = nx_minimum_spanning_tree(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True), weight, algorithm, ignore_nan)
+    gres = nx_minimum_spanning_tree(
+        MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True),
+        weight,
+        algorithm,
+        ignore_nan,
+    )
     computed_return_value = mgp_Record(nodes=list(gres.nodes()), edges=[e for _, _, e in gres.edges(keys=True)])
     return computed_return_value
 

@@ -2,7 +2,9 @@
 
 from logging import getLogger as logging_getLogger
 
-from mage.graph_coloring_module.components.correlation_population import CorrelationPopulation
+from mage.graph_coloring_module.components.correlation_population import (
+    CorrelationPopulation,
+)
 from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.error_functions.error import Error
 from mage.graph_coloring_module.graph import Graph

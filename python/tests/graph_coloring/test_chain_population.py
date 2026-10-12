@@ -23,7 +23,10 @@ CHAIN_MEMBERS = (
 
 def test_previous_individual():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.get_prev_individual(2)
     expected_indv = chain_population[1]
 
@@ -32,21 +35,30 @@ def test_previous_individual():
 
 def test_previous_negative_index():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     with pytest_raises(IndexError):
         chain_population.get_prev_individual(-2)
 
 
 def test_previous_out_of_range():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     with pytest_raises(IndexError):
         chain_population.get_prev_individual(10)
 
 
 def test_previous_first_item():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.get_prev_individual(0)
     expected_indv = chain_population[2]
 
@@ -55,7 +67,10 @@ def test_previous_first_item():
 
 def test_next_individual():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.get_next_individual(0)
     expected_indv = chain_population[1]
 
@@ -64,7 +79,10 @@ def test_next_individual():
 
 def test_next_individual_last_item():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.get_next_individual(2)
     expected_indv = chain_population[0]
 
@@ -73,14 +91,20 @@ def test_next_individual_last_item():
 
 def test_next_negative_index():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     with pytest_raises(IndexError):
         chain_population.get_next_individual(-2)
 
 
 def test_next_out_of_range():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.get_next_individual(2)
     expected_indv = chain_population[0]
 

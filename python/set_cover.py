@@ -1,6 +1,11 @@
 """Utilities for set cover."""
 
-from mgp import ProcCtx as mgp_ProcCtx, Record as mgp_Record, Vertex as mgp_Vertex, read_proc as mgp_read_proc
+from mgp import (
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
 from mage.constraint_programming.solver import (
     GekkoMatchingProblem,
@@ -74,7 +79,11 @@ def greedy(
     """
 
     element_values, set_values = paired_membership_ids(element_vertexes, set_vertexes)
-    mp = GreedyMatchingProblem(set(element_values), set(set_values), elements_by_set(element_values, set_values))
+    mp = GreedyMatchingProblem(
+        set(element_values),
+        set(set_values),
+        elements_by_set(element_values, set_values),
+    )
 
     solver = GreedyMPSolver()
     result = solver.solve(matching_problem=mp)

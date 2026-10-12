@@ -86,13 +86,17 @@ class CorrelationPopulation(Population):
         and the previous and next individual."""
         prev_index = self.get_prev_correlation_index(index)
         next_index = self.get_next_correlation_index(index)
-        computed_return_value = self.internal_correlation[prev_index], self.internal_correlation[next_index]
+        computed_return_value = (
+            self.internal_correlation[prev_index],
+            self.internal_correlation[next_index],
+        )
         return computed_return_value
 
     def set_link(self, link_index: int, left: Individual, right: Individual) -> bool:
         """Computes link `link_index` between left and right from scratch and installs it (appending the next link
         or replacing an existing one). Expanding S = 1 - 2 * same gives the all-pairs sum as
-        pairs - 2 * same_left - 2 * same_right + 4 * same_both, evaluated from color and paired-color counts."""
+        pairs - 2 * same_left - 2 * same_right + 4 * same_both, evaluated from color and paired-color counts.
+        """
         node_count = len(left.chromosome)
         color_pairs = collections_Counter(zip(left.chromosome, right.chromosome, strict=True))
         correlation = (

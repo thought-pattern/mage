@@ -4,14 +4,20 @@ from collections import Counter
 
 from numpy import add as np_add, array as np_array, shape as np_shape, zeros as np_zeros
 from numpy.random import shuffle as np_shuffle
-from torch import bool as torch_bool, float32 as torch_float32, long as torch_long, tensor as torch_tensor
+from torch import (
+    bool as torch_bool,
+    float32 as torch_float32,
+    long as torch_long,
+    tensor as torch_tensor,
+)
 from torch_geometric import transforms as T
 from torch_geometric.data import HeteroData
 
 
 def node_type_of(vertex) -> str:
     """Returns the node type key of a vertex: all of its labels joined by "_" in label order. Node stores, edge
-    endpoint types and the reindexing maps all use this one encoding, so multi-label nodes and their edges agree."""
+    endpoint types and the reindexing maps all use this one encoding, so multi-label nodes and their edges agree.
+    """
     if len(vertex.labels) == 0:
         raise ValueError(f"Node {vertex.id} has no labels.")
     node_type = "_".join(label.name for label in vertex.labels)
@@ -19,7 +25,11 @@ def node_type_of(vertex) -> str:
 
 
 def nodes_fetching(
-    nodes: list, features_name: str, class_name: str, data: HeteroData, observed_attribute: str = ""
+    nodes: list,
+    features_name: str,
+    class_name: str,
+    data: HeteroData,
+    observed_attribute: str = "",
 ) -> tuple[HeteroData, dict, dict, str, dict, dict]:
     """
     This procedure fetches the nodes from the database and returns
@@ -162,7 +172,11 @@ def edges_fetching(nodes: list, features_name: str, inv_reindexing: dict, data: 
                 continue  # if from_vertex or out_vertex do not have features, skip the edge
 
             # edge_type is (from_vertex type, edge name, to_vertex type), with endpoint types encoded as for nodes
-            edge_type = (node_type_of(edge.from_vertex), edge.type.name, node_type_of(edge.to_vertex))
+            edge_type = (
+                node_type_of(edge.from_vertex),
+                edge.type.name,
+                node_type_of(edge.to_vertex),
+            )
 
             edge_types.append(edge_type)  # append edge type to list of edge types
             edges.append(edge)  # append edge to list of edges

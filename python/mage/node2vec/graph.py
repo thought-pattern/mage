@@ -73,7 +73,12 @@ class Graph(ABC):
 
 
 class GraphHolder(Graph):
-    def __init__(self, edges_weights: dict[tuple[int, int], float], is_directed: bool, declared_nodes=()):
+    def __init__(
+        self,
+        edges_weights: dict[tuple[int, int], float],
+        is_directed: bool,
+        declared_nodes=(),
+    ):
         """
         Args:
             edges_weights: weight per (from, to) edge.
@@ -109,9 +114,10 @@ class GraphHolder(Graph):
         return computed_return_value
 
     def has_edge(self, src_node_id: int, dest_node_id: int) -> bool:
-        computed_return_value = (src_node_id, dest_node_id) in self.internal_edges_weights or (
-            not self.is_directed and (dest_node_id, src_node_id) in self.internal_edges_weights
-        )
+        computed_return_value = (
+            src_node_id,
+            dest_node_id,
+        ) in self.internal_edges_weights or (not self.is_directed and (dest_node_id, src_node_id) in self.internal_edges_weights)
         return computed_return_value
 
     def get_edges(self) -> list[tuple[int, int]]:

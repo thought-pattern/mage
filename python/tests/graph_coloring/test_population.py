@@ -27,7 +27,10 @@ def error_func(graph, individual):
 
 def test_chain_population_best_individual():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.best_individual(error_func)
     expected_indv = chain_population[1]
     assert result_indv == expected_indv
@@ -35,7 +38,10 @@ def test_chain_population_best_individual():
 
 def test_chain_population_worst_individual():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.worst_individual(error_func)
     expected_indv = chain_population[2]
     assert result_indv == expected_indv
@@ -43,7 +49,10 @@ def test_chain_population_worst_individual():
 
 def test_chain_population_min_error():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.min_error(error_func)
     expected_indv = 0
     assert math_fabs(result_indv - expected_indv) < 1e-5
@@ -51,7 +60,10 @@ def test_chain_population_min_error():
 
 def test_chain_population_max_error():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.max_error(error_func)
     expected_indv = 5
     assert math_fabs(result_indv - expected_indv) < 1e-5
@@ -59,7 +71,10 @@ def test_chain_population_max_error():
 
 def test_chain_population_mean_conflicts_weights():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.mean_conflicts_weight
     expected_indv = 7 / 3
     assert math_fabs(result_indv - expected_indv) < 1e-5
@@ -67,7 +82,10 @@ def test_chain_population_mean_conflicts_weights():
 
 def test_chain_population_sum_conflicts_weight():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result_indv = chain_population.sum_conflicts_weight
     expected_indv = 7
     assert math_fabs(result_indv - expected_indv) < 1e-5
@@ -75,7 +93,10 @@ def test_chain_population_sum_conflicts_weight():
 
 def test_chain_population_correlation():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     result = chain_population.correlation
     expected = [2, 2, 2]
     assert expected == result
@@ -83,7 +104,10 @@ def test_chain_population_correlation():
 
 def test_set_individual():
     graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
-    chain_population = ChainPopulation(graph, [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS])
+    chain_population = ChainPopulation(
+        graph,
+        [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
+    )
     new_indv = Individual(no_of_colors=3, graph=graph, chromosome=[1, 2, 2, 2, 1])
     chain_population.set_individual(1, new_indv, [2])
     assert chain_population.correlation == [-2, -2, 2]

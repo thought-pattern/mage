@@ -2,7 +2,11 @@
 
 from abc import ABC, abstractmethod
 from logging import getLogger as logging_getLogger
-from multiprocessing import Manager as mp_Manager, Process as mp_Process, Value as mp_Value
+from multiprocessing import (
+    Manager as mp_Manager,
+    Process as mp_Process,
+    Value as mp_Value,
+)
 from multiprocessing.connection import wait as mp_connection_wait
 from pickle import PicklingError
 
@@ -43,7 +47,8 @@ class ParallelAlgorithm(Algorithm, ABC):
         :error: a function that defines an error
 
         The host abort check is polled while workers run; however the run ends (completion, host abort, interruption
-        or failure), every started worker is stopped and reaped before the result or exception leaves."""
+        or failure), every started worker is stopped and reaped before the result or exception leaves.
+        """
 
         no_of_processes = param_value(graph, parameters, Parameter.NO_OF_PROCESSES)
         population_size = param_value(graph, parameters, Parameter.POPULATION_SIZE)
@@ -159,7 +164,10 @@ class ParallelAlgorithm(Algorithm, ABC):
             # A valid coloring outranks any invalid one; ties and the invalid remainder are ordered by error.
             best_individual = min(
                 best_solutions.values(),
-                key=lambda individual: (len(individual.conflict_nodes) > 0, individual_error_value(graph, individual)),
+                key=lambda individual: (
+                    len(individual.conflict_nodes) > 0,
+                    individual_error_value(graph, individual),
+                ),
             )
 
             return best_individual
@@ -177,7 +185,10 @@ class ParallelAlgorithm(Algorithm, ABC):
         running = [worker for worker in workers if worker.is_alive()]
         while running:
             abort_check()
-            mp_connection_wait([worker.sentinel for worker in running], timeout=WORKER_ABORT_POLL_SECONDS)
+            mp_connection_wait(
+                [worker.sentinel for worker in running],
+                timeout=WORKER_ABORT_POLL_SECONDS,
+            )
             running = [worker for worker in running if worker.is_alive()]
         return False
 

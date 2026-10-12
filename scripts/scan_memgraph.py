@@ -17,7 +17,11 @@ each scan will produce a temporary JSON file containing results.
 
 from argparse import ArgumentParser as argparse_ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from json import JSONDecodeError as json_JSONDecodeError, dump as json_dump, load as json_load
+from json import (
+    JSONDecodeError as json_JSONDecodeError,
+    dump as json_dump,
+    load as json_load,
+)
 from os import (
     getcwd as os_getcwd,
     getenv as os_getenv,

@@ -204,7 +204,11 @@ def set_model_parameters(ctx: mgp_ProcCtx, parameters: mgp_Map) -> mgp_Record(st
     # rejected request leaves the prior configuration and device untouched.
     candidate = {**link_prediction_parameters, **requested}
     # The host passes lists as tuples; the configuration keeps them as lists.
-    for key in (Parameters.HIDDEN_FEATURES_SIZE.value, Parameters.ATTN_NUM_HEADS.value, Parameters.METRICS.value):
+    for key in (
+        Parameters.HIDDEN_FEATURES_SIZE.value,
+        Parameters.ATTN_NUM_HEADS.value,
+        Parameters.METRICS.value,
+    ):
         value = candidate.get(key, [])
         if isinstance(value, tuple):
             candidate[key] = list(value)
@@ -348,7 +352,11 @@ def train(
 
     # Publish the trained model, its predictor and their contract together, only after training completed.
     training_results, validation_results = new_training_results, new_validation_results
-    model, predictor, trained_manifest = trained_model, trained_predictor, checkpoint_manifest
+    model, predictor, trained_manifest = (
+        trained_model,
+        trained_predictor,
+        checkpoint_manifest,
+    )
 
     # Return results
     computed_return_value = mgp_Record(training_results=training_results, validation_results=validation_results)
@@ -687,7 +695,12 @@ def admit_trained_feature_width(prediction_graph: dgl_graph) -> bool:
     return False
 
 
-def mask_target_bindings(prediction_graph: dgl_graph, target_relation: object, src_id: int, dest_ids: list[int]) -> dgl_graph:
+def mask_target_bindings(
+    prediction_graph: dgl_graph,
+    target_relation: object,
+    src_id: int,
+    dest_ids: list[int],
+) -> dgl_graph:
     """
     Message graph for scoring src -> dest candidate pairs. Training's edge sampler excludes the supervised edge (and its
     reverse-type counterpart) from message passing, so every existing target edge between a candidate pair is removed
@@ -788,7 +801,10 @@ def get_dgl_graph_data(
     node_features_property = graph_contract.get("node_features_property", "")
     target_relation = graph_contract.get("target_relation", "")
 
-    reindex = {Reindex.DGL: {}, Reindex.MEMGRAPH: {}}  # map of label to new node index to old node index and reverse
+    reindex = {
+        Reindex.DGL: {},
+        Reindex.MEMGRAPH: {},
+    }  # map of label to new node index to old node index and reverse
     mem_indexes = {}  # map of label to the next DGL index of that label
 
     # list of tuples where each tuple is in following form(src_type, edge_type, dst_type), e.g. ("Customer", "SUBSCRIBES_TO",
@@ -796,7 +812,10 @@ def get_dgl_graph_data(
     type_triplets = []
     index_dgl_to_features = {}  # dgl indexes to features
 
-    src_nodes, dest_nodes = {}, {}  # type triplet to DGL node IDs -> Tuple of node-tensors format from DGL
+    src_nodes, dest_nodes = (
+        {},
+        {},
+    )  # type triplet to DGL node IDs -> Tuple of node-tensors format from DGL
 
     edge_types = set()
 
@@ -999,7 +1018,11 @@ def conversion_to_dgl_test(
                 raise Exception(f"The conversion to DGL failed. Vertex with id {old_id} is not mapped to DGL graph. ")
 
             # Admit features exactly as the conversion did.
-            old_features = admit_node_features(vertex.properties.get(node_features_property, []), old_id, node_features_property)
+            old_features = admit_node_features(
+                vertex.properties.get(node_features_property, []),
+                old_id,
+                node_features_property,
+            )
 
             # Check if equal
             if not torch_equal(

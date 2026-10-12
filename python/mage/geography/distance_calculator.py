@@ -1,6 +1,13 @@
 """Utilities for distance calculator."""
 
-from math import atan2 as math_atan2, cos as math_cos, isfinite as math_isfinite, pi as math_pi, sin as math_sin, sqrt as math_sqrt
+from math import (
+    atan2 as math_atan2,
+    cos as math_cos,
+    isfinite as math_isfinite,
+    pi as math_pi,
+    sin as math_sin,
+    sqrt as math_sqrt,
+)
 
 KM_MULTIPLIER = 0.001
 LATITUDE = "lat"
@@ -43,7 +50,10 @@ def calculate_distance_between_points(start: dict[str, float], end: dict[str, fl
 
     # The haversine term is a squared half-chord bounded by 1; rounding can exceed that bound by one unit in the last
     # place for antipodal points, which would otherwise raise a math domain error on valid coordinates.
-    a = min(sin_delta_phi**2 + math_cos(phi_1) * math_cos(phi_2) * (sin_delta_lambda**2), 1.0)
+    a = min(
+        sin_delta_phi**2 + math_cos(phi_1) * math_cos(phi_2) * (sin_delta_lambda**2),
+        1.0,
+    )
     c = 2 * math_atan2(math_sqrt(a), math_sqrt(1 - a))
 
     # Distance in metres

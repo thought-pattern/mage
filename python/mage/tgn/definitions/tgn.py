@@ -1,6 +1,11 @@
 """Utilities for tgn."""
 
-from numpy import array as np_array, float32 as np_float32, issubdtype as np_issubdtype, ndarray as np_ndarray
+from numpy import (
+    array as np_array,
+    float32 as np_float32,
+    issubdtype as np_issubdtype,
+    ndarray as np_ndarray,
+)
 from torch import (
     Tensor as torch_Tensor,
     concat as torch_concat,
@@ -329,7 +334,8 @@ class TGN(nn.Module):
         edge_features: dict[int, torch_Tensor],
     ) -> dict[int, list[RawMessage]]:
         """Turns each node's events into raw messages from current memory: one per node event and two per interaction
-        event, one filed under each endpoint, with delta time measured from that endpoint's last memory update."""
+        event, one filed under each endpoint, with delta time measured from that endpoint's last memory update.
+        """
         raw_messages = {node: [] for node in events}
         for node, node_events in events.items():
             node_messages = raw_messages.get(node, [])
@@ -410,7 +416,11 @@ class TGN(nn.Module):
 
             # here we use flatten to get shape (memory_dim,)
             updated_memory = torch_flatten(updated_memory)
-            update_time = torch_tensor([float(update_timestamps.get(node, 0))], dtype=torch_float32, device=self.device)
+            update_time = torch_tensor(
+                [float(update_timestamps.get(node, 0))],
+                dtype=torch_float32,
+                device=self.device,
+            )
             updates[node] = (updated_memory, update_time)
 
         # memory and last-update time change together, only after every node's update has been computed

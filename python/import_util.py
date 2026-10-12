@@ -5,8 +5,19 @@ from json import load as js_load, loads as js_loads
 from re import compile as re_compile
 
 from defusedxml import ElementTree as ET
-from gqlalchemy.memgraph_constants import MG_ENCRYPTED, MG_HOST, MG_PASSWORD, MG_PORT, MG_USERNAME
-from mgclient import MG_SSLMODE_DISABLE, MG_SSLMODE_REQUIRE, Error as mgclient_Error, connect as mgclient_connect
+from gqlalchemy.memgraph_constants import (
+    MG_ENCRYPTED,
+    MG_HOST,
+    MG_PASSWORD,
+    MG_PORT,
+    MG_USERNAME,
+)
+from mgclient import (
+    MG_SSLMODE_DISABLE,
+    MG_SSLMODE_REQUIRE,
+    Error as mgclient_Error,
+    connect as mgclient_connect,
+)
 from mgp import (
     EdgeType as mgp_EdgeType,
     Map as mgp_Map,
@@ -17,7 +28,10 @@ from mgp import (
 )
 
 from mage.export_import_util.parameters import Parameter
-from mage.export_import_util.temporal import convert_to_isoformat, convert_to_isoformat_graphML
+from mage.export_import_util.temporal import (
+    convert_to_isoformat,
+    convert_to_isoformat_graphML,
+)
 
 # Exact body of str(timedelta), which convert_to_isoformat writes inside duration(...): "[-]D day[s], H:MM:SS[.ffffff]".
 TIMEDELTA_TEXT = re_compile(r"(?:(-?\d+) days?, )?(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{6}))?")
@@ -45,7 +59,13 @@ def parse_timedelta_text(text: str) -> timedelta:
     if not match:
         raise ValueError(f"not a duration body: {text!r}")
     days, hours, minutes, seconds, microseconds = (int(group) for group in match.groups(default="0"))
-    value = timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds, microseconds=microseconds)
+    value = timedelta(
+        days=days,
+        hours=hours,
+        minutes=minutes,
+        seconds=seconds,
+        microseconds=microseconds,
+    )
     return value
 
 
@@ -185,7 +205,7 @@ def cypher(ctx: mgp_ProcCtx, path: str, config: mgp_Map = DEFAULT_CYPHER_IMPORT_
             port=settings.get("port", 0),
             username=settings.get("username", ""),
             password=settings.get("password", ""),
-            sslmode=MG_SSLMODE_REQUIRE if settings.get("encrypted", False) else MG_SSLMODE_DISABLE,
+            sslmode=(MG_SSLMODE_REQUIRE if settings.get("encrypted", False) else MG_SSLMODE_DISABLE),
         )
     except mgclient_Error as err:
         raise ConnectionError(f"Cypher import could not connect to {target}: {err}") from err

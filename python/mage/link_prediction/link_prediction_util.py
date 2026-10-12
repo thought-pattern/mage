@@ -1,11 +1,21 @@
 """Utilities for link prediction util."""
 
 from functools import partial as functools_partial
-from os import fdopen as os_fdopen, fsync as os_fsync, path as os_path, replace as os_replace, unlink as os_unlink
+from os import (
+    fdopen as os_fdopen,
+    fsync as os_fsync,
+    path as os_path,
+    replace as os_replace,
+    unlink as os_unlink,
+)
 from random import seed as random_seed
 from tempfile import mkstemp
 
-from dgl import dataloading as dgl_dataloading, graph as dgl_graph, heterograph as dgl_heterograph
+from dgl import (
+    dataloading as dgl_dataloading,
+    graph as dgl_graph,
+    heterograph as dgl_heterograph,
+)
 from numpy import arange as np_arange, random as np_random
 from sklearn.metrics import (
     confusion_matrix,
@@ -214,7 +224,10 @@ def epoch_metrics(metrics: list[str], statistics: dict, threshold: float, epoch:
     positive_predictions = int(classes.sum())
     positive_examples = int(labels.sum())
 
-    result = {Metrics.EPOCH: epoch, Metrics.LOSS: round(statistics.get("loss_sum", 0.0) / example_count, 3)}
+    result = {
+        Metrics.EPOCH: epoch,
+        Metrics.LOSS: round(statistics.get("loss_sum", 0.0) / example_count, 3),
+    }
     for metric_name in metrics:
         if metric_name == Metrics.ACCURACY:
             result[Metrics.ACCURACY] = round((tp + tn) / example_count, 3)
@@ -388,7 +401,12 @@ def inner_train(
     # validation edge IDs remain the supervision set of the validation loader.
     edge_sources, edge_destinations = graph.edges(etype=target_etypes[0])
     validation_ids = val_eid_dict.get(target_relation, torch_zeros(0, dtype=edge_sources.dtype))
-    held_out_bindings = set(zip(edge_sources[validation_ids].tolist(), edge_destinations[validation_ids].tolist()))
+    held_out_bindings = set(
+        zip(
+            edge_sources[validation_ids].tolist(),
+            edge_destinations[validation_ids].tolist(),
+        )
+    )
     held_out_ids = torch_tensor(
         [
             edge_id
@@ -533,7 +551,12 @@ def inner_train(
     return training_results, validation_results
 
 
-def save_context(model: torch_nn.Module, predictor: torch_nn.Module, checkpoint_manifest: dict, context_save_dir: str):
+def save_context(
+    model: torch_nn.Module,
+    predictor: torch_nn.Module,
+    checkpoint_manifest: dict,
+    context_save_dir: str,
+):
     """Publishes one checkpoint bundle: the model and predictor tensor state dictionaries plus the manifest needed to
     rebuild them. The bundle holds only tensors and plain values, so it loads under torch.load(weights_only=True). It is
     written beside its destination, flushed, then renamed over it, so readers see the previous or the new generation.

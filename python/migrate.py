@@ -2,7 +2,12 @@
 
 from base64 import b64encode as base64_b64encode
 from csv import reader as csv_reader_2
-from datetime import date as datetime_date, datetime as datetime_datetime, time as datetime_time, timedelta as datetime_timedelta
+from datetime import (
+    date as datetime_date,
+    datetime as datetime_datetime,
+    time as datetime_time,
+    timedelta as datetime_timedelta,
+)
 from decimal import Decimal
 from functools import partial
 from hashlib import sha256 as hashlib_sha256
@@ -477,7 +482,11 @@ def open_s3_stream(stream: dict, file_path: str, config: mgp_Map, config_path: s
     csv_reader = csv_reader_2(text_stream)
     # First row contains column names; an empty object has none and no rows
     column_names = next(csv_reader, [])
-    stream["fetch"] = partial(fetch_iterator_records, csv_reader, partial(name_row_cells, column_names=column_names))
+    stream["fetch"] = partial(
+        fetch_iterator_records,
+        csv_reader,
+        partial(name_row_cells, column_names=column_names),
+    )
 
 
 def init_migrate_s3(
@@ -494,7 +503,13 @@ def init_migrate_s3(
                    (access_key, secret_key, region, etc.)
     :param config_path: Path to a JSON file containing configuration parameters
     """
-    s3_streams.open(stream_key(file_path, config, config_path), open_s3_stream, file_path, config, config_path)
+    s3_streams.open(
+        stream_key(file_path, config, config_path),
+        open_s3_stream,
+        file_path,
+        config,
+        config_path,
+    )
 
 
 def s3(
@@ -648,7 +663,11 @@ def open_arrow_flight_stream(stream: dict, query: str, config: mgp_Map, config_p
     options = flight.FlightCallOptions(headers=[(b"authorization", f"Basic {encoded_auth}".encode("utf-8"))])
 
     flight_info = client.get_flight_info(flight.FlightDescriptor.for_command(query), options)
-    stream["fetch"] = partial(fetch_iterator_records, fetch_flight_data(client, flight_info, options), convert_row_types)
+    stream["fetch"] = partial(
+        fetch_iterator_records,
+        fetch_flight_data(client, flight_info, options),
+        convert_row_types,
+    )
 
 
 def init_migrate_arrow_flight(
@@ -656,7 +675,13 @@ def init_migrate_arrow_flight(
     config: mgp_Map,
     config_path: str = "",
 ):
-    flight_streams.open(stream_key(query, config, config_path), open_arrow_flight_stream, query, config, config_path)
+    flight_streams.open(
+        stream_key(query, config, config_path),
+        open_arrow_flight_stream,
+        query,
+        config,
+        config_path,
+    )
 
 
 def fetch_flight_data(client, flight_info, options):
@@ -817,7 +842,10 @@ def fetch_servicenow_page(url: str, request: dict, params) -> tuple[list, str]:
     payload = response.json()
     if not isinstance(payload, dict) or not isinstance(payload.get(Constants.RESULT, []), list):
         raise ValueError("ServiceNow response must be a map with a result list")
-    page = (payload.get(Constants.RESULT, []), response.links.get("next", {}).get("url", ""))
+    page = (
+        payload.get(Constants.RESULT, []),
+        response.links.get("next", {}).get("url", ""),
+    )
     return page
 
 
@@ -833,7 +861,10 @@ def servicenow_rows(first_page: tuple[list, str], request: dict):
 def open_servicenow_stream(stream: dict, endpoint: str, config: mgp_Map, config_path: str, params) -> None:
     servicenow_config = effective_config(config, config_path)
     request = {
-        "auth": (servicenow_config.get(Constants.USERNAME, ""), servicenow_config.get(Constants.PASSWORD, "")),
+        "auth": (
+            servicenow_config.get(Constants.USERNAME, ""),
+            servicenow_config.get(Constants.PASSWORD, ""),
+        ),
         "headers": {"Accept": "application/json"},
         "timeout": servicenow_config.get(Constants.TIMEOUT, Constants.SERVICENOW_TIMEOUT_SECONDS),
     }

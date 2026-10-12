@@ -146,7 +146,11 @@ def format_cyclonedx_data(vulnerabilities: list[dict], components: list[dict]) -
     for cve in cves:
         for affect in cve.get("affects", []):
             for component in components_by_ref.get(affect, []):
-                key = (component.get("name", ""), component.get("version", ""), cve.get("cve", ""))
+                key = (
+                    component.get("name", ""),
+                    component.get("version", ""),
+                    cve.get("cve", ""),
+                )
                 if key in seen_keys:
                     continue
                 seen_keys.add(key)

@@ -133,7 +133,11 @@ class MemgraphIgraph(igraph_Graph):
     def shortest_path_length(self, source, target, weights: str) -> float:
         source_id = self.get_igraph_vertex_id(source)
         target_id = self.get_igraph_vertex_id(target)
-        distances = super().distances(source=source_id, target=target_id, **self.edge_attribute_option("weights", weights))
+        distances = super().distances(
+            source=source_id,
+            target=target_id,
+            **self.edge_attribute_option("weights", weights),
+        )
         if not distances or not distances[0]:
             raise RuntimeError("igraph returned no shortest-path distance")
         length = distances[0][0]

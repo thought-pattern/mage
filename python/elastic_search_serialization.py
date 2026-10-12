@@ -5,7 +5,10 @@ from itertools import batched
 from json import loads as json_loads
 from threading import Lock
 
-from elasticsearch import Elasticsearch as elasticsearch_Elasticsearch, helpers as elasticsearch_helpers
+from elasticsearch import (
+    Elasticsearch as elasticsearch_Elasticsearch,
+    helpers as elasticsearch_helpers,
+)
 from elasticsearch.helpers import parallel_bulk, streaming_bulk
 from mgp import (
     Any as mgp_Any,
@@ -189,7 +192,13 @@ def record_bulk_results(results, receipt: dict) -> None:
             continue
         # Each item maps its single operation type to the server's per-document result.
         for details in item.values():
-            rejected.append({ID: details.get(ID, ""), STATUS: details.get(STATUS, 0), ERROR: details.get(ERROR, "")})
+            rejected.append(
+                {
+                    ID: details.get(ID, ""),
+                    STATUS: details.get(STATUS, 0),
+                    ERROR: details.get(ERROR, ""),
+                }
+            )
 
 
 def elastic_search_streaming_bulk(
@@ -400,7 +409,12 @@ def index_db(
     max_backoff: float = 600.0,
     yield_ok: bool = True,
     queue_size: int = 4,
-) -> mgp_Record(nodes=int, edges=int, rejected_nodes=mgp_List[mgp_Map], rejected_edges=mgp_List[mgp_Map]):
+) -> mgp_Record(
+    nodes=int,
+    edges=int,
+    rejected_nodes=mgp_List[mgp_Map],
+    rejected_edges=mgp_List[mgp_Map],
+):
     # Now create iterable of documents that need to be indexed
     (
         "The method serializes all vertices and relationships that are in Memgraph DB to an ElasticSe"  # Continue literal.
@@ -503,7 +517,12 @@ def index(
     max_backoff: float = 600.0,
     yield_ok: bool = True,
     queue_size: int = 4,
-) -> mgp_Record(nodes=int, edges=int, rejected_nodes=mgp_List[mgp_Map], rejected_edges=mgp_List[mgp_Map]):
+) -> mgp_Record(
+    nodes=int,
+    edges=int,
+    rejected_nodes=mgp_List[mgp_Map],
+    rejected_edges=mgp_List[mgp_Map],
+):
     # Now create iterable of documents that need to be indexed
     (
         "The method serializes all vertices and relationships that came into the Memgraph DB to an El"  # Continue literal.

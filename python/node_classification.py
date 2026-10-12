@@ -207,7 +207,10 @@ POSITIVE_INTEGER_PARAMETERS = (
     OtherParams.PATIENCE,
 )
 POSITIVE_FLOAT_PARAMETERS = (OptimizerParams.LEARNING_RATE,)
-NON_NEGATIVE_FLOAT_PARAMETERS = (OptimizerParams.WEIGHT_DECAY, TrainParams.TIME_BETWEEN_CHECKPOINTS)
+NON_NEGATIVE_FLOAT_PARAMETERS = (
+    OptimizerParams.WEIGHT_DECAY,
+    TrainParams.TIME_BETWEEN_CHECKPOINTS,
+)
 
 # What a checkpoint records next to its weights, so a loaded model keeps the
 # architecture it was trained with and the meaning of each output column. Each
@@ -329,7 +332,10 @@ def hetero_network_from_values(values: dict):
 
     # convert model to hetero structure
     # (if graph is homogeneous, we also do this conversion since all calculations are same)
-    metadata = (values.get(HeteroParams.NODE_TYPES, []), values.get(HeteroParams.EDGE_TYPES, []))
+    metadata = (
+        values.get(HeteroParams.NODE_TYPES, []),
+        values.get(HeteroParams.EDGE_TYPES, []),
+    )
     network = to_hetero(network, metadata)
 
     # move model to device

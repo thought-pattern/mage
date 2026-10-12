@@ -662,26 +662,48 @@ def parse_mgp_edges_into_tgn_batch(edges: mgp_List[mgp_Edge]) -> dict:
         sources.append(src_id)
         destinations.append(dest_id)
         edge_idxs.append(edge_idx)
-        labels.append([source.properties.get(node_label_property, 0), dest.properties.get(node_label_property, 0)])
+        labels.append(
+            [
+                source.properties.get(node_label_property, 0),
+                dest.properties.get(node_label_property, 0),
+            ]
+        )
 
     # every edge is admitted: commit the batch in one step
     # the edge set is also used later for negative sampling
     query_module_tgn.get("all_edges", set()).update(zip(sources, destinations, strict=True))
     query_module_tgn_batch.get("node_features", {}).update(node_features)
     query_module_tgn_batch.get("edge_features", {}).update(edge_features)
-    batch_sources = np_concatenate([query_module_tgn_batch.get("sources", np_empty(0, dtype=int)), np_array(sources, dtype=int)])
+    batch_sources = np_concatenate(
+        [
+            query_module_tgn_batch.get("sources", np_empty(0, dtype=int)),
+            np_array(sources, dtype=int),
+        ]
+    )
     query_module_tgn_batch["sources"] = batch_sources
     query_module_tgn_batch["destinations"] = np_concatenate(
-        [query_module_tgn_batch.get("destinations", np_empty(0, dtype=int)), np_array(destinations, dtype=int)]
+        [
+            query_module_tgn_batch.get("destinations", np_empty(0, dtype=int)),
+            np_array(destinations, dtype=int),
+        ]
     )
     query_module_tgn_batch["timestamps"] = np_concatenate(
-        [query_module_tgn_batch.get("timestamps", np_empty(0, dtype=int)), np_array(edge_idxs, dtype=int)]
+        [
+            query_module_tgn_batch.get("timestamps", np_empty(0, dtype=int)),
+            np_array(edge_idxs, dtype=int),
+        ]
     )
     query_module_tgn_batch["edge_idxs"] = np_concatenate(
-        [query_module_tgn_batch.get("edge_idxs", np_empty(0, dtype=int)), np_array(edge_idxs, dtype=int)]
+        [
+            query_module_tgn_batch.get("edge_idxs", np_empty(0, dtype=int)),
+            np_array(edge_idxs, dtype=int),
+        ]
     )
     query_module_tgn_batch["labels"] = np_concatenate(
-        [query_module_tgn_batch.get("labels", np_empty((0, 2), dtype=int)), np_array(labels).reshape((-1, 2))]
+        [
+            query_module_tgn_batch.get("labels", np_empty((0, 2), dtype=int)),
+            np_array(labels).reshape((-1, 2)),
+        ]
     )
     query_module_tgn_batch["current_batch_size"] = len(batch_sources)
     return query_module_tgn_batch

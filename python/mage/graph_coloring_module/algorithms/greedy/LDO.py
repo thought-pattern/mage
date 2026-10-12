@@ -23,7 +23,12 @@ class LDO(Algorithm):
         return "LDO"
 
     @validate(Parameter.NO_OF_COLORS)
-    def run(self, graph: Graph, parameters: dict = DEFAULT_ARGUMENT_DICT, abort_check=no_host_abort) -> Individual:
+    def run(
+        self,
+        graph: Graph,
+        parameters: dict = DEFAULT_ARGUMENT_DICT,
+        abort_check=no_host_abort,
+    ) -> Individual:
         """Returns the individual that represents the result of the LDO algorithm."""
 
         if parameters is DEFAULT_ARGUMENT_DICT:

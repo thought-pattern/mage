@@ -42,7 +42,12 @@ class MemgraphAdjlistOuterDict(collections_abc.Mapping):
 
 
 class MemgraphAdjlistInnerDict(collections_abc.Mapping):
-    __slots__ = ("internal_multi", "internal_neighbors", "internal_node", "internal_succ")
+    __slots__ = (
+        "internal_multi",
+        "internal_neighbors",
+        "internal_node",
+        "internal_succ",
+    )
 
     def __init__(self, node, succ=True, multi=True):
         self.internal_node = node
@@ -97,7 +102,12 @@ class MemgraphAdjlistInnerDict(collections_abc.Mapping):
 
 
 class MemgraphEdgeKeyDict(collections_abc.Mapping):
-    __slots__ = ("internal_edges", "internal_neighbor", "internal_node", "internal_succ")
+    __slots__ = (
+        "internal_edges",
+        "internal_neighbor",
+        "internal_node",
+        "internal_succ",
+    )
 
     def __init__(self, node, neighbor, succ=True):
         self.internal_node = node
@@ -127,9 +137,19 @@ class MemgraphEdgeKeyDict(collections_abc.Mapping):
     def get_edges(self):
         if not self.internal_edges:
             if self.internal_succ:
-                self.internal_edges = list(filter(lambda e: e.to_vertex == self.internal_neighbor, self.internal_node.out_edges))
+                self.internal_edges = list(
+                    filter(
+                        lambda e: e.to_vertex == self.internal_neighbor,
+                        self.internal_node.out_edges,
+                    )
+                )
             else:
-                self.internal_edges = list(filter(lambda e: e.from_vertex == self.internal_neighbor, self.internal_node.in_edges))
+                self.internal_edges = list(
+                    filter(
+                        lambda e: e.from_vertex == self.internal_neighbor,
+                        self.internal_node.in_edges,
+                    )
+                )
         return self.internal_edges
 
 
@@ -216,10 +236,10 @@ class MemgraphDiGraphBase:
 
         # The *_factory attributes are NetworkX's documented subclass hooks, which its constructor calls to obtain the
         # graph's mappings; their names and zero-argument calling convention belong to the library.
-        self.node_dict_factory = lambda: MemgraphNodeDict(ctx) if ctx else self.internal_error
+        self.node_dict_factory = lambda: (MemgraphNodeDict(ctx) if ctx else self.internal_error)
         self.node_attr_dict_factory = self.internal_error
 
-        self.adjlist_outer_dict_factory = lambda: MemgraphAdjlistOuterDict(ctx, multi=multi) if ctx else self.internal_error
+        self.adjlist_outer_dict_factory = lambda: (MemgraphAdjlistOuterDict(ctx, multi=multi) if ctx else self.internal_error)
         self.adjlist_inner_dict_factory = self.internal_error
         self.edge_key_dict_factory = self.internal_error
         self.edge_attr_dict_factory = self.internal_error
@@ -262,7 +282,8 @@ class MemgraphDiGraphBase:
 
 class MemgraphMultiDiGraph(MemgraphDiGraphBase, nx_MultiDiGraph):
     """Read-only multigraph view of the host graph. Undirected algorithms use NetworkX's own undirected view of it,
-    MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True), built at the call site."""
+    MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True), built at the call site.
+    """
 
     def __init__(self, incoming_graph_data=False, ctx=False, **kwargs):
         super().__init__(incoming_graph_data=incoming_graph_data, ctx=ctx, multi=True, **kwargs)

@@ -1,6 +1,12 @@
 """Utilities for llm util."""
 
-from mgp import Any as mgp_Any, Edge as mgp_Edge, ProcCtx as mgp_ProcCtx, Record as mgp_Record, read_proc as mgp_read_proc
+from mgp import (
+    Any as mgp_Any,
+    Edge as mgp_Edge,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    read_proc as mgp_read_proc,
+)
 
 from mage.llm_util.parameters import OutputType, Parameter
 

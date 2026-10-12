@@ -18,8 +18,12 @@ from mage.graph_coloring_module.operators.mutations.MIS_mutation import MISMutat
 from mage.graph_coloring_module.operators.mutations.multiple_mutation import (
     MultipleMutation,
 )
-from mage.graph_coloring_module.operators.mutations.random_mutation import RandomMutation
-from mage.graph_coloring_module.operators.mutations.simple_mutation import SimpleMutation
+from mage.graph_coloring_module.operators.mutations.random_mutation import (
+    RandomMutation,
+)
+from mage.graph_coloring_module.operators.mutations.simple_mutation import (
+    SimpleMutation,
+)
 from mage.graph_coloring_module.parameters import Parameter
 
 

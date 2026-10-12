@@ -1,6 +1,12 @@
 """Utilities for meta util."""
 
-from mgp import List as mgp_List, Map as mgp_Map, ProcCtx as mgp_ProcCtx, Record as mgp_Record, read_proc as mgp_read_proc
+from mgp import (
+    List as mgp_List,
+    Map as mgp_Map,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    read_proc as mgp_read_proc,
+)
 
 from mage.meta_util.parameters import Parameter
 
@@ -63,9 +69,10 @@ def schema(
     # Relationship IDs number every grouped relationship; one whose endpoint label set has no node entry is omitted
     # without renumbering the rest.
     relationships = []
-    for relationship_index, ((source_label, relationship_label, target_label), counts) in enumerate(
-        relationship_count_by_labels.items()
-    ):
+    for relationship_index, (
+        (source_label, relationship_label, target_label),
+        counts,
+    ) in enumerate(relationship_count_by_labels.items()):
         if source_label not in node_index_by_labels or target_label not in node_index_by_labels:
             continue
         relationships.append(

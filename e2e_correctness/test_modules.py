@@ -3,7 +3,11 @@ This module tests modules from this folder one by one by comparing structure aft
 is executed on Neo4j and Memgraph. Be sure to have Neo4j and Memgraph instance running.
 """
 
-from logging import INFO as logging_INFO, basicConfig as logging_basicConfig, getLogger as logging_getLogger
+from logging import (
+    INFO as logging_INFO,
+    basicConfig as logging_basicConfig,
+    getLogger as logging_getLogger,
+)
 from os import path as os_path
 from pathlib import Path
 
@@ -138,7 +142,10 @@ def validated_queries(test_dict: dict) -> tuple[str, str]:
     """Return the Memgraph and Neo4j queries a test file must declare, failing when either is missing."""
     missing = [key for key in (TestConstants.MEMGRAPH_QUERY, TestConstants.NEO4J_QUERY) if key not in test_dict]
     assert not missing, f"Test file declares no {', '.join(missing)}"
-    queries = (test_dict.get(TestConstants.MEMGRAPH_QUERY, ""), test_dict.get(TestConstants.NEO4J_QUERY, ""))
+    queries = (
+        test_dict.get(TestConstants.MEMGRAPH_QUERY, ""),
+        test_dict.get(TestConstants.NEO4J_QUERY, ""),
+    )
     return queries
 
 

@@ -15,7 +15,12 @@ from time import monotonic as time_monotonic
 from urllib import request as urllib_request
 
 from defusedxml import ElementTree as ET
-from mgp import Map as mgp_Map, Record as mgp_Record, function as mgp_function, read_proc as mgp_read_proc
+from mgp import (
+    Map as mgp_Map,
+    Record as mgp_Record,
+    function as mgp_function,
+    read_proc as mgp_read_proc,
+)
 
 DEFAULT_ARGUMENT_DICT = {}
 

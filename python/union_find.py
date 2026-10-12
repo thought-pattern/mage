@@ -3,7 +3,12 @@
 from enum import Enum
 from itertools import product
 
-from mgp import ProcCtx as mgp_ProcCtx, Record as mgp_Record, Vertex as mgp_Vertex, read_proc as mgp_read_proc
+from mgp import (
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
 from mage.union_find import DisjointSet
 
