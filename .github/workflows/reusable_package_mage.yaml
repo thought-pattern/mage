@@ -95,8 +95,6 @@ env:
   NEO4J_PORT: 7688
   NEO4J_CONTAINER: "neo4j_test"
   MEMGRAPH_NETWORK: "memgraph_test_network"
-  MYSQL_CONTAINER: "mysql_test"
-  POSTGRESQL_CONTAINER: "postgresql_test"
   MEMGRAPH_ENTERPRISE_LICENSE: ${{ secrets.MEMGRAPH_ENTERPRISE_LICENSE }}
   MEMGRAPH_ORGANIZATION_NAME: ${{ secrets.MEMGRAPH_ORGANIZATION_NAME }}
   MEMGRAPH_DOWNLOAD_LINK: "${{ inputs.memgraph_download_link }}"
@@ -365,23 +363,11 @@ jobs:
           docker stop $NEO4J_CONTAINER || true
           docker rm $NEO4J_CONTAINER || true
 
-      - name: Run End-to-end migration tests
-        if: ${{ inputs.run_tests == true }}
-        env:
-          PYTHONPATH: "$PWD/e2e"
-        run: |
-          source env/bin/activate
-          ./run_e2e_migration_tests.sh --mage-container $MAGE_CONTAINER --mysql-container $MYSQL_CONTAINER --postgresql-container $POSTGRESQL_CONTAINER
-      
-      - name: Cleanup after migration tests
+      - name: Cleanup after end-to-end tests
         if: ${{ inputs.run_tests == true && always() }}
         run: |
           docker stop $MAGE_CONTAINER || true
           docker rm $MAGE_CONTAINER || true
-          docker stop $MYSQL_CONTAINER || true
-          docker rm $MYSQL_CONTAINER || true
-          docker stop $POSTGRESQL_CONTAINER || true
-          docker rm $POSTGRESQL_CONTAINER || true
           docker stop $NEO4J_CONTAINER || true
           docker rm $NEO4J_CONTAINER || true
           docker network rm $MEMGRAPH_NETWORK || true

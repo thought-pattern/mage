@@ -17,7 +17,6 @@ under https://github.com/memgraph/memgraph/tree/master/tests/drivers + these
 are run against the plain binary, not a full package).
 * inspecting packaged files
 * running queries to test that all features are correctly packaged
-* migration procedures.
 
 ## Delivery Types
 

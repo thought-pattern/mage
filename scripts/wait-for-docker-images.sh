@@ -3,7 +3,7 @@
 # Wait for docker images pulled by pull-e2e-docker-images.sh to be available
 # Timeout: 2 minutes (120 seconds)
 
-IMAGES=("mysql:8.0" "postgres:15.14" "neo4j:5.10.0")
+IMAGES=("neo4j:5.10.0")
 TIMEOUT=120
 INTERVAL=2
 ELAPSED=0
