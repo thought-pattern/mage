@@ -848,8 +848,7 @@ def train_eval_epochs(num_epochs: int, train_edges: list[mgp_Edge], eval_edges: 
 
 
 #####################################################
-@mgp_read_proc
-def predict_link_score(ctx: mgp_ProcCtx, src: mgp_Vertex, dest: mgp_Vertex) -> mgp_Record(prediction=mgp_Number):
+def predict_link_score(ctx: mgp_ProcCtx, src: mgp_Vertex, dest: mgp_Vertex) -> mgp_Record:
     """
     If you were doing link prediction, with this function you can input some of your vertices, and get the predictions
     Be careful to input vertices in correct order (src->dest) otherwise you might get wrong prediction
@@ -886,14 +885,11 @@ def predict_link_score(ctx: mgp_ProcCtx, src: mgp_Vertex, dest: mgp_Vertex) -> m
     return computed_return_value
 
 
-@mgp_read_proc
-def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> mgp_Record(
-    epoch_num=mgp_Number,
-    batch_num=mgp_Number,
-    batch_process_time=mgp_Number,
-    precision=mgp_Number,
-    batch_type=str,
-):
+predict_link_score.__annotations__["return"] = mgp_Record(prediction=mgp_Number)
+predict_link_score = mgp_read_proc(predict_link_score)
+
+
+def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> list:
     """
     After calling this function from ctx we will get all edges currently in database, split them in ratio of
     train and eval edges if function set_mode("eval") was called at some point and use training edges to train
@@ -934,16 +930,19 @@ def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> mgp_Record(
     return computed_return_value
 
 
-@mgp_read_proc
-def get_results(
-    ctx: mgp_ProcCtx,
-) -> mgp_Record(
+train_and_eval.__annotations__["return"] = mgp_Record(
     epoch_num=mgp_Number,
     batch_num=mgp_Number,
     batch_process_time=mgp_Number,
     precision=mgp_Number,
     batch_type=str,
-):
+)
+train_and_eval = mgp_read_proc(train_and_eval)
+
+
+def get_results(
+    ctx: mgp_ProcCtx,
+) -> list:
     """
     This method returns all results from training and evaluation on all epochs
 
@@ -958,8 +957,17 @@ def get_results(
     return computed_return_value
 
 
-@mgp_read_proc
-def set_eval(ctx: mgp_ProcCtx) -> mgp_Record(message=str):
+get_results.__annotations__["return"] = mgp_Record(
+    epoch_num=mgp_Number,
+    batch_num=mgp_Number,
+    batch_process_time=mgp_Number,
+    precision=mgp_Number,
+    batch_type=str,
+)
+get_results = mgp_read_proc(get_results)
+
+
+def set_eval(ctx: mgp_ProcCtx) -> mgp_Record:
     """
     Purpose of this function is to switch mode from "train" to "eval" at some point during your stream.
     At that point, we will save current edge count, and this information will later be used in function
@@ -984,8 +992,11 @@ def set_eval(ctx: mgp_ProcCtx) -> mgp_Record(message=str):
     return computed_return_value
 
 
-@mgp_read_proc
-def revert_from_database(ctx: mgp_ProcCtx) -> mgp_Record():
+set_eval.__annotations__["return"] = mgp_Record(message=str)
+set_eval = mgp_read_proc(set_eval)
+
+
+def revert_from_database(ctx: mgp_ProcCtx) -> mgp_Record:
     """
     todo implement
     Revert from database and potential file in var/log/ to which we can save params
@@ -993,8 +1004,11 @@ def revert_from_database(ctx: mgp_ProcCtx) -> mgp_Record():
     raise NotImplementedError("You can check what is implemented at our docs page: https://memgraph.com/docs/mage")
 
 
-@mgp_read_proc
-def save_tgn_params(ctx: mgp_ProcCtx) -> mgp_Record():
+revert_from_database.__annotations__["return"] = mgp_Record()
+revert_from_database = mgp_read_proc(revert_from_database)
+
+
+def save_tgn_params(ctx: mgp_ProcCtx) -> mgp_Record:
     """
     todo implement
     After every batch we could add saving params as checkpoints to var/log/memgraph
@@ -1003,8 +1017,11 @@ def save_tgn_params(ctx: mgp_ProcCtx) -> mgp_Record():
     raise NotImplementedError("You can check what is implemented at our docs page: https://memgraph.com/docs/mage")
 
 
-@mgp_read_proc
-def reset(ctx: mgp_ProcCtx) -> mgp_Record(message=str):
+save_tgn_params.__annotations__["return"] = mgp_Record()
+save_tgn_params = mgp_read_proc(save_tgn_params)
+
+
+def reset(ctx: mgp_ProcCtx) -> mgp_Record:
     """
     Resets TGN to the state `set_params` establishes from its admitted parameters: newly initialized model and
     optimizer, empty temporal state, results and counters, Train mode and the configured batch size.
@@ -1016,8 +1033,11 @@ def reset(ctx: mgp_ProcCtx) -> mgp_Record(message=str):
     return computed_return_value
 
 
-@mgp_read_proc
-def get(ctx: mgp_ProcCtx) -> mgp_Record(node=mgp_Vertex, embedding=mgp_List[float]):
+reset.__annotations__["return"] = mgp_Record(message=str)
+reset = mgp_read_proc(reset)
+
+
+def get(ctx: mgp_ProcCtx) -> list:
     """
     Get all embeddings of nodes created by TGN. These are final embeddings, after num_layers of processing
 
@@ -1046,8 +1066,11 @@ def get(ctx: mgp_ProcCtx) -> mgp_Record(node=mgp_Vertex, embedding=mgp_List[floa
     return computed_return_value
 
 
-@mgp_read_proc
-def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record():
+get.__annotations__["return"] = mgp_Record(node=mgp_Vertex, embedding=mgp_List[float])
+get = mgp_read_proc(get)
+
+
+def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record:
     (
         "\n    Purpose of following function is to process edges which are created in Memgraph, and ge"  # Continue literal.
         "t features from\n    nodes or edges if they are present and save all that data so when batch "  # Continue literal.
@@ -1092,11 +1115,14 @@ def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record():
     return computed_return_value
 
 
-@mgp_read_proc
+update.__annotations__["return"] = mgp_Record()
+update = mgp_read_proc(update)
+
+
 def set_params(
     ctx: mgp_ProcCtx,
     params: mgp_Map,
-) -> mgp_Record():
+) -> mgp_Record:
     (
         "\n    With following function you can define parameters used in TGN, as well as what kind of "  # Continue literal.
         'learning you want\n    to do with TGN module.\n\n    If you set TGN to "self_supervised" mode, '  # Continue literal.
@@ -1144,6 +1170,10 @@ def set_params(
 
     computed_return_value = mgp_Record()
     return computed_return_value
+
+
+set_params.__annotations__["return"] = mgp_Record()
+set_params = mgp_read_proc(set_params)
 
 
 def initialize_tgn(params: dict) -> bool:

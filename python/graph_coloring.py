@@ -16,12 +16,11 @@ from mage.graph_coloring_module.parameter_boundary import normalize_parameters
 DEFAULT_ARGUMENT_DICT = {}
 
 
-@mgp_read_proc
 def color_graph(
     context: mgp_ProcCtx,
     parameters: mgp_Map = DEFAULT_ARGUMENT_DICT,
     edge_property: str = "weight",
-) -> mgp_Record(node=mgp_Vertex, color=int):
+) -> list:
     """
     Example:
     CALL graph_coloring.color_graph() YIELD *;
@@ -40,14 +39,17 @@ def color_graph(
     return computed_return_value
 
 
-@mgp_read_proc
+color_graph.__annotations__["return"] = mgp_Record(node=mgp_Vertex, color=int)
+color_graph = mgp_read_proc(color_graph)
+
+
 def color_subgraph(
     context: mgp_ProcCtx,
     vertices: mgp_List[mgp_Vertex],
     edges: mgp_List[mgp_Edge],
     parameters: mgp_Map = DEFAULT_ARGUMENT_DICT,
     edge_property: str = "weight",
-) -> mgp_Record(node=mgp_Vertex, color=int):
+) -> list:
     """
     Example:
     MATCH (a:Cell)-[e:CLOSE_TO]->(b:Cell)
@@ -68,6 +70,10 @@ def color_subgraph(
         for node, color in enumerate(solution.chromosome)
     ]
     return computed_return_value
+
+
+color_subgraph.__annotations__["return"] = mgp_Record(node=mgp_Vertex, color=int)
+color_subgraph = mgp_read_proc(color_subgraph)
 
 
 def graph_adjacency(context: mgp_ProcCtx, edge_property: str) -> tuple[list, dict]:

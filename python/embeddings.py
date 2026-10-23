@@ -223,7 +223,7 @@ def cpu_compute(
     model_name: str,
     batch_size: int,
     return_embeddings: bool,
-) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
+) -> mgp_Record:
     imported_import_module("transformers")
 
     model = SentenceTransformer(model_name, device="cpu")
@@ -266,7 +266,7 @@ def single_gpu_compute(
     batch_size: int,
     device: int,
     return_embeddings: bool,
-) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
+) -> mgp_Record:
     imported_import_module("transformers")
 
     # Cleanup accounting exists before acquisition so a failed acquisition still reaches its own failure record.
@@ -355,7 +355,7 @@ def multi_gpu_compute(
     chunk_size: int,
     gpus: list[int],
     return_embeddings: bool,
-) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
+) -> mgp_Record:
     n = len(input_items)
 
     # Chunks stay bounded (batch_size * chunk_size items) to limit payload and OOM exposure. Each GPU gets one spawned
@@ -641,10 +641,9 @@ def compute_embeddings(
     return False
 
 
-@mgp_read_proc
 def model_info(
     configuration: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record(info=mgp_Map):
+) -> mgp_Record:
     if configuration is DEFAULT_ARGUMENT_DICT:
         configuration = DEFAULT_ARGUMENT_DICT.copy()
     configuration = validate_configuration(configuration)
@@ -661,12 +660,15 @@ def model_info(
     return computed_return_value
 
 
-@mgp_write_proc
+model_info.__annotations__["return"] = mgp_Record(info=mgp_Map)
+model_info = mgp_read_proc(model_info)
+
+
 def node_sentence(
     ctx: mgp_ProcCtx,
     input_nodes: mgp_Nullable[mgp_List[mgp_Vertex]] = None,
     configuration: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
+) -> mgp_Record:
     if configuration is DEFAULT_ARGUMENT_DICT:
         configuration = DEFAULT_ARGUMENT_DICT.copy()
     logger.info(f"compute_embeddings: starting (py_exec={sys_executable})")
@@ -682,12 +684,15 @@ def node_sentence(
     return computed_return_value
 
 
-@mgp_read_proc
+node_sentence.__annotations__["return"] = mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int)
+node_sentence = mgp_write_proc(node_sentence)
+
+
 def text(
     ctx: mgp_ProcCtx,
     input_strings: mgp_List[str],
     configuration: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int):
+) -> mgp_Record:
     if configuration is DEFAULT_ARGUMENT_DICT:
         configuration = DEFAULT_ARGUMENT_DICT.copy()
     logger.info(f"embed: starting (py_exec={sys_executable})")
@@ -697,3 +702,7 @@ def text(
     # Strings are encoded directly and their vectors returned; the input mode, not a property name, selects that path.
     computed_return_value = compute_embeddings(input_strings, configuration, False)
     return computed_return_value
+
+
+text.__annotations__["return"] = mgp_Record(success=bool, embeddings=mgp_Nullable[mgp_List[list]], dimension=int)
+text = mgp_read_proc(text)

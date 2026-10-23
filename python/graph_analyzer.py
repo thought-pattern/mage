@@ -41,8 +41,7 @@ except ImportError:
 MAX_LIST_SIZE = 10
 
 
-@mgp_read_proc
-def help() -> mgp_Record(name=str, value=str):
+def help() -> list:
     """Shows manual page for graph_analyzer."""
     documented = [("Procedure '{}'".format(func.__name__), func.__doc__) for func in (help, analyze, analyze_subgraph)]
     documented.extend(("Analysis '{}'".format(name), analysis.__doc__) for name, analysis in ANALYSES.items())
@@ -57,8 +56,11 @@ def help() -> mgp_Record(name=str, value=str):
     return records
 
 
-@mgp_read_proc
-def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = None) -> mgp_Record(name=str, value=str):
+help.__annotations__["return"] = mgp_Record(name=str, value=str)
+help = mgp_read_proc(help)
+
+
+def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = None) -> list:
     """
     Shows graph information.
 
@@ -79,13 +81,16 @@ def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = None) -> m
     return computed_return_value
 
 
-@mgp_read_proc
+analyze.__annotations__["return"] = mgp_Record(name=str, value=str)
+analyze = mgp_read_proc(analyze)
+
+
 def analyze_subgraph(
     context: mgp_ProcCtx,
     vertices: mgp_List[mgp_Vertex],
     edges: mgp_List[mgp_Edge],
     analyses: mgp_Nullable[list[str]] = None,
-) -> mgp_Record(name=str, value=str):
+) -> list:
     """
     Shows subgraph information.
 
@@ -118,6 +123,10 @@ def analyze_subgraph(
     recs = analyze_graph(context, g, analyses)
     computed_return_value = [mgp_Record(name=name, value=value) for name, value in recs]
     return computed_return_value
+
+
+analyze_subgraph.__annotations__["return"] = mgp_Record(name=str, value=str)
+analyze_subgraph = mgp_read_proc(analyze_subgraph)
 
 
 def analyze_graph(context: mgp_ProcCtx, g: nx_MultiDiGraph, analyses: object) -> list[tuple[str, str]]:

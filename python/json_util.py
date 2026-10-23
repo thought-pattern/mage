@@ -106,8 +106,7 @@ def from_json_list(json_str: mgp_Nullable[str]):
     return value
 
 
-@mgp_read_proc
-def load_from_path(ctx: mgp_ProcCtx, path: str) -> mgp_Record(objects=mgp_List[object]):
+def load_from_path(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
     file = Path(path)
     if file.exists():
         with file.open() as opened_file:
@@ -119,8 +118,11 @@ def load_from_path(ctx: mgp_ProcCtx, path: str) -> mgp_Record(objects=mgp_List[o
     return computed_return_value
 
 
-@mgp_read_proc
-def load_from_str(ctx: mgp_ProcCtx, json_str: str) -> mgp_Record(objects=mgp_List[object]):
+load_from_path.__annotations__["return"] = mgp_Record(objects=mgp_List[object])
+load_from_path = mgp_read_proc(load_from_path)
+
+
+def load_from_str(ctx: mgp_ProcCtx, json_str: str) -> mgp_Record:
     """
     Procedure to load JSON from a string.
 
@@ -135,6 +137,10 @@ def load_from_str(ctx: mgp_ProcCtx, json_str: str) -> mgp_Record(objects=mgp_Lis
 
     computed_return_value = mgp_Record(objects=objects)
     return computed_return_value
+
+
+load_from_str.__annotations__["return"] = mgp_Record(objects=mgp_List[object])
+load_from_str = mgp_read_proc(load_from_str)
 
 
 def fetch_json_bytes(ctx: mgp_ProcCtx, url: str) -> bytes:
@@ -165,11 +171,14 @@ def fetch_json_bytes(ctx: mgp_ProcCtx, url: str) -> bytes:
     return json_bytes
 
 
-@mgp_read_proc
-def load_from_url(ctx: mgp_ProcCtx, url: str) -> mgp_Record(objects=mgp_List[object]):
+def load_from_url(ctx: mgp_ProcCtx, url: str) -> mgp_Record:
     objects = json_loads(fetch_json_bytes(ctx, url))
     if type(objects) is dict:
         objects = [objects]
 
     computed_return_value = mgp_Record(objects=objects)
     return computed_return_value
+
+
+load_from_url.__annotations__["return"] = mgp_Record(objects=mgp_List[object])
+load_from_url = mgp_read_proc(load_from_url)

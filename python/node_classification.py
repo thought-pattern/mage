@@ -384,24 +384,9 @@ def configuration_errors(values: dict) -> list[str]:
     return errors
 
 
-@mgp_read_proc
 def set_model_parameters(
     params: mgp_Any = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record(
-    hidden_features_size=list,
-    layer_type=str,
-    aggregator=str,
-    learning_rate=float,
-    weight_decay=float,
-    split_ratio=float,
-    metrics=mgp_Any,
-    node_id_property=str,
-    num_epochs=int,
-    console_log_freq=int,
-    checkpoint_freq=int,
-    device_type=str,
-    path_to_model=str,
-):
+) -> mgp_Record:
     """The purpose of this function is to initialize all global variables.
     _You_ can change those via **params** dictionary.
     It checks if variables in **params** are defined appropriately. If so,
@@ -482,6 +467,24 @@ def set_model_parameters(
     return computed_return_value
 
 
+set_model_parameters.__annotations__["return"] = mgp_Record(
+    hidden_features_size=list,
+    layer_type=str,
+    aggregator=str,
+    learning_rate=float,
+    weight_decay=float,
+    split_ratio=float,
+    metrics=mgp_Any,
+    node_id_property=str,
+    num_epochs=int,
+    console_log_freq=int,
+    checkpoint_freq=int,
+    device_type=str,
+    path_to_model=str,
+)
+set_model_parameters = mgp_read_proc(set_model_parameters)
+
+
 ##############################
 # train
 ##############################
@@ -547,10 +550,7 @@ def save_model_to_folder() -> str:
     return path_to_saved_model
 
 
-@mgp_read_proc
-def train(
-    ctx: mgp_ProcCtx, num_epochs: int = 100
-) -> mgp_Record(epoch=int, loss=float, val_loss=float, train_log=mgp_Any, val_log=mgp_Any):
+def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> list:
     """This function performs training of model. It first declares data, model,
     optimizer and criterion. Then it performs training.
 
@@ -686,13 +686,16 @@ def train(
     return computed_return_value
 
 
+train.__annotations__["return"] = mgp_Record(epoch=int, loss=float, val_loss=float, train_log=mgp_Any, val_log=mgp_Any)
+train = mgp_read_proc(train)
+
+
 ##############################
 # get training data
 ##############################
 
 
-@mgp_read_proc
-def get_training_data() -> mgp_Record(epoch=int, loss=float, val_loss=float, train_log=mgp_Any, val_log=mgp_Any):
+def get_training_data() -> list:
     """This function is used so user can see what is logged data from training.
 
 
@@ -721,13 +724,16 @@ def get_training_data() -> mgp_Record(epoch=int, loss=float, val_loss=float, tra
     return computed_return_value
 
 
+get_training_data.__annotations__["return"] = mgp_Record(epoch=int, loss=float, val_loss=float, train_log=mgp_Any, val_log=mgp_Any)
+get_training_data = mgp_read_proc(get_training_data)
+
+
 ##############################
 # model loading and saving, predict
 ##############################
 
 
-@mgp_read_proc
-def save_model() -> mgp_Record(path=str, status=str):
+def save_model() -> mgp_Record:
     """This function saves model to model saving folder. If there are already total
     of max_models_to_keep models in model saving folder, oldest model is deleted.
 
@@ -749,8 +755,11 @@ def save_model() -> mgp_Record(path=str, status=str):
     return computed_return_value
 
 
-@mgp_read_proc
-def load_model(num: int = 0) -> mgp_Record(path=str, status=str):
+save_model.__annotations__["return"] = mgp_Record(path=str, status=str)
+save_model = mgp_read_proc(save_model)
+
+
+def load_model(num: int = 0) -> mgp_Record:
     """This function loads model from defined folder for saved models.
 
     The checkpoint's own architecture, graph metadata, observed node type,
@@ -798,8 +807,11 @@ def load_model(num: int = 0) -> mgp_Record(path=str, status=str):
     return computed_return_value
 
 
-@mgp_read_proc
-def predict(ctx: mgp_ProcCtx, vertex: mgp_Vertex) -> mgp_Record(predicted_class=int, status=str):
+load_model.__annotations__["return"] = mgp_Record(path=str, status=str)
+load_model = mgp_read_proc(load_model)
+
+
+def predict(ctx: mgp_ProcCtx, vertex: mgp_Vertex) -> mgp_Record:
     """This function predicts metrics on one node. It is suggested that user previously
     loads unseen test data to predict on it.
 
@@ -874,8 +886,11 @@ def predict(ctx: mgp_ProcCtx, vertex: mgp_Vertex) -> mgp_Record(predicted_class=
     return computed_return_value
 
 
-@mgp_read_proc
-def reset() -> mgp_Record(status=str):
+predict.__annotations__["return"] = mgp_Record(predicted_class=int, status=str)
+predict = mgp_read_proc(predict)
+
+
+def reset() -> mgp_Record:
     """This function resets all variables to default values.
 
     Returns:
@@ -892,3 +907,7 @@ def reset() -> mgp_Record(status=str):
 
     computed_return_value = mgp_Record(status="Global parameters and logged data have been reset")
     return computed_return_value
+
+
+reset.__annotations__["return"] = mgp_Record(status=str)
+reset = mgp_read_proc(reset)

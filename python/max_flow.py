@@ -16,13 +16,12 @@ from mgp import (
 from mage.max_flow.bfs_weight_min_max import BFS_find_weight_min_max
 
 
-@mgp_read_proc
 def get_flow(
     context: mgp_ProcCtx,
     start_v: mgp_Vertex,
     end_v: mgp_Vertex,
     edge_property: str = "weight",
-) -> mgp_Record(max_flow=mgp_Number):
+) -> mgp_Record:
     """
     Calculates maximum flow of graph from paths found with method
     ford_fulkerson_capacity_scaling
@@ -49,13 +48,16 @@ def get_flow(
     return computed_return_value
 
 
-@mgp_read_proc
+get_flow.__annotations__["return"] = mgp_Record(max_flow=mgp_Number)
+get_flow = mgp_read_proc(get_flow)
+
+
 def get_paths(
     context: mgp_ProcCtx,
     start_v: mgp_Vertex,
     end_v: mgp_Vertex,
     edge_property: str = "weight",
-) -> mgp_Record(path=mgp_Path, flow=mgp_Number):
+) -> list:
     """
     Returns each path and its flow used in max flow of a graph found with
     ford_fulkerson_capacity_scaling
@@ -76,6 +78,10 @@ def get_paths(
 
     computed_return_value = [mgp_Record(path=list_to_mgp_path(context, path), flow=flow) for path, flow in paths_and_flows]
     return computed_return_value
+
+
+get_paths.__annotations__["return"] = mgp_Record(path=mgp_Path, flow=mgp_Number)
+get_paths = mgp_read_proc(get_paths)
 
 
 def ford_fulkerson_capacity_scaling(

@@ -11,10 +11,7 @@ from mgp import (
 from mage.meta_util.parameters import Parameter
 
 
-@mgp_read_proc
-def schema(
-    context: mgp_ProcCtx, include_properties: bool = False
-) -> mgp_Record(nodes=mgp_List[mgp_Map], relationships=mgp_List[mgp_Map]):
+def schema(context: mgp_ProcCtx, include_properties: bool = False) -> mgp_Record:
     (
         "\n    Procedure to generate the graph database schema.\n\n    Args:\n        context (mgp.ProcCt"  # Continue literal.
         "x): Reference to the context execution.\n        include_properties (bool): If set to True, t"  # Continue literal.
@@ -88,6 +85,10 @@ def schema(
 
     computed_return_value = mgp_Record(nodes=nodes, relationships=relationships)
     return computed_return_value
+
+
+schema.__annotations__["return"] = mgp_Record(nodes=mgp_List[mgp_Map], relationships=mgp_List[mgp_Map])
+schema = mgp_read_proc(schema)
 
 
 def update_counts(

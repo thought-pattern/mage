@@ -147,8 +147,7 @@ def merge_labels(labels: list[mgp_Label]) -> str:
 ##############################
 
 
-@mgp_read_proc
-def set_model_parameters(ctx: mgp_ProcCtx, parameters: mgp_Map) -> mgp_Record(status=bool, message=str):
+def set_model_parameters(ctx: mgp_ProcCtx, parameters: mgp_Map) -> mgp_Record:
     (
         "Saves parameters to the global parameters link_prediction_parameters. Specific parsing is ne"  # Continue literal.
         "eded because we want enable user to call it with a subset of parameters, no need to send the"  # Continue literal.
@@ -229,10 +228,13 @@ def set_model_parameters(ctx: mgp_ProcCtx, parameters: mgp_Map) -> mgp_Record(st
     return computed_return_value
 
 
-@mgp_read_proc
+set_model_parameters.__annotations__["return"] = mgp_Record(status=bool, message=str)
+set_model_parameters = mgp_read_proc(set_model_parameters)
+
+
 def train(
     ctx: mgp_ProcCtx,
-) -> mgp_Record(training_results=mgp_Any, validation_results=mgp_Any):
+) -> mgp_Record:
     (
         "Train method is used for training the module on the dataset provided with ctx. By taking dec"  # Continue literal.
         "ision to split the dataset here and not in the separate method, it is impossible to retrain "  # Continue literal.
@@ -363,8 +365,11 @@ def train(
     return computed_return_value
 
 
-@mgp_read_proc
-def predict(ctx: mgp_ProcCtx, src_vertex: mgp_Vertex, dest_vertex: mgp_Vertex) -> mgp_Record(score=mgp_Number):
+train.__annotations__["return"] = mgp_Record(training_results=mgp_Any, validation_results=mgp_Any)
+train = mgp_read_proc(train)
+
+
+def predict(ctx: mgp_ProcCtx, src_vertex: mgp_Vertex, dest_vertex: mgp_Vertex) -> mgp_Record:
     (
         "Predict method. It is assumed that nodes are added to the original Memgraph graph. It suppor"  # Continue literal.
         "ts both situations, when the edge doesn't exist and when\n    the edge exists.\n\n    Args:\n   "  # Continue literal.
@@ -410,13 +415,16 @@ def predict(ctx: mgp_ProcCtx, src_vertex: mgp_Vertex, dest_vertex: mgp_Vertex) -
     return result
 
 
-@mgp_read_proc
+predict.__annotations__["return"] = mgp_Record(score=mgp_Number)
+predict = mgp_read_proc(predict)
+
+
 def recommend(
     ctx: mgp_ProcCtx,
     src_vertex: mgp_Vertex,
     dest_vertices: mgp_List[mgp_Vertex],
     k: int,
-) -> mgp_Record(score=mgp_Number, recommendation=mgp_Vertex):
+) -> list:
     (
         "Recommend method. It is assumed that nodes are already added to the original graph and our g"  # Continue literal.
         "oal is to predict whether there is an edge between two nodes or not. Even if the edge exists"  # Continue literal.
@@ -545,10 +553,13 @@ def recommend(
     return return_results
 
 
-@mgp_read_proc
+recommend.__annotations__["return"] = mgp_Record(score=mgp_Number, recommendation=mgp_Vertex)
+recommend = mgp_read_proc(recommend)
+
+
 def get_training_results(
     ctx: mgp_ProcCtx,
-) -> mgp_Record(training_results=mgp_Any, validation_results=mgp_Any):
+) -> mgp_Record:
     (
         "This method is used when user wants to get performance data obtained from the last training."  # Continue literal.
         " It is in the form of list of records where each record is a Dict[metric_name, metric_value]"  # Continue literal.
@@ -565,8 +576,11 @@ def get_training_results(
     return computed_return_value
 
 
-@mgp_read_proc
-def load_model(ctx: mgp_ProcCtx, path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Record(status=mgp_Any):
+get_training_results.__annotations__["return"] = mgp_Record(training_results=mgp_Any, validation_results=mgp_Any)
+get_training_results = mgp_read_proc(get_training_results)
+
+
+def load_model(ctx: mgp_ProcCtx, path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Record:
     """Loads the checkpoint bundle train saved under the given directory. If the path doesn't exist, underlying exception
     is thrown. If the path argument is not given, it loads from the default path. If the user has changed path and the
     context was deleted then he/she needs to send that parameter here.
@@ -593,8 +607,11 @@ def load_model(ctx: mgp_ProcCtx, path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Re
     return computed_return_value
 
 
-@mgp_read_proc
-def reset_parameters(ctx: mgp_ProcCtx) -> mgp_Record(status=mgp_Any):
+load_model.__annotations__["return"] = mgp_Record(status=mgp_Any)
+load_model = mgp_read_proc(load_model)
+
+
+def reset_parameters(ctx: mgp_ProcCtx) -> mgp_Record:
     """Resets all parameters.
 
     Args:
@@ -606,6 +623,10 @@ def reset_parameters(ctx: mgp_ProcCtx) -> mgp_Record(status=mgp_Any):
     reset_train_predict_parameters()
     computed_return_value = mgp_Record(status=True)
     return computed_return_value
+
+
+reset_parameters.__annotations__["return"] = mgp_Record(status=mgp_Any)
+reset_parameters = mgp_read_proc(reset_parameters)
 
 
 ##############################

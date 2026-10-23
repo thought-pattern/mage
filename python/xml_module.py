@@ -146,14 +146,13 @@ def xpath_search(root, xpath_expression):
         raise ValueError(f"XPath search error: {err}") from err
 
 
-@mgp_read_proc
 def load(
     xml_url: str,
     simple: bool = False,
     path: str = "",
     xpath: str = "",
     headers: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record(output_map=mgp_Map):
+) -> list:
     """
     Procedure to load XML from url or from file to a map.
 
@@ -203,3 +202,7 @@ def load(
     output_map = parse_element(root, simple)
     computed_return_value = [mgp_Record(output_map=output_map)]
     return computed_return_value
+
+
+load.__annotations__["return"] = mgp_Record(output_map=mgp_Map)
+load = mgp_read_proc(load)

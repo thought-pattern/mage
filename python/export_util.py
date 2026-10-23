@@ -254,12 +254,11 @@ def write_cypher_export(
     out.write(f"MATCH (n:{import_name}) REMOVE n:{import_name} REMOVE n.{import_name};\n")
 
 
-@mgp_read_proc
 def cypher_all(
     ctx: mgp_ProcCtx,
     path: str = "",
     config: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record(path=str, data=str):
+) -> mgp_Record:
     (
         "Exports the graph in cypher with all the constraints, indexes and triggers.\n    Args:\n      "  # Continue literal.
         "  context (mgp.ProcCtx): Reference to the context execution.\n        path (str): A path to t"  # Continue literal.
@@ -300,6 +299,10 @@ def cypher_all(
 
     computed_return_value = mgp_Record(path=path, data=data)
     return computed_return_value
+
+
+cypher_all.__annotations__["return"] = mgp_Record(path=str, data=str)
+cypher_all = mgp_read_proc(cypher_all)
 
 
 def get_properties_json(object, write_properties: bool):
@@ -418,8 +421,7 @@ def write_json_array(out, elements, indent: int) -> None:
     out.write(closing if written else "[]")
 
 
-@mgp_read_proc
-def json(ctx: mgp_ProcCtx, path: str = "", config: mgp_Map = DEFAULT_ARGUMENT_DICT) -> mgp_Record(path=str, data=str):
+def json(ctx: mgp_ProcCtx, path: str = "", config: mgp_Map = DEFAULT_ARGUMENT_DICT) -> mgp_Record:
     (
         "\n    Procedure to export the whole database to a JSON file.\n\n    Parameters:\n        context"  # Continue literal.
         ' : mgp.ProcCtx\n            Reference to the context execution.\n        path : str = ""\n     '  # Continue literal.
@@ -461,14 +463,17 @@ def json(ctx: mgp_ProcCtx, path: str = "", config: mgp_Map = DEFAULT_ARGUMENT_DI
     return computed_return_value
 
 
-@mgp_read_proc
+json.__annotations__["return"] = mgp_Record(path=str, data=str)
+json = mgp_read_proc(json)
+
+
 def json_graph(
     ctx: mgp_ProcCtx,
     nodes: list,
     relationships: list,
     path: str = "",
     config: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record(path=str, data=str):
+) -> mgp_Record:
     (
         "\n    Procedure to export the given graph to a JSON file. The graph is given with a map that "  # Continue literal.
         'contains keys "nodes" and "relationships".\n\n    Parameters:\n        nodes : List[Node]\n     '  # Continue literal.
@@ -505,6 +510,10 @@ def json_graph(
 
     computed_return_value = mgp_Record(path=path, data=data)
     return computed_return_value
+
+
+json_graph.__annotations__["return"] = mgp_Record(path=str, data=str)
+json_graph = mgp_read_proc(json_graph)
 
 
 def write_csv_rows(out, rows, delimiter: str, quoting_type: mgp_Any) -> None:
@@ -643,13 +652,12 @@ def header_path(path: str):
     return computed_return_value
 
 
-@mgp_read_proc
 def csv_graph(
     nodes_list: mgp_List[mgp_Vertex],
     relationships_list: mgp_List[mgp_Edge],
     path: str = "",
     config: mgp_Map = DEFAULT_ARGUMENT_DICT,
-) -> mgp_Record(path=str, data=str):
+) -> mgp_Record:
     """
     Procedure to export the given graph to a csv file.
     The graph is given with two lists, one for nodes,
@@ -720,13 +728,16 @@ def csv_graph(
     return computed_return_value
 
 
-@mgp_read_proc
+csv_graph.__annotations__["return"] = mgp_Record(path=str, data=str)
+csv_graph = mgp_read_proc(csv_graph)
+
+
 def csv_query(
     context: mgp_ProcCtx,
     query: str,
     file_path: str = "",
     stream: bool = False,
-) -> mgp_Record(file_path=str, data=str):
+) -> mgp_Record:
     """
     Procedure to export query results to a CSV file.
     Args:
@@ -783,6 +794,10 @@ def csv_query(
 
     computed_return_value = mgp_Record(file_path=file_path, data=data)
     return computed_return_value
+
+
+csv_query.__annotations__["return"] = mgp_Record(file_path=str, data=str)
+csv_query = mgp_read_proc(csv_query)
 
 
 def write_graphml_header(output: io_StringIO):
@@ -1027,12 +1042,11 @@ def set_default_config(config: mgp_Map) -> mgp_Map:
     return config
 
 
-@mgp_read_proc
 def graphml(
     ctx: mgp_ProcCtx,
     path: str = "",
     config: mgp_Nullable[mgp_Map] = None,
-) -> mgp_Record(status=str):
+) -> mgp_Record:
     """
     Procedure to export the whole database to a graphML file.
 
@@ -1060,3 +1074,7 @@ def graphml(
     publish_file(path, render, "\n")
     computed_return_value = mgp_Record(status="success")
     return computed_return_value
+
+
+graphml.__annotations__["return"] = mgp_Record(status=str)
+graphml = mgp_read_proc(graphml)

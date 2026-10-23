@@ -296,13 +296,12 @@ def elastic_search_parallel_bulk(
     return receipt
 
 
-@mgp_read_proc
 def connect(
     elastic_url: str,
     ca_certs: str = "",
     elastic_user: str = "",
     elastic_password: str = "",
-) -> mgp_Record(connection_status=mgp_Map):
+) -> mgp_Record:
     (
         "Establishes connection with the Elasticsearch. This configuration needs to be specific to th"  # Continue literal.
         "e Elasticsearch deployment. Uses basic authentication\n    Args:\n        elastic_url (str): U"  # Continue literal.
@@ -334,6 +333,10 @@ def connect(
     return computed_return_value
 
 
+connect.__annotations__["return"] = mgp_Record(connection_status=mgp_Map)
+connect = mgp_read_proc(connect)
+
+
 def schema_section(schema: dict, path: tuple) -> dict:
     """Returns the nested mapping at path inside a loaded index schema, failing when the schema does not contain it."""
     section = schema
@@ -351,13 +354,12 @@ def schema_section(schema: dict, path: tuple) -> dict:
     return section
 
 
-@mgp_read_proc
 def create_index(
     context: mgp_ProcCtx,
     index_name: str,
     schema_path: str,
     schema_parameters: mgp_Map,
-) -> mgp_Record(response=mgp_Map):
+) -> mgp_Record:
     """Creates index with the given index name.
     Args:
         index_name (str): Name of the index that needs to be created.
@@ -394,7 +396,10 @@ def create_index(
     return computed_return_value
 
 
-@mgp_read_proc
+create_index.__annotations__["return"] = mgp_Record(response=mgp_Map)
+create_index = mgp_read_proc(create_index)
+
+
 def index_db(
     context: mgp_ProcCtx,
     node_index: str,
@@ -409,12 +414,7 @@ def index_db(
     max_backoff: float = 600.0,
     yield_ok: bool = True,
     queue_size: int = 4,
-) -> mgp_Record(
-    nodes=int,
-    edges=int,
-    rejected_nodes=mgp_List[mgp_Map],
-    rejected_edges=mgp_List[mgp_Map],
-):
+) -> mgp_Record:
     # Now create iterable of documents that need to be indexed
     (
         "The method serializes all vertices and relationships that are in Memgraph DB to an ElasticSe"  # Continue literal.
@@ -501,7 +501,15 @@ def index_db(
     return computed_return_value
 
 
-@mgp_read_proc
+index_db.__annotations__["return"] = mgp_Record(
+    nodes=int,
+    edges=int,
+    rejected_nodes=mgp_List[mgp_Map],
+    rejected_edges=mgp_List[mgp_Map],
+)
+index_db = mgp_read_proc(index_db)
+
+
 def index(
     context: mgp_ProcCtx,
     createdObjects: mgp_List[mgp_Map],
@@ -517,12 +525,7 @@ def index(
     max_backoff: float = 600.0,
     yield_ok: bool = True,
     queue_size: int = 4,
-) -> mgp_Record(
-    nodes=int,
-    edges=int,
-    rejected_nodes=mgp_List[mgp_Map],
-    rejected_edges=mgp_List[mgp_Map],
-):
+) -> mgp_Record:
     # Now create iterable of documents that need to be indexed
     (
         "The method serializes all vertices and relationships that came into the Memgraph DB to an El"  # Continue literal.
@@ -610,7 +613,15 @@ def index(
     return computed_return_value
 
 
-@mgp_read_proc
+index.__annotations__["return"] = mgp_Record(
+    nodes=int,
+    edges=int,
+    rejected_nodes=mgp_List[mgp_Map],
+    rejected_edges=mgp_List[mgp_Map],
+)
+index = mgp_read_proc(index)
+
+
 def reindex(
     context: mgp_ProcCtx,
     source_index: mgp_Any,
@@ -619,7 +630,7 @@ def reindex(
     chunk_size: int = 500,
     scroll: str = "5m",
     op_type: mgp_Nullable[str] = None,
-) -> mgp_Record(response=str):
+) -> mgp_Record:
     (
         "Reindex all documents that satisfy a given query from one index to another, potentially (if "  # Continue literal.
         "target_client is specified) on a different cluster. If you don’t specify the query you will "  # Continue literal.
@@ -652,7 +663,10 @@ def reindex(
     return computed_return_value
 
 
-@mgp_read_proc
+reindex.__annotations__["return"] = mgp_Record(response=str)
+reindex = mgp_read_proc(reindex)
+
+
 def scan(
     context: mgp_ProcCtx,
     index_name: str,
@@ -665,7 +679,7 @@ def scan(
     request_timeout: mgp_Nullable[float] = None,
     clear_scroll: bool = True,
     max_items: mgp_Nullable[int] = None,
-) -> mgp_Record(items=mgp_List[mgp_Map], complete=bool):
+) -> mgp_Record:
     (
         "Runs a query on a index specified by the index_name.\n    Args:\n        context (mgp.ProcCtx)"  # Continue literal.
         ": Reference to the executing context.\n        index_name (str): A name of the index.\n       "  # Continue literal.
@@ -717,7 +731,10 @@ def scan(
     return computed_return_value
 
 
-@mgp_read_proc
+scan.__annotations__["return"] = mgp_Record(items=mgp_List[mgp_Map], complete=bool)
+scan = mgp_read_proc(scan)
+
+
 def search(
     context: mgp_ProcCtx,
     index_name: str,
@@ -726,7 +743,7 @@ def search(
     from_: int = 0,
     aggregations: mgp_Nullable[mgp_Map] = None,
     aggs: mgp_Nullable[mgp_Map] = None,
-) -> mgp_Record(result=mgp_Map):
+) -> mgp_Record:
     """Searches for all documents by specifying query and index.
     Args:
         context (mgp.ProcCtx): Reference to the executing context.
@@ -757,3 +774,7 @@ def search(
 
     computed_return_value = mgp_Record(result=result)
     return computed_return_value
+
+
+search.__annotations__["return"] = mgp_Record(result=mgp_Map)
+search = mgp_read_proc(search)

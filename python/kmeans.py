@@ -53,7 +53,6 @@ def extract_nodes_embeddings(ctx: mgp_ProcCtx, embedding_property: str) -> tuple
     return nodes, embeddings
 
 
-@mgp_read_proc
 def get_clusters(
     ctx: mgp_ProcCtx,
     n_clusters: mgp_Number,
@@ -64,7 +63,7 @@ def get_clusters(
     tol: mgp_Number = 1e-4,
     algorithm: str = "lloyd",
     random_state: int = 1998,
-) -> mgp_Record(node=mgp_Vertex, cluster_id=mgp_Number):
+) -> list:
     nodes, embeddings = extract_nodes_embeddings(ctx, embedding_property)
 
     nodes_labels_list = get_created_clusters(
@@ -82,7 +81,10 @@ def get_clusters(
     return computed_return_value
 
 
-@mgp_write_proc
+get_clusters.__annotations__["return"] = mgp_Record(node=mgp_Vertex, cluster_id=mgp_Number)
+get_clusters = mgp_read_proc(get_clusters)
+
+
 def set_clusters(
     ctx: mgp_ProcCtx,
     n_clusters: mgp_Number,
@@ -94,7 +96,7 @@ def set_clusters(
     tol: mgp_Number = 1e-4,
     algorithm: str = "lloyd",
     random_state=1998,
-) -> mgp_Record(node=mgp_Vertex, cluster_id=mgp_Number):
+) -> list:
     nodes, embeddings = extract_nodes_embeddings(ctx, embedding_property)
 
     nodes_labels_list = get_created_clusters(
@@ -114,3 +116,7 @@ def set_clusters(
 
     computed_return_value = [mgp_Record(node=node, cluster_id=int(label)) for node, label in nodes_labels_list]
     return computed_return_value
+
+
+set_clusters.__annotations__["return"] = mgp_Record(node=mgp_Vertex, cluster_id=mgp_Number)
+set_clusters = mgp_write_proc(set_clusters)

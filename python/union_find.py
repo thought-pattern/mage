@@ -24,14 +24,13 @@ class Mode(Enum):
     PAIRWISE = "pairwise"
 
 
-@mgp_read_proc
 def connected(
     ctx: mgp_ProcCtx,
     nodes1: object,
     nodes2: object,
     mode: str = "pairwise",
     update: bool = True,
-) -> mgp_Record(node1=mgp_Vertex, node2=mgp_Vertex, connected=bool):
+) -> list:
     """
     Returns whether two nodes (or each pair in the product of two node lists) belong to the same connected component
     of the graph.
@@ -100,3 +99,7 @@ def connected(
         f'Mode {mode} is invalid, please specify one of the following: "{Mode.PAIRWISE.value}", "' f'{Mode.CARTESIAN.value}".'
     )
     raise ValueError(error_message)
+
+
+connected.__annotations__["return"] = mgp_Record(node1=mgp_Vertex, node2=mgp_Vertex, connected=bool)
+connected = mgp_read_proc(connected)

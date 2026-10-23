@@ -97,7 +97,6 @@ def get_graph_memgraph_ctx(ctx: mgp_ProcCtx, edge_weight_property: str, is_direc
     return graph
 
 
-@mgp_read_proc
 def get_embeddings(
     ctx: mgp_ProcCtx,
     is_directed: bool = False,
@@ -117,7 +116,7 @@ def get_embeddings(
     negative=5,
     epochs=5,
     edge_weight_property="weight",
-) -> mgp_Record(nodes=mgp_List[mgp_Vertex], embeddings=mgp_List[mgp_List[mgp_Number]]):
+) -> mgp_Record:
     """
     Function to get node embeddings. Uses gensim.models.Word2Vec params.
 
@@ -194,7 +193,10 @@ def get_embeddings(
     return computed_return_value
 
 
-@mgp_write_proc
+get_embeddings.__annotations__["return"] = mgp_Record(nodes=mgp_List[mgp_Vertex], embeddings=mgp_List[mgp_List[mgp_Number]])
+get_embeddings = mgp_read_proc(get_embeddings)
+
+
 def set_embeddings(
     ctx: mgp_ProcCtx,
     is_directed: bool = False,
@@ -214,7 +216,7 @@ def set_embeddings(
     negative=5,
     epochs=5,
     edge_weight_property="weight",
-) -> mgp_Record(nodes=mgp_List[mgp_Vertex], embeddings=mgp_List[mgp_List[mgp_Number]]):
+) -> mgp_Record:
     """
     Function to get node embeddings. Uses gensim.models.Word2Vec params.
 
@@ -297,8 +299,11 @@ def set_embeddings(
     return computed_return_value
 
 
-@mgp_read_proc
-def help() -> mgp_Record(name=str, value=str):
+set_embeddings.__annotations__["return"] = mgp_Record(nodes=mgp_List[mgp_Vertex], embeddings=mgp_List[mgp_List[mgp_Number]])
+set_embeddings = mgp_write_proc(set_embeddings)
+
+
+def help() -> list:
     """Shows manual page for node2vec"""
     # Each procedure's title names its first manual line; its remaining lines carry an empty name.
     records = []
@@ -309,3 +314,7 @@ def help() -> mgp_Record(name=str, value=str):
         records.extend(mgp_Record(name=name, value=line) for name, line in zip(chain([title], repeat("")), lines, strict=False))
 
     return records
+
+
+help.__annotations__["return"] = mgp_Record(name=str, value=str)
+help = mgp_read_proc(help)

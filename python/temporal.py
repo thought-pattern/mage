@@ -12,11 +12,10 @@ from mgp import Any as mgp_Any, Record as mgp_Record, read_proc as mgp_read_proc
 from mage.date.constants import Epoch
 
 
-@mgp_read_proc
 def format(
     temporal: mgp_Any,
     format: str = "ISO",
-) -> mgp_Record(formatted=str):
+) -> mgp_Record:
     if not (
         isinstance(temporal, datetime_datetime)
         or isinstance(temporal, datetime_date)
@@ -43,3 +42,7 @@ def format(
 
     computed_return_value = mgp_Record(formatted=temporal.strftime(format))
     return computed_return_value
+
+
+format.__annotations__["return"] = mgp_Record(formatted=str)
+format = mgp_read_proc(format)

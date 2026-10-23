@@ -24,11 +24,7 @@ tsp_solving_methods = {
 }
 
 
-@mgp_read_proc
-def solve(context: mgp_ProcCtx, points: list[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD) -> mgp_Record(
-    sources=mgp_Nullable[mgp_List[mgp_Vertex]],
-    destinations=mgp_Nullable[mgp_List[mgp_Vertex]],
-):
+def solve(context: mgp_ProcCtx, points: list[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD) -> mgp_Record:
     """
     The tsp solver returns 2 fields whose elements at indexes are correlated
 
@@ -67,3 +63,10 @@ def solve(context: mgp_ProcCtx, points: list[mgp_Vertex], method: str = DEFAULT_
 
     computed_return_value = mgp_Record(sources=sources, destinations=destinations)
     return computed_return_value
+
+
+solve.__annotations__["return"] = mgp_Record(
+    sources=mgp_Nullable[mgp_List[mgp_Vertex]],
+    destinations=mgp_Nullable[mgp_List[mgp_Vertex]],
+)
+solve = mgp_read_proc(solve)

@@ -23,13 +23,12 @@ from mage.date.constants import Epoch
 from mage.date.unit_conversion import to_int, to_timedelta
 
 
-@mgp_read_proc
 def parse(
     time: str,
     unit: str = "ms",
     format: str = "%Y-%m-%d %H:%M:%S",
     timezone: str = "UTC",
-) -> mgp_Record(parsed=int):
+) -> mgp_Record:
     first_date = Epoch.UNIX_EPOCH.replace(tzinfo=datetime_timezone.utc)
     input_date = datetime_datetime.strptime(time, format)
 
@@ -62,13 +61,16 @@ def parse(
     return computed_return_value
 
 
-@mgp_read_proc
+parse.__annotations__["return"] = mgp_Record(parsed=int)
+parse = mgp_read_proc(parse)
+
+
 def format(
     time: int,
     unit: str = "ms",
     format: str = "%Y-%m-%d %H:%M:%S %Z",
     timezone: str = "UTC",
-) -> mgp_Record(formatted=str):
+) -> mgp_Record:
     first_date = Epoch.UNIX_EPOCH.replace(tzinfo=datetime_timezone.utc)
 
     if unit == "ms":
@@ -91,6 +93,10 @@ def format(
 
     computed_return_value = mgp_Record(formatted=local_date.strftime(format))
     return computed_return_value
+
+
+format.__annotations__["return"] = mgp_Record(formatted=str)
+format = mgp_read_proc(format)
 
 
 @mgp_function
@@ -269,8 +275,7 @@ def convert_format(temporal: mgp_Nullable[str], current_format: str, convert_to:
         raise Exception(f"Error converting '{temporal}' from '{current_format}' to '{convert_to}': {err}") from err
 
 
-@mgp_read_proc
-def get_date_formats(context: mgp_ProcCtx) -> mgp_Record(formats=mgp_List[str]):
+def get_date_formats(context: mgp_ProcCtx) -> mgp_Record:
     """
     Returns a list of supported date formats.
 
@@ -279,3 +284,7 @@ def get_date_formats(context: mgp_ProcCtx) -> mgp_Record(formats=mgp_List[str]):
     """
     computed_return_value = mgp_Record(formats=list(DateFormatUtil.ISO_DATE_FORMATS.keys()))
     return computed_return_value
+
+
+get_date_formats.__annotations__["return"] = mgp_Record(formats=mgp_List[str])
+get_date_formats = mgp_read_proc(get_date_formats)

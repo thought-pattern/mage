@@ -15,12 +15,11 @@ from mage.constraint_programming.solver import (
 )
 
 
-@mgp_read_proc
 def cp_solve(
     context: mgp_ProcCtx,
     element_vertexes: list[mgp_Vertex],
     set_vertexes: list[mgp_Vertex],
-) -> mgp_Record(containing_set=mgp_Vertex):
+) -> list:
     """
     This set cover solver method returns 1 filed
 
@@ -52,12 +51,15 @@ def cp_solve(
     return computed_return_value
 
 
-@mgp_read_proc
+cp_solve.__annotations__["return"] = mgp_Record(containing_set=mgp_Vertex)
+cp_solve = mgp_read_proc(cp_solve)
+
+
 def greedy(
     context: mgp_ProcCtx,
     element_vertexes: list[mgp_Vertex],
     set_vertexes: list[mgp_Vertex],
-) -> mgp_Record(containing_set=mgp_Vertex):
+) -> list:
     """
     This set cover solver method returns 1 filed
 
@@ -92,6 +94,10 @@ def greedy(
 
     computed_return_value = [mgp_Record(containing_set=x) for x in resulting_nodes]
     return computed_return_value
+
+
+greedy.__annotations__["return"] = mgp_Record(containing_set=mgp_Vertex)
+greedy = mgp_read_proc(greedy)
 
 
 def paired_membership_ids(element_vertexes: list[mgp_Vertex], set_vertexes: list[mgp_Vertex]) -> tuple[list[int], list[int]]:

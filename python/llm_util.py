@@ -144,11 +144,10 @@ class SchemaGenerator(object):
         return False
 
 
-@mgp_read_proc
 def schema(
     context: mgp_ProcCtx,
     output_type: str = OutputType.PROMPT_READY.value,
-) -> mgp_Record(schema=mgp_Any):
+) -> mgp_Record:
     (
         "\n    Procedure to generate the graph database schema in a prompt-ready or raw format.\n\n    A"  # Continue literal.
         "rgs:\n        context (mgp.ProcCtx): Reference to the context execution.\n        output_type "  # Continue literal.
@@ -170,3 +169,7 @@ def schema(
 
     computed_return_value = mgp_Record(schema=schema_generator.get_schema())
     return computed_return_value
+
+
+schema.__annotations__["return"] = mgp_Record(schema=mgp_Any)
+schema = mgp_read_proc(schema)

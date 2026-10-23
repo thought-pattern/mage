@@ -53,12 +53,11 @@ def get_depot_index(vertices: list[mgp_Vertex], depot_node: mgp_Vertex) -> int:
     return depot_index
 
 
-@mgp_read_proc
 def route(
     context: mgp_ProcCtx,
     depot_node: mgp_Vertex,
     number_of_vehicles: mgp_Nullable[int] = None,
-) -> mgp_Record(from_vertex=mgp_Vertex, to_vertex=mgp_Vertex):
+) -> list:
     """
     The VRP routing returns 2 fields.
         * `from_vertex` represents the starting nodes out of all selected routes (edges) in the complete graph
@@ -94,6 +93,10 @@ def route(
             raise ValueError(f"route path endpoints outside the vertex list: {path!r}")
         computed_return_value.append(mgp_Record(from_vertex=vertices[from_index], to_vertex=vertices[to_index]))
     return computed_return_value
+
+
+route.__annotations__["return"] = mgp_Record(from_vertex=mgp_Vertex, to_vertex=mgp_Vertex)
+route = mgp_read_proc(route)
 
 
 class DepotUnspecifiedException(Exception):
