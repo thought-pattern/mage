@@ -38,7 +38,11 @@ NODE_EMBEDDING_PROPERTY = "embedding"
 def learn_embeddings(walks: list[list[int]], **word2vec_params) -> dict[int, list[float]]:
     model = gensim_models.Word2Vec(sentences=walks, **word2vec_params)
 
-    embeddings = {index: embedding for index, embedding in zip(model.wv.index_to_key, model.wv.vectors, strict=False)}
+    embeddings = {}
+    for node_id in model.wv.key_to_index:
+        if not isinstance(node_id, int) or isinstance(node_id, bool):
+            raise ValueError("Node2vec vocabulary keys must be integer vertex identities")
+        embeddings[node_id] = [float(value) for value in model.wv[node_id]]
 
     return embeddings
 

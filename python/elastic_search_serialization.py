@@ -1,5 +1,6 @@
 """Utilities for elastic search serialization."""
 
+from collections.abc import Generator
 from datetime import datetime, timezone as datetime_timezone
 from itertools import batched
 from json import loads as json_loads
@@ -310,14 +311,15 @@ def connect(
         "    elastic_password (str): User's password for connecting to the Elasticsearch.\n    Returns"  # Continue literal.
         ":\n        mgp.Record(connection_status=mgp.Map): Connection info.\n"
     )
-    candidate = elasticsearch_Elasticsearch(
-        hosts=elastic_url,
-        ca_certs=ca_certs,
-        basic_auth=(elastic_user, elastic_password),
-    )
+    options = {}
+    if ca_certs:
+        options["ca_certs"] = ca_certs
+    if elastic_user or elastic_password:
+        options["basic_auth"] = (elastic_user, elastic_password)
+    candidate = elasticsearch_Elasticsearch(hosts=elastic_url, **options)
     published = False
     try:
-        connection_status = dict(candidate.info())
+        connection_status = dict(candidate.info().body)
         with connection_lock:
             displaced = list(connection.values())
             connection[CLIENT] = candidate
@@ -391,7 +393,7 @@ def create_index(
         logger.info(f"Analyzer set to: {analyzer}")
     logger.info(f"Schema dict: {schema_json}")
     computed_return_value = mgp_Record(
-        response=dict(connected_client().indices.create(index=index_name, body=schema_json, ignore=400))
+        response=dict(connected_client().options(ignore_status=400).indices.create(index=index_name, body=schema_json).body)
     )
     return computed_return_value
 
@@ -714,6 +716,8 @@ def scan(
         clear_scroll=clear_scroll,
         from_=from_,
     )
+    if not isinstance(hits, Generator):
+        raise TypeError("Elasticsearch scan must return a generator with owned scroll cleanup")
     items = []
     complete = True
     try:

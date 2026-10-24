@@ -70,13 +70,13 @@ class MemgraphIgraph(igraph_Graph):
 
     def get_all_simple_paths(self, v, to, cutoff: int) -> list[list[object]]:
         # A negative cutoff (the procedure default -1) considers paths of every
-        # length, which is igraph's documented maxlen semantics.
+        # length, which is igraph's documented cutoff semantics.
         paths = [
             self.convert_vertex_ids_to_mgp_vertices(path)
             for path in super().get_all_simple_paths(
                 v=self.get_igraph_vertex_id(v),
                 to=self.get_igraph_vertex_id(to),
-                maxlen=cutoff,
+                cutoff=cutoff,
             )
         ]
         return paths

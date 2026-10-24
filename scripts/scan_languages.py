@@ -48,8 +48,8 @@ def find_files(rootfs: str) -> list[str]:
     """
 
     file_checkers = cbt_valid_files.copy()
-    file_checkers["METADATA"] = file_checkers.get("METADATA: ", {})
-    file_checkers["PKG-INFO"] = file_checkers.get("PKG-INFO: ", False)
+    file_checkers["METADATA"] = file_checkers.get("METADATA: ", [])
+    file_checkers["PKG-INFO"] = file_checkers.get("PKG-INFO: ", [])
     language_files = list(file_checkers.keys())
 
     matches = []

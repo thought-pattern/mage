@@ -11,11 +11,9 @@ from os import (
 from random import seed as random_seed
 from tempfile import mkstemp
 
-from dgl import (
-    dataloading as dgl_dataloading,
-    graph as dgl_graph,
-    heterograph as dgl_heterograph,
-)
+from dgl import dataloading as dgl_dataloading
+from dgl.convert import heterograph as dgl_heterograph
+from dgl.heterograph import DGLGraph
 from numpy import arange as np_arange, random as np_random
 from sklearn.metrics import (
     confusion_matrix,
@@ -51,7 +49,7 @@ def reverse_relation(relation):
     return computed_return_value
 
 
-def add_self_loop(g: dgl_heterograph, self_loop_edge_type: str) -> dgl_heterograph:
+def add_self_loop(g: DGLGraph, self_loop_edge_type: str) -> DGLGraph:
     (
         "Adds self loop to each node with edge type set to self_loop_edge)_type. Creates a new copy o"  # Continue literal.
         "f the graph because DGL doesn't support modifying heterograph's\n    context.\n\n    Args:\n    "  # Continue literal.
@@ -62,7 +60,10 @@ def add_self_loop(g: dgl_heterograph, self_loop_edge_type: str) -> dgl_heterogra
     data_dict = dict()
     num_nodes_dict = dict()
     # Copy old edges
-    for etype in g.canonical_etypes:
+    canonical_etypes = g.canonical_etypes
+    if canonical_etypes is None:
+        raise ValueError("DGL graph does not expose canonical edge types")
+    for etype in canonical_etypes:
         data_dict[etype] = g.edges(etype=etype)
 
     # Add self etypes
@@ -77,7 +78,7 @@ def add_self_loop(g: dgl_heterograph, self_loop_edge_type: str) -> dgl_heterogra
     return computed_return_value
 
 
-def proj_0(graph: dgl_graph, node_features_property: str) -> bool:
+def proj_0(graph: DGLGraph, node_features_property: str) -> bool:
     """Performs projection on all node features to the max_feature_size by padding it with 0.
 
     Args:
@@ -103,7 +104,7 @@ def proj_0(graph: dgl_graph, node_features_property: str) -> bool:
     return False
 
 
-def preprocess(graph: dgl_graph, split_ratio: float, target_relation, device: torch_device) -> tuple[dict, dict]:
+def preprocess(graph: DGLGraph, split_ratio: float, target_relation, device: torch_device) -> tuple[dict, dict]:
     (
         "Preprocess method splits dataset in training and validation set by creating necessary masks "  # Continue literal.
         "for distinguishing those two.\n        This method is also used for setting numpy and torch r"  # Continue literal.
@@ -287,9 +288,9 @@ def batch_forward_pass(
     m: torch_nn.Module,
     target_relation,
     input_features: dict[str, torch_Tensor],
-    pos_graph: dgl_graph,
-    neg_graph: dgl_graph,
-    blocks: list[dgl_graph],
+    pos_graph: DGLGraph,
+    neg_graph: DGLGraph,
+    blocks: list[DGLGraph],
     num_neg_per_pos_edge: int,
     device: torch_device,
 ) -> tuple[torch_Tensor, torch_Tensor, torch_Tensor]:
@@ -329,7 +330,7 @@ def batch_forward_pass(
 
 
 def inner_train(
-    graph: dgl_graph,
+    graph: DGLGraph,
     train_eid_dict,
     val_eid_dict,
     target_relation,
@@ -393,7 +394,10 @@ def inner_train(
     # Create reverse target relation
     reverse_target_relation = reverse_relation(target_relation)
     target_etypes = [graph.to_canonical_etype(target_relation)]
-    if reverse_target_relation in graph.etypes or reverse_target_relation in graph.canonical_etypes:
+    canonical_etypes = graph.canonical_etypes
+    if canonical_etypes is None:
+        raise ValueError("DGL graph does not expose canonical edge types")
+    if reverse_target_relation in graph.etypes or reverse_target_relation in canonical_etypes:
         target_etypes.append(graph.to_canonical_etype(reverse_target_relation))
 
     # Held-out bindings: every target edge whose (source, destination) pair is a validation edge, parallel edges

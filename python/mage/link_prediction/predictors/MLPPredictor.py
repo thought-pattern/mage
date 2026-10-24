@@ -1,6 +1,6 @@
 """Utilities for MLPPredictor."""
 
-from dgl import graph as dgl_graph
+from dgl.heterograph import DGLGraph
 from torch import (
     Tensor as torch_Tensor,
     cat as torch_cat,
@@ -39,7 +39,7 @@ class MLPPredictor(torch_nn.Module):
 
     def forward(
         self,
-        g: dgl_graph,
+        g: DGLGraph,
         node_embeddings: dict[str, torch_Tensor],
         target_relation: str = "",
     ) -> torch_Tensor:

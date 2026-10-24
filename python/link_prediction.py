@@ -7,10 +7,10 @@ from math import isfinite
 
 from dgl import (  # geometric deep learning
     AddReverse,
-    graph as dgl_graph,
-    heterograph as dgl_heterograph,
     remove_edges as dgl_remove_edges,
 )
+from dgl.convert import heterograph as dgl_heterograph
+from dgl.heterograph import DGLGraph
 from mgp import (  # Python API
     Any as mgp_Any,
     Label as mgp_Label,
@@ -701,13 +701,13 @@ def admit_checkpoint_manifest(bundle: object) -> dict:
     return manifest
 
 
-def node_feature_width(graph: dgl_graph, node_features_property: str) -> int:
+def node_feature_width(graph: DGLGraph, node_features_property: str) -> int:
     """Feature width of the converted graph; proj_0 has padded every node type to the same width."""
     width = max(graph.nodes[node_type].data.get(node_features_property, torch_tensor([])).shape[1] for node_type in graph.ntypes)
     return width
 
 
-def admit_trained_feature_width(prediction_graph: dgl_graph) -> bool:
+def admit_trained_feature_width(prediction_graph: DGLGraph) -> bool:
     """Refuses a prediction graph whose feature width differs from the width the published model was trained on."""
     trained_width = trained_manifest.get("in_feats", 0)
     width = node_feature_width(prediction_graph, trained_manifest.get("node_features_property", ""))
@@ -717,11 +717,11 @@ def admit_trained_feature_width(prediction_graph: dgl_graph) -> bool:
 
 
 def mask_target_bindings(
-    prediction_graph: dgl_graph,
+    prediction_graph: DGLGraph,
     target_relation: object,
     src_id: int,
     dest_ids: list[int],
-) -> dgl_graph:
+) -> DGLGraph:
     """
     Message graph for scoring src -> dest candidate pairs. Training's edge sampler excludes the supervised edge (and its
     reverse-type counterpart) from message passing, so every existing target edge between a candidate pair is removed
@@ -733,7 +733,10 @@ def mask_target_bindings(
     message_graph = dgl_remove_edges(prediction_graph, target_eids, etype=target_relation)
 
     reverse_target_relation = reverse_relation(target_relation)
-    if reverse_target_relation in prediction_graph.etypes or reverse_target_relation in prediction_graph.canonical_etypes:
+    canonical_etypes = prediction_graph.canonical_etypes
+    if canonical_etypes is None:
+        raise ValueError("DGL graph does not expose canonical edge types")
+    if reverse_target_relation in prediction_graph.etypes or reverse_target_relation in canonical_etypes:
         reverse_src, reverse_dest = message_graph.edges(etype=reverse_target_relation)
         reverse_eids = (torch_isin(reverse_src, candidates) & (reverse_dest == src_id)).nonzero().flatten()
         message_graph = dgl_remove_edges(message_graph, reverse_eids, etype=reverse_target_relation)
@@ -808,7 +811,7 @@ def dgl_node_id(reindex: dict, node_type: str, memgraph_id: int) -> int:
 def get_dgl_graph_data(
     ctx: mgp_ProcCtx,
     graph_contract: dict,
-) -> tuple[dgl_graph, mgp_Any, list[tuple[str, str, str]]]:
+) -> tuple[DGLGraph, mgp_Any, list[tuple[str, str, str]]]:
     (
         "Creates dgl representation of the graph. It works with heterogeneous and homogeneous.\n\n    A"  # Continue literal.
         "rgs:\n        ctx (mgp.ProcCtx): The reference to the context execution.\n        graph_contract"  # Continue literal.
@@ -1006,7 +1009,7 @@ def reset_train_predict_parameters() -> bool:
 
 
 def conversion_to_dgl_test(
-    graph: dgl_graph,
+    graph: DGLGraph,
     reindex: dict,
     ctx: mgp_ProcCtx,
     node_features_property: str,

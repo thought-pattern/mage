@@ -1,6 +1,8 @@
 """Utilities for DotPredictor."""
 
-from dgl import function as fn, graph as dgl_graph
+from dgl.function.base import TargetCode
+from dgl.function.message import BinaryMessageFunction
+from dgl.heterograph import DGLGraph
 from torch import Tensor as torch_Tensor, dot as torch_dot, nn
 
 from mage.link_prediction.constants import Predictors
@@ -9,7 +11,7 @@ from mage.link_prediction.constants import Predictors
 class DotPredictor(nn.Module):
     def forward(
         self,
-        g: dgl_graph,
+        g: DGLGraph,
         node_embeddings: dict[str, torch_Tensor],
         target_relation: str = "",
     ) -> torch_Tensor:
@@ -34,7 +36,10 @@ class DotPredictor(nn.Module):
             # Compute a new edge feature named 'score' by a dot-product between the
             # embedding of source node and embedding of destination node.
             g.apply_edges(
-                fn.u_dot_v(
+                BinaryMessageFunction(
+                    "dot",
+                    TargetCode.SRC,
+                    TargetCode.DST,
                     Predictors.NODE_EMBEDDINGS,
                     Predictors.NODE_EMBEDDINGS,
                     Predictors.EDGE_SCORE,

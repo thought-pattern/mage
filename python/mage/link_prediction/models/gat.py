@@ -1,8 +1,8 @@
 """Utilities for gat."""
 
-from dgl import graph as dgl_graph
-from dgl.nn import HeteroGraphConv
+from dgl.heterograph import DGLGraph
 from dgl.nn.pytorch import GATConv
+from dgl.nn.pytorch.hetero import HeteroGraphConv
 from torch import Tensor as torch_Tensor, device as torch_device, mean as torch_mean, nn as torch_nn
 
 
@@ -61,7 +61,7 @@ class GAT(torch_nn.Module):
             in_feats = hidden_features_size[i]
 
     def forward(
-        self, blocks: list[dgl_graph], h: dict[str, torch_Tensor]
+        self, blocks: list[DGLGraph], h: dict[str, torch_Tensor]
     ) -> dict[str, torch_Tensor]:
         (
             "Performs forward pass on batches.\n\n        Args:\n            blocks (List[dgl.heterograph.DG"  # Continue literal.
@@ -77,7 +77,7 @@ class GAT(torch_nn.Module):
         return h
 
     def online_forward(
-        self, graph: dgl_graph, h: dict[str, torch_Tensor]
+        self, graph: DGLGraph, h: dict[str, torch_Tensor]
     ) -> dict[str, torch_Tensor]:
         """Performs forward pass on batches.
 
