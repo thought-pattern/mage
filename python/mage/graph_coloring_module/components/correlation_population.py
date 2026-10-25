@@ -45,7 +45,6 @@ class CorrelationPopulation(Population):
     def set_correlations(self) -> bool:
         """Calculates the correlations between individuals
         and stores them in correlation list."""
-        ...
 
     @abstractmethod
     def get_prev_correlation_index(self, index: int) -> int:

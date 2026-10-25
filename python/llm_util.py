@@ -12,6 +12,8 @@ from mage.llm_util.parameters import OutputType, Parameter
 
 
 class SchemaGenerator(object):
+    """Builds the graph schema description of the database in the requested output type."""
+
     def __init__(self, context, output_type):
         self.internal_type = output_type.lower()
         self.internal_node_counter = 0
@@ -43,7 +45,7 @@ class SchemaGenerator(object):
             computed_return_value = self.get_prompt_ready_schema()
             return computed_return_value
         else:
-            raise Exception(
+            raise ValueError(
                 f"Can't generate a graph schema since the provided output_type is not correct. Please choose "
                 f"{OutputType.RAW.value} or {OutputType.PROMPT_READY.value}."
             )
@@ -93,24 +95,14 @@ class SchemaGenerator(object):
 
     def get_prompt_ready_schema(self) -> str:
         prompt_ready_schema = "Node properties are the following:\n"
-        for label in self.all_node_properties_dict.keys():
-            prompt_ready_schema += "Node name: '{label}', Node properties: {properties}\n".format(
-                label=label,
-                properties=sorted(
-                    self.all_node_properties_dict.get(label, []),
-                    key=lambda prop: prop.get(Parameter.PROPERTY.value, ""),
-                ),
-            )
+        for label, node_properties in self.all_node_properties_dict.items():
+            properties = sorted(node_properties, key=lambda prop: prop.get(Parameter.PROPERTY.value, ""))
+            prompt_ready_schema += f"Node name: '{label}', Node properties: {properties}\n"
 
         prompt_ready_schema += "\nRelationship properties are the following:\n"
-        for rel in self.all_relationship_properties_dict.keys():
-            prompt_ready_schema += "Relationship name: '{name}', Relationship properties: {properties}\n".format(
-                name=rel,
-                properties=sorted(
-                    self.all_relationship_properties_dict.get(rel, []),
-                    key=lambda prop: prop.get(Parameter.PROPERTY.value, ""),
-                ),
-            )
+        for rel, relationship_properties in self.all_relationship_properties_dict.items():
+            properties = sorted(relationship_properties, key=lambda prop: prop.get(Parameter.PROPERTY.value, ""))
+            prompt_ready_schema += f"Relationship name: '{rel}', Relationship properties: {properties}\n"
 
         prompt_ready_schema += "\nThe relationships are the following:\n"
 
@@ -165,7 +157,7 @@ def schema(
     schema_generator = SchemaGenerator(context, output_type)
 
     if schema_generator.node_counter == 0:
-        raise Exception("Can't generate a graph schema since there is no data in the database.")
+        raise ValueError("Can't generate a graph schema since there is no data in the database.")
 
     computed_return_value = mgp_Record(schema=schema_generator.get_schema())
     return computed_return_value

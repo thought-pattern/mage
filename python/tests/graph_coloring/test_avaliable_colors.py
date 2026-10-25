@@ -1,6 +1,7 @@
 """Tests for test avaliable colors."""
 
-from mage.graph_coloring_module import Graph, available_colors
+from mage.graph_coloring_module.graph import Graph
+from mage.graph_coloring_module.utils.available_colors import available_colors
 
 # Five test nodes; the adjacency maps a node to its (neighbor, weight) pairs. Graph copies what it reads.
 GRAPH_NODES = [0, 1, 2, 3, 4]

@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 from mgp import (
     List as mgp_List,
     Nullable as mgp_Nullable,
-    ProcCtx as mgp_ProcCtx,
     Record as mgp_Record,
     function as mgp_function,
     read_proc as mgp_read_proc,
@@ -23,7 +22,8 @@ from mage.date.constants import Epoch
 from mage.date.unit_conversion import to_int, to_timedelta
 
 
-def parse(
+# The format parameter is the documented argument name of the public Cypher procedure date.parse.
+def parse(  # pylint: disable=redefined-outer-name
     time: str,
     unit: str = "ms",
     format: str = "%Y-%m-%d %H:%M:%S",
@@ -33,7 +33,7 @@ def parse(
     input_date = datetime_datetime.strptime(time, format)
 
     if timezone not in pytz_all_timezones:
-        raise Exception("Timezone doesn't exist. Check documentation to see available timezones.")
+        raise ValueError("Timezone doesn't exist. Check documentation to see available timezones.")
 
     # A format carrying %z fixes its own instant. A naive wall time is placed in the named zone; a repeated (fall-back)
     # or skipped (spring-forward) wall time resolves to the zone's standard-time offset.
@@ -55,7 +55,7 @@ def parse(
     elif unit == "d":
         parsed = time_since // datetime_timedelta(days=1)
     else:
-        raise Exception("Unit doesn't exist. Check documentation to see available units.")
+        raise ValueError("Unit doesn't exist. Check documentation to see available units.")
 
     computed_return_value = mgp_Record(parsed=parsed)
     return computed_return_value
@@ -65,7 +65,9 @@ parse.__annotations__["return"] = mgp_Record(parsed=int)
 parse = mgp_read_proc(parse)
 
 
-def format(
+# Memgraph registers a procedure under its function name, and date.format(time, unit, format, timezone) is the public
+# Cypher signature.
+def format(  # pylint: disable=redefined-builtin,redefined-outer-name
     time: int,
     unit: str = "ms",
     format: str = "%Y-%m-%d %H:%M:%S %Z",
@@ -84,10 +86,10 @@ def format(
     elif unit == "d":
         new_date = first_date + datetime_timedelta(days=time)
     else:
-        raise Exception("Unit doesn't exist. Check documentation to see available units.")
+        raise ValueError("Unit doesn't exist. Check documentation to see available units.")
 
     if timezone not in pytz_all_timezones:
-        raise Exception("Timezone doesn't exist. Check documentation to see available timezones.")
+        raise ValueError("Timezone doesn't exist. Check documentation to see available timezones.")
     # The epoch offset is a UTC instant, so one UTC-to-zone conversion selects the offset in force at that instant.
     local_date = new_date.astimezone(pytz_timezone(timezone))
 
@@ -214,7 +216,7 @@ def convert_format(temporal: mgp_Nullable[str], current_format: str, convert_to:
                 dt = datetime_datetime.strptime(temporal, current_formatter)
 
         if convert_to.lower() in ["iso_offset_date", "iso_offset_time", "iso_offset_date_time"] and dt.tzinfo is None:
-            raise Exception("missing timezone")
+            raise ValueError("missing timezone")
 
         # Convert to target format
         if convert_to_formatter == "iso_zoned_date_time":
@@ -272,10 +274,10 @@ def convert_format(temporal: mgp_Nullable[str], current_format: str, convert_to:
         return converted
 
     except Exception as err:
-        raise Exception(f"Error converting '{temporal}' from '{current_format}' to '{convert_to}': {err}") from err
+        raise ValueError(f"Error converting '{temporal}' from '{current_format}' to '{convert_to}': {err}") from err
 
 
-def get_date_formats(context: mgp_ProcCtx) -> mgp_Record:
+def get_date_formats() -> mgp_Record:
     """
     Returns a list of supported date formats.
 

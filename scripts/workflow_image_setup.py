@@ -33,7 +33,6 @@ def classify_string(s: str) -> str:
         return "version"
     else:
         return s
-    return ""
 
 
 def get_daily_url(date: str, arch: str, malloc: bool) -> str:

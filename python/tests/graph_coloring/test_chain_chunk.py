@@ -2,7 +2,9 @@
 
 from pytest import raises as pytest_raises
 
-from mage.graph_coloring_module import ChainChunk, Graph, Individual
+from mage.graph_coloring_module.components.chain_chunk import ChainChunk
+from mage.graph_coloring_module.components.individual import Individual
+from mage.graph_coloring_module.graph import Graph
 
 # Five test nodes; the adjacency maps a node to its (neighbor, weight) pairs. Graph copies what it reads.
 GRAPH_NODES = [0, 1, 2, 3, 4]

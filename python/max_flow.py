@@ -17,7 +17,6 @@ from mage.max_flow.bfs_weight_min_max import BFS_find_weight_min_max
 
 
 def get_flow(
-    context: mgp_ProcCtx,
     start_v: mgp_Vertex,
     end_v: mgp_Vertex,
     edge_property: str = "weight",
@@ -137,7 +136,7 @@ def ford_fulkerson_capacity_scaling(
                 elif augmenting_path[i - 1] == e.to_vertex.id:
                     edge_flows[e.id] = edge_flows.get(e.id, 0) - flow_bottleneck
                 else:
-                    raise Exception("path is not ordered correctly")
+                    raise RuntimeError("path is not ordered correctly")
 
         paths_and_flows.append((augmenting_path, flow_bottleneck))
 

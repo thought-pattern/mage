@@ -6,6 +6,8 @@ from mage.union_find.disjoint_set import DisjointSet
 
 
 class TestFind:
+    """Tests for DisjointSet.connected."""
+
     def test_disconnected(self):
         disjoint_set = DisjointSet(node_ids=list(range(10)))
         assert disjoint_set.connected(0, 1) is False

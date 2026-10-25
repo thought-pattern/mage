@@ -16,12 +16,14 @@ from pytest import (
     param as pytest_param,
     raises as pytest_raises,
 )
-from yaml import Loader as yaml_Loader, load as yaml_load
+from yaml import safe_load as yaml_safe_load
 
 os = imported_import_module("os")
 
 
 class TestConstants:
+    """Names and tolerances the e2e module tests use to read their test directories."""
+
     ABSOLUTE_TOLERANCE = 1e-3
 
     EXCEPTION = "exception"
@@ -102,8 +104,8 @@ def internal_replace(data, match_classes):
         return computed_return_value
 
 
-def replace_filename(query: str, dir: Path):
-    computed_return_value = query.replace(TestConstants.FILENAME_PLACEHOLDER, "/".join([str(dir), "file"]))
+def replace_filename(query: str, test_dir: Path):
+    computed_return_value = query.replace(TestConstants.FILENAME_PLACEHOLDER, "/".join([str(test_dir), "file"]))
     return computed_return_value
 
 
@@ -111,7 +113,7 @@ def prepare_tests():
     """
     Fetch all the tests in the testing folders, and prepare them for execution
     """
-    tests = []
+    collected = []
 
     test_path = Path().cwd()
 
@@ -128,20 +130,20 @@ def prepare_tests():
                     if not test_dir.is_dir():
                         continue
 
-                    tests.append(
+                    collected.append(
                         pytest_param(
                             test_dir,
                             id=f"{module_test_dir.stem}-{test_or_group_dir.stem}-{test_dir.stem}",
                         )
                     )
             else:
-                tests.append(
+                collected.append(
                     pytest_param(
                         test_or_group_dir,
                         id=f"{module_test_dir.stem}-{test_or_group_dir.stem}",
                     )
                 )
-    return tests
+    return collected
 
 
 tests = prepare_tests()
@@ -151,8 +153,8 @@ def load_yaml(path: Path) -> dict:
     """
     Load YAML based file in Python dictionary.
     """
-    file_handle = path.open("r")
-    computed_return_value = yaml_load(file_handle, Loader=yaml_Loader)
+    with path.open("r", encoding="utf-8") as file_handle:
+        computed_return_value = yaml_safe_load(file_handle)
     return computed_return_value
 
 
@@ -173,7 +175,7 @@ def run_test(test_dict: dict, db: Memgraph):
     output_test = TestConstants.OUTPUT in test_dict
     exception_test = TestConstants.EXCEPTION in test_dict
 
-    if not (output_test ^ exception_test):
+    if output_test == exception_test:
         pytest_fail("Test file has no valid format.")
 
     if output_test:

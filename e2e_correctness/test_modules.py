@@ -28,7 +28,7 @@ from query_neo_mem import (
     run_memgraph_query,
     run_neo4j_query,
 )
-from yaml import Loader as yaml_Loader, load as yaml_load
+from yaml import safe_load as yaml_safe_load
 
 logging_basicConfig(format="%(asctime)-15s [%(levelname)s]: %(message)s")
 logger = logging_getLogger("e2e_correctness")
@@ -36,6 +36,8 @@ logger.setLevel(logging_INFO)
 
 
 class TestConstants:
+    """Names and tolerances the e2e correctness tests use to read their test directories."""
+
     ABSOLUTE_TOLERANCE = 1e-3
 
     EXCEPTION = "exception"
@@ -59,7 +61,7 @@ def get_all_tests():
     """
     Fetch all the tests in the testing folders, and prepare them for execution
     """
-    tests = []
+    collected = []
 
     test_path = Path().cwd()
 
@@ -76,20 +78,20 @@ def get_all_tests():
                     if not test_dir.is_dir():
                         continue
 
-                    tests.append(
+                    collected.append(
                         pytest_param(
                             test_dir,
                             id=f"{module_test_dir.stem}-{test_or_group_dir.stem}-{test_dir.stem}",
                         )
                     )
             else:
-                tests.append(
+                collected.append(
                     pytest_param(
                         test_or_group_dir,
                         id=f"{module_test_dir.stem}-{test_or_group_dir.stem}",
                     )
                 )
-    return tests
+    return collected
 
 
 tests = get_all_tests()
@@ -99,8 +101,8 @@ def load_yaml(path: Path) -> dict:
     """
     Load YAML based file in Python dictionary.
     """
-    file_handle = path.open("r")
-    computed_return_value = yaml_load(file_handle, Loader=yaml_Loader)
+    with path.open("r", encoding="utf-8") as file_handle:
+        computed_return_value = yaml_safe_load(file_handle)
     return computed_return_value
 
 
@@ -109,31 +111,23 @@ def graphs_equal(memgraph_graph: Graph, neo4j_graph: Graph) -> bool:
     memgraph_vertices, neo4j_vertices = memgraph_graph.vertices, neo4j_graph.vertices
     memgraph_edges, neo4j_edges = memgraph_graph.edges, neo4j_graph.edges
 
-    assert len(memgraph_vertices) == len(
-        neo4j_vertices
-    ), f"The number of vertices is not equal: \
+    assert len(memgraph_vertices) == len(neo4j_vertices), f"The number of vertices is not equal: \
         Memgraph contains {memgraph_vertices} and Neo4j contains {neo4j_vertices}"
 
-    assert len(memgraph_edges) == len(
-        neo4j_edges
-    ), f"The number of edges is not equal: \
+    assert len(memgraph_edges) == len(neo4j_edges), f"The number of edges is not equal: \
         Memgraph contains {memgraph_edges} and Neo4j contains {neo4j_edges}"
 
     for mem_vertex, neo_vertex in zip(memgraph_vertices, neo4j_vertices, strict=True):
         if mem_vertex != neo_vertex:
-            logger.debug(
-                f"The vertices are different: \
+            logger.debug(f"The vertices are different: \
             Neo4j vertex: {neo_vertex}\
-            Memgraph vertex: {mem_vertex}"
-            )
+            Memgraph vertex: {mem_vertex}")
             return False
     for mem_edge, neo_edge in zip(memgraph_edges, neo4j_edges, strict=True):
         if neo_edge != mem_edge:
-            logger.debug(
-                f"The edges are different: \
+            logger.debug(f"The edges are different: \
                 Neo4j edge: {neo_edge}\
-                Memgraph edge: {mem_edge}"
-            )
+                Memgraph edge: {mem_edge}")
             return False
     return True
 
@@ -218,37 +212,37 @@ def check_path_option(test_dir):
     return False
 
 
-@pytest_fixture(scope="session")
-def memgraph_port(pytestconfig):
+@pytest_fixture(scope="session", name="memgraph_port")
+def memgraph_port_fixture(pytestconfig):
     computed_return_value = pytestconfig.getoption("--memgraph-port")
     return computed_return_value
 
 
-@pytest_fixture(scope="session", autouse=True)
-def memgraph_db(memgraph_port):
+@pytest_fixture(scope="session", autouse=True, name="memgraph_db")
+def memgraph_db_fixture(memgraph_port):
     # One client serves the whole session; GQLAlchemy opens and reuses its connection on demand.
-    memgraph_db = Memgraph("localhost", memgraph_port)
+    database = Memgraph("localhost", memgraph_port)
     logger.info("Created Memgraph connection")
 
-    yield memgraph_db
+    yield database
 
 
-@pytest_fixture(scope="session")
-def neo4j_port(pytestconfig):
+@pytest_fixture(scope="session", name="neo4j_port")
+def neo4j_port_fixture(pytestconfig):
     computed_return_value = pytestconfig.getoption("--neo4j-port")
     return computed_return_value
 
 
-@pytest_fixture(scope="session", autouse=True)
-def neo4j_driver(neo4j_port):
-    neo4j_driver = neo4j_GraphDatabase.driver(f"bolt://localhost:{neo4j_port}", encrypted=False)
+@pytest_fixture(scope="session", autouse=True, name="neo4j_driver")
+def neo4j_driver_fixture(neo4j_port):
+    driver = neo4j_GraphDatabase.driver(f"bolt://localhost:{neo4j_port}", encrypted=False)
     logger.info("Created neo4j driver")
 
     # The session owns this driver's connection pool, so release it even when teardown is interrupted.
     try:
-        yield neo4j_driver
+        yield driver
     finally:
-        neo4j_driver.close()
+        driver.close()
 
 
 @pytest_mark.parametrize("test_dir", tests)

@@ -4,19 +4,24 @@ from enum import Enum, EnumMeta
 
 
 class MetaEnum(EnumMeta):
+    """Enum metaclass whose membership test compares values, so a plain string can be checked against the enum."""
+
     def __contains__(cls, item):
+        # Enum values are strings, so an unhashable item is never one of them.
         try:
-            cls(item)
-        except ValueError:
-            return False
-        return True
+            found = item in cls._value2member_map_
+        except TypeError:
+            found = False
+        return found
 
 
 class BaseEnum(str, Enum, metaclass=MetaEnum):
-    pass
+    """String enum that supports value membership tests."""
 
 
 class Metrics(BaseEnum):
+    """Metric names training reports for every epoch."""
+
     LOSS = "loss"
     ACCURACY = "accuracy"
     AUC_SCORE = "auc_score"
@@ -77,6 +82,8 @@ class Activations(BaseEnum):
 
 
 class Parameters(BaseEnum):
+    """Names of the parameters set_model_parameters accepts."""
+
     HIDDEN_FEATURES_SIZE = "hidden_features_size"
     LAYER_TYPE = "layer_type"
     NUM_EPOCHS = "num_epochs"

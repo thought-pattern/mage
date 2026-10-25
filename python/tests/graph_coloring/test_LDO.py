@@ -1,6 +1,8 @@
 """Tests for test LDO."""
 
-from mage.graph_coloring_module import LDO, Graph, Parameter
+from mage.graph_coloring_module.algorithms.greedy.LDO import LDO
+from mage.graph_coloring_module.graph import Graph
+from mage.graph_coloring_module.parameters import Parameter
 
 # Five test nodes; each adjacency maps a node to its (neighbor, weight) pairs. Graph copies what it reads.
 GRAPH_NODES = [0, 1, 2, 3, 4]

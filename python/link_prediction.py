@@ -4,6 +4,8 @@ from heapq import heappop, heappush
 from itertools import chain as itertools_chain
 from json import loads as js_loads
 from math import isfinite
+from os.path import join as os_path_join
+from tempfile import gettempdir
 
 from dgl import (  # geometric deep learning
     AddReverse,
@@ -35,7 +37,7 @@ from torch import (
     tensor as torch_tensor,
 )
 
-from mage.link_prediction import (
+from mage.link_prediction.constants import (
     Activations,
     Aggregators,
     Context,
@@ -46,15 +48,15 @@ from mage.link_prediction import (
     Parameters,
     Predictors,
     Reindex,
+)
+from mage.link_prediction.link_prediction_util import (
     add_self_loop,
     classify,
+    compute_node_embeddings,
+    confusion_counts,
     inner_train,
     preprocess,
     proj_0,
-)
-from mage.link_prediction.link_prediction_util import (
-    compute_node_embeddings,
-    confusion_counts,
     reverse_relation,
     score_pair,
     zero_safe_rate,
@@ -68,7 +70,9 @@ from mage.link_prediction.predictors.MLPPredictor import MLPPredictor
 # global parameters
 ##############################
 
-DEFAULT_CONTEXT_SAVE_DIR = "/tmp/"
+# The checkpoint directory defaults to the system temporary directory; paths are joined by concatenation, so it ends
+# with a separator.
+DEFAULT_CONTEXT_SAVE_DIR = os_path_join(gettempdir(), "")
 
 # The model configuration currently saved; set_model_parameters documents every entry and replaces the whole dictionary
 # only after an update is admitted. in_feats 0 infers the input width from the node features at training; an empty
@@ -147,12 +151,12 @@ def merge_labels(labels: list[mgp_Label]) -> str:
 ##############################
 
 
-def set_model_parameters(ctx: mgp_ProcCtx, parameters: mgp_Map) -> mgp_Record:
+def set_model_parameters(parameters: mgp_Map) -> mgp_Record:
     (
         "Saves parameters to the global parameters link_prediction_parameters. Specific parsing is ne"  # Continue literal.
         "eded because we want enable user to call it with a subset of parameters, no need to send the"  # Continue literal.
         "m all.\n    We will use some kind of reflection to most easily update parameters.\n\n    Args:\n"  # Continue literal.
-        "        ctx (mgp.ProcCtx):  Reference to the context execution.\n        hidden_features_size"  # Continue literal.
+        "        hidden_features_size"  # Continue literal.
         ": mgp.List[int] -> Defines the size of each hidden layer in the architecture.\n        layer_"  # Continue literal.
         "type: str -> Layer type\n        num_epochs: int -> Number of epochs for model training\n     "  # Continue literal.
         "   optimizer: str -> Can be one of the following: ADAM, SGD, AdaGrad...\n        learning_rat"  # Continue literal.
@@ -382,7 +386,7 @@ def predict(ctx: mgp_ProcCtx, src_vertex: mgp_Vertex, dest_vertex: mgp_Vertex) -
     # If the model isn't available. Model is available if this method is called right after training or loaded from context.
     # Same goes for predictor.
     if not trained_manifest or model is False or predictor is False:
-        raise Exception("No trained model available to the system. Train or load it first. ")
+        raise RuntimeError("No trained model available to the system. Train or load it first. ")
 
     # Load graph again so you find nodes that were possibly added between train and prediction. It is built under the
     # trained contract (feature property, reverse edges, self loops), not whatever the configuration says now.
@@ -397,11 +401,11 @@ def predict(ctx: mgp_ProcCtx, src_vertex: mgp_Vertex, dest_vertex: mgp_Vertex) -
     # Check if src_type and dest_type are of the same target relation
     if isinstance(target_relation, tuple):
         if src_type != target_relation[0] or dest_type != target_relation[2]:
-            raise Exception("Prediction can be only computed on edges on which model was trained. ")
+            raise ValueError("Prediction can be only computed on edges on which model was trained. ")
     else:
         for etype in graph.canonical_etypes:
             if target_relation == etype[1] and (etype[0] != src_type or etype[2] != dest_type):
-                raise Exception("Prediction can be only computed on edges on which model was trained. ")
+                raise ValueError("Prediction can be only computed on edges on which model was trained. ")
 
     # Get dgl ids
     src_id = dgl_node_id(reindex, src_type, src_old_id)
@@ -437,7 +441,7 @@ def recommend(
 
     # If the model isn't available
     if not trained_manifest or model is False or predictor is False:
-        raise Exception("No trained model available to the system. Train or load it first. ")
+        raise RuntimeError("No trained model available to the system. Train or load it first. ")
 
     # You called predict after session was lost
     graph, reindex, _ = get_dgl_graph_data(ctx, trained_manifest)
@@ -450,11 +454,11 @@ def recommend(
     # Check if src_type is of the same target relation
     if isinstance(target_relation, tuple):
         if src_type != target_relation[0]:
-            raise Exception("Prediction can be only computed on edges on which model was trained. ")
+            raise ValueError("Prediction can be only computed on edges on which model was trained. ")
     else:
         for etype in graph.canonical_etypes:
             if target_relation == etype[1] and etype[0] != src_type:
-                raise Exception("Prediction can be only computed on edges on which model was trained. ")
+                raise ValueError("Prediction can be only computed on edges on which model was trained. ")
 
     # Get dgl ids
     src_id = dgl_node_id(reindex, src_type, src_old_id)
@@ -469,11 +473,11 @@ def recommend(
         # Check if dest_type is of the same target relation
         if isinstance(target_relation, tuple):
             if dest_type != target_relation[2]:
-                raise Exception("Prediction can be only computed on edges on which model was trained. ")
+                raise ValueError("Prediction can be only computed on edges on which model was trained. ")
         else:
             for etype in graph.canonical_etypes:
                 if target_relation == etype[1] and etype[2] != dest_type:
-                    raise Exception("Prediction can be only computed on edges on which model was trained. ")
+                    raise ValueError("Prediction can be only computed on edges on which model was trained. ")
         candidates.append((dest_vertex, dest_id, dest_type))
 
     if not candidates:
@@ -509,7 +513,7 @@ def recommend(
     if trained_manifest.get("last_activation_function", Activations.SIGMOID) == Activations.SIGMOID:
         threshold = 0.5
     else:
-        raise Exception(f"Currently, only {Activations.SIGMOID} is supported. ")
+        raise ValueError(f"Currently, only {Activations.SIGMOID} is supported. ")
 
     for _ in range(pop_size):
         score, candidate_index, recommendation = heappop(results)
@@ -557,20 +561,18 @@ recommend.__annotations__["return"] = mgp_Record(score=mgp_Number, recommendatio
 recommend = mgp_read_proc(recommend)
 
 
-def get_training_results(
-    ctx: mgp_ProcCtx,
-) -> mgp_Record:
-    (
-        "This method is used when user wants to get performance data obtained from the last training."  # Continue literal.
-        " It is in the form of list of records where each record is a Dict[metric_name, metric_value]"  # Continue literal.
-        ". Training and validation\n    results are returned.\n\n    Args:\n        ctx (mgp.ProcCtx): Re"  # Continue literal.
-        "ference to the context execution\n\n    Returns:\n        mgp.Record[List[LinkPredictionOutputR"  # Continue literal.
-        "esult]]: A list of results. If the train method wasn't called yet, it returns empty lists.\n"
-    )
-    global training_results, validation_results
+def get_training_results() -> mgp_Record:
+    """Returns the performance data obtained from the last training. It is in the form of list of records where each
+    record is a Dict[metric_name, metric_value]. Training and validation results are returned.
 
+    Returns:
+        mgp.Record[List[LinkPredictionOutputResult]]: A list of results.
+
+    Raises:
+        RuntimeError: The train method wasn't called yet or its results are outdated.
+    """
     if not training_results or not validation_results:
-        raise Exception("Training results are outdated or train method wasn't called. ")
+        raise RuntimeError("Training results are outdated or train method wasn't called. ")
 
     computed_return_value = mgp_Record(training_results=training_results, validation_results=validation_results)
     return computed_return_value
@@ -580,7 +582,7 @@ get_training_results.__annotations__["return"] = mgp_Record(training_results=mgp
 get_training_results = mgp_read_proc(get_training_results)
 
 
-def load_model(ctx: mgp_ProcCtx, path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Record:
+def load_model(path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Record:
     """Loads the checkpoint bundle train saved under the given directory. If the path doesn't exist, underlying exception
     is thrown. If the path argument is not given, it loads from the default path. If the user has changed path and the
     context was deleted then he/she needs to send that parameter here.
@@ -590,7 +592,7 @@ def load_model(ctx: mgp_ProcCtx, path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Re
     exactly before the model, predictor and manifest are published together.
 
     Args:
-        ctx (mgp.ProcCtx): A reference to the context execution.
+        path (str): Directory that holds the checkpoint bundle; the default is the system temporary directory.
 
     Returns:
         status(mgp.Any): True just to indicate that loading went well.
@@ -611,11 +613,8 @@ load_model.__annotations__["return"] = mgp_Record(status=mgp_Any)
 load_model = mgp_read_proc(load_model)
 
 
-def reset_parameters(ctx: mgp_ProcCtx) -> mgp_Record:
+def reset_parameters() -> mgp_Record:
     """Resets all parameters.
-
-    Args:
-        ctx (mgp.ProcCtx): A reference to the execution context.
 
     Returns:
         status: True if all passed ok.
@@ -701,9 +700,11 @@ def admit_checkpoint_manifest(bundle: object) -> dict:
     return manifest
 
 
-def node_feature_width(graph: DGLGraph, node_features_property: str) -> int:
+def node_feature_width(dgl_graph: DGLGraph, node_features_property: str) -> int:
     """Feature width of the converted graph; proj_0 has padded every node type to the same width."""
-    width = max(graph.nodes[node_type].data.get(node_features_property, torch_tensor([])).shape[1] for node_type in graph.ntypes)
+    width = max(
+        dgl_graph.nodes[node_type].data.get(node_features_property, torch_tensor([])).shape[1] for node_type in dgl_graph.ntypes
+    )
     return width
 
 
@@ -770,7 +771,7 @@ def process_help_function(
     type_: str,
     features: object,
     node_features_property: str,
-    reindex: dict,
+    reindex_map: dict,
     index_dgl_to_features: dict[str, dict[int, list[float]]],
 ) -> bool:
     """Helper function for mapping original Memgraph graph to DGL representation.
@@ -781,12 +782,13 @@ def process_help_function(
         type_ (str): Node type.
         features (object): Node features property value.
         node_features_property (str): Property name where the node features are saved.
-        reindex (Dict[str, Dict[str, Dict[int, int]]]): Mapping from original indexes to DGL indexes for each node type and reverse.
+        reindex_map (Dict[str, Dict[str, Dict[int, int]]]): Mapping from original indexes to DGL indexes for each node type and
+            reverse.
         index_dgl_to_features (Dict[str, Dict[int, List[float]]]): DGL indexes to features for each node type.
     """
     # Install each node type's maps before writing into them.
-    dgl_to_memgraph = reindex.setdefault(Reindex.DGL, {}).setdefault(type_, {})
-    memgraph_to_dgl = reindex.setdefault(Reindex.MEMGRAPH, {}).setdefault(type_, {})
+    dgl_to_memgraph = reindex_map.setdefault(Reindex.DGL, {}).setdefault(type_, {})
+    memgraph_to_dgl = reindex_map.setdefault(Reindex.MEMGRAPH, {}).setdefault(type_, {})
     type_features = index_dgl_to_features.setdefault(type_, {})
 
     # Check if old_index has been seen for this label
@@ -799,9 +801,9 @@ def process_help_function(
     return False
 
 
-def dgl_node_id(reindex: dict, node_type: str, memgraph_id: int) -> int:
+def dgl_node_id(reindex_map: dict, node_type: str, memgraph_id: int) -> int:
     """Returns the DGL index the conversion gave a Memgraph vertex of node_type, refusing a vertex it did not convert."""
-    type_ids = reindex.get(Reindex.MEMGRAPH, {}).get(node_type, {})
+    type_ids = reindex_map.get(Reindex.MEMGRAPH, {}).get(node_type, {})
     if memgraph_id not in type_ids:
         raise KeyError(f"Vertex {memgraph_id} of type {node_type!r} is not part of the converted graph. ")
     dgl_id = type_ids.get(memgraph_id, 0)
@@ -825,7 +827,7 @@ def get_dgl_graph_data(
     node_features_property = graph_contract.get("node_features_property", "")
     target_relation = graph_contract.get("target_relation", "")
 
-    reindex = {
+    reindex_map = {
         Reindex.DGL: {},
         Reindex.MEMGRAPH: {},
     }  # map of label to new node index to old node index and reverse
@@ -865,7 +867,7 @@ def get_dgl_graph_data(
                 src_type,
                 src_features,
                 node_features_property,
-                reindex,
+                reindex_map,
                 index_dgl_to_features,
             )
 
@@ -890,7 +892,7 @@ def get_dgl_graph_data(
 
             # Before processing node dest node and edge, check if this edge_type has occurred with different src_type or dest_type
             if edge_type in edge_types and not type_triplet_in and edge_type == target_relation:
-                raise Exception(
+                raise ValueError(
                     f"Edges of edge type {edge_type}"
                     f" are used for training and there are already edges with this edge type but with different co"
                     f"mbination of source and destination node. "
@@ -910,13 +912,13 @@ def get_dgl_graph_data(
                 dest_type,
                 dest_features,
                 node_features_property,
-                reindex,
+                reindex_map,
                 index_dgl_to_features,
             )
 
             # Define edge
-            src_nodes.setdefault(type_triplet, []).append(dgl_node_id(reindex, src_type, src_id))
-            dest_nodes.setdefault(type_triplet, []).append(dgl_node_id(reindex, dest_type, dest_id))
+            src_nodes.setdefault(type_triplet, []).append(dgl_node_id(reindex_map, src_type, src_id))
+            dest_nodes.setdefault(type_triplet, []).append(dgl_node_id(reindex_map, dest_type, dest_id))
 
         # Append old id
         if src_isolated_node:
@@ -924,7 +926,7 @@ def get_dgl_graph_data(
 
     # Check if there are no edges in the dataset, assume that it cannot learn effectively without edges. E2E handling.
     if len(src_nodes.keys()) == 0:
-        raise Exception("No edges in the dataset. ")
+        raise ValueError("No edges in the dataset. ")
 
     # data_dict has specific type that DGL requires to create a heterograph
     data_dict = dict()
@@ -951,7 +953,7 @@ def get_dgl_graph_data(
             isolated_node_type,
             isolated_node_features,
             node_features_property,
-            reindex,
+            reindex_map,
             index_dgl_to_features,
         )
         g.add_nodes(1, ntype=isolated_node_type)
@@ -982,8 +984,8 @@ def get_dgl_graph_data(
 
     # Test conversion. Note: Do a conversion before you upscale features.
     conversion_to_dgl_test(
-        graph=g,
-        reindex=reindex,
+        dgl_graph=g,
+        reindex_map=reindex_map,
         ctx=ctx,
         node_features_property=node_features_property,
     )
@@ -991,7 +993,7 @@ def get_dgl_graph_data(
     # Upscale features so they are all of same size
     proj_0(g, node_features_property)
 
-    converted = (g, reindex, type_triplets)
+    converted = (g, reindex_map, type_triplets)
     return converted
 
 
@@ -1009,37 +1011,41 @@ def reset_train_predict_parameters() -> bool:
 
 
 def conversion_to_dgl_test(
-    graph: DGLGraph,
-    reindex: dict,
+    dgl_graph: DGLGraph,
+    reindex_map: dict,
     ctx: mgp_ProcCtx,
     node_features_property: str,
 ) -> bool:
-    (
-        "\n    Tests whether conversion from ctx.ProcCtx graph to dgl graph went successfully. Checks "  # Continue literal.
-        "how features are mapped. Throws exception if something fails.\n\n    Args:\n        graph (dgl."  # Continue literal.
-        "graph): Reference to the dgl heterogeneous graph.\n        reindex (Dict[str, Dict[str, Dict["  # Continue literal.
-        "int, int]]]): Mapping from new indexes to old indexes for all node types and reverse.\n      "  # Continue literal.
-        "  ctx (mgp.ProcCtx): Reference to the context execution.\n        node_features_property (str"  # Continue literal.
-        "): Property namer where the node features are saved`\n"
-    )
+    """Tests whether conversion from the ctx.ProcCtx graph to the DGL graph went successfully. Checks how features are
+    mapped and raises RuntimeError if something fails.
+
+    Args:
+        dgl_graph (dgl.graph): Reference to the dgl heterogeneous graph.
+        reindex_map (Dict[str, Dict[str, Dict[int, int]]]): Mapping from new indexes to old indexes for all node types and
+            reverse.
+        ctx (mgp.ProcCtx): Reference to the context execution.
+        node_features_property (str): Property name where the node features are saved.
+    """
 
     # Check if the dataset is empty. E2E handling.
     if len(ctx.graph.vertices) == 0:
-        raise Exception("The conversion to DGL failed. The dataset is empty. ")
+        raise RuntimeError("The conversion to DGL failed. The dataset is empty. ")
 
     # Find all node types.
-    for node_type in graph.ntypes:
-        for vertex in graph.nodes(node_type):
+    for node_type in dgl_graph.ntypes:
+        for vertex in dgl_graph.nodes(node_type):
             # Get int from torch.Tensor
             vertex_id = vertex.item()
             # Find vertex in Memgraph
-            dgl_to_memgraph = reindex.get(Reindex.DGL, {}).get(node_type, {})
+            dgl_to_memgraph = reindex_map.get(Reindex.DGL, {}).get(node_type, {})
             if vertex_id not in dgl_to_memgraph:
-                raise Exception(f"The conversion to DGL failed. DGL node {vertex_id} of type {node_type} has no Memgraph vertex. ")
+                raise RuntimeError(
+                    f"The conversion to DGL failed. DGL node {vertex_id} of type {node_type} has no Memgraph vertex. "
+                )
             old_id = dgl_to_memgraph.get(vertex_id, 0)
             vertex = ctx.graph.get_vertex_by_id(old_id)
             if vertex is None:
-                raise Exception(f"The conversion to DGL failed. Vertex with id {old_id} is not mapped to DGL graph. ")
+                raise RuntimeError(f"The conversion to DGL failed. Vertex with id {old_id} is not mapped to DGL graph. ")
 
             # Admit features exactly as the conversion did.
             old_features = admit_node_features(
@@ -1050,10 +1056,10 @@ def conversion_to_dgl_test(
 
             # Check if equal
             if not torch_equal(
-                graph.nodes[node_type].data.get(node_features_property, [])[vertex_id],
+                dgl_graph.nodes[node_type].data.get(node_features_property, [])[vertex_id],
                 torch_tensor(old_features, dtype=torch_float32, device=device),
             ):
-                raise Exception(
+                raise RuntimeError(
                     "The conversion to DGL failed. Stored graph does not contain the same features as the converted DGL graph. "
                 )
     return False
@@ -1080,7 +1086,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         in_feats = parameters.get("in_feats", 0)
         type_checker(in_feats, "in_feats must be an int. ", int)
         if in_feats < 0:
-            raise Exception("in_feats must be 0 (infer) or a positive feature width. ")
+            raise ValueError("in_feats must be 0 (infer) or a positive feature width. ")
 
     # Hidden features size
     if Parameters.HIDDEN_FEATURES_SIZE in parameters.keys():
@@ -1089,12 +1095,12 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         # Because list cannot be sent through mgp.
         type_checker(hidden_features_size, "hidden_features_size not an iterable object. ", tuple)
         if not hidden_features_size:
-            raise Exception("hidden_features_size must define at least one layer. ")
+            raise ValueError("hidden_features_size must define at least one layer. ")
 
         for hid_size in hidden_features_size:
             type_checker(hid_size, "layer_size must be an int", int)
             if hid_size <= 0:
-                raise Exception("Layer size must be greater than 0. ")
+                raise ValueError("Layer size must be greater than 0. ")
 
     # Layer type check
     if Parameters.LAYER_TYPE in parameters.keys():
@@ -1104,7 +1110,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(layer_type, "layer_type must be string. ", str)
 
         if layer_type != Models.GRAPH_ATTN and layer_type != Models.GRAPH_SAGE:
-            raise Exception("Unknown layer type, this module supports only graph_attn and graph_sage. ")
+            raise ValueError("Unknown layer type, this module supports only graph_attn and graph_sage. ")
 
     # Num epochs
     if Parameters.NUM_EPOCHS in parameters.keys():
@@ -1114,7 +1120,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(num_epochs, "num_epochs must be int. ", int)
 
         if num_epochs <= 0:
-            raise Exception("Number of epochs must be greater than 0. ")
+            raise ValueError("Number of epochs must be greater than 0. ")
 
     # Optimizer check
     if Parameters.OPTIMIZER in parameters.keys():
@@ -1124,7 +1130,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(optimizer, "optimizer must be a string. ", str)
 
         if optimizer != Optimizers.ADAM_OPT and optimizer != Optimizers.SGD_OPT:
-            raise Exception("Unknown optimizer, this module supports only ADAM and SGD. ")
+            raise ValueError("Unknown optimizer, this module supports only ADAM and SGD. ")
 
     # Learning rate check
     if Parameters.LEARNING_RATE in parameters.keys():
@@ -1134,7 +1140,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(learning_rate, "learning rate must be a float. ", float)
 
         if not isfinite(learning_rate) or learning_rate <= 0.0:
-            raise Exception("Learning rate must be a finite number greater than 0. ")
+            raise ValueError("Learning rate must be a finite number greater than 0. ")
 
     # Split ratio check
     if Parameters.SPLIT_RATIO in parameters.keys():
@@ -1145,7 +1151,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
         # 1.0 keeps every edge for training (no validation set); anything outside (0, 1] is not a split.
         if not isfinite(split_ratio) or split_ratio <= 0.0 or split_ratio > 1.0:
-            raise Exception("Split ratio must be greater than 0 and at most 1. ")
+            raise ValueError("Split ratio must be greater than 0 and at most 1. ")
 
     # node_features_property check
     if Parameters.NODE_FEATURES_PROPERTY in parameters.keys():
@@ -1155,7 +1161,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(node_features_property, "node_features_property must be a string. ", str)
 
         if node_features_property == "":
-            raise Exception("You must specify name of nodes' features property. ")
+            raise ValueError("You must specify name of nodes' features property. ")
 
     # device_type check
     if Parameters.DEVICE_TYPE in parameters.keys():
@@ -1165,7 +1171,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(device_type, "device_type must be a string. ", str)
 
         if device_type not in Devices:
-            raise Exception("Only cpu and cuda are supported as devices. ")
+            raise ValueError("Only cpu and cuda are supported as devices. ")
 
     # console_log_freq check
     if Parameters.CONSOLE_LOG_FREQ in parameters.keys():
@@ -1175,7 +1181,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(console_log_freq, "console_log_freq must be an int. ", int)
 
         if console_log_freq <= 0:
-            raise Exception("Console log frequency must be greater than 0. ")
+            raise ValueError("Console log frequency must be greater than 0. ")
 
     # checkpoint freq check
     if Parameters.CHECKPOINT_FREQ in parameters.keys():
@@ -1185,7 +1191,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(checkpoint_freq, "checkpoint_freq must be an int. ", int)
 
         if checkpoint_freq <= 0:
-            raise Exception("Checkpoint frequency must be greater than 0. ")
+            raise ValueError("Checkpoint frequency must be greater than 0. ")
 
     # aggregator check
     if Parameters.AGGREGATOR in parameters.keys():
@@ -1195,7 +1201,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(aggregator, "aggregator must be a string. ", str)
 
         if aggregator not in Aggregators:
-            raise Exception("Aggregator must be one of the following: mean, pool, lstm or gcn. ")
+            raise ValueError("Aggregator must be one of the following: mean, pool, lstm or gcn. ")
 
     # metrics check
     if Parameters.METRICS in parameters.keys():
@@ -1206,7 +1212,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
         for metric in metrics:
             if metric.lower() not in Metrics:
-                raise Exception("Metric name " + metric + " is not supported!")
+                raise ValueError("Metric name " + metric + " is not supported!")
 
     # Predictor type
     if Parameters.PREDICTOR_TYPE in parameters.keys():
@@ -1216,7 +1222,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(predictor_type, "predictor_type must be a string. ", str)
 
         if predictor_type not in Predictors:
-            raise Exception("Predictor " + predictor_type + " is not supported. ")
+            raise ValueError("Predictor " + predictor_type + " is not supported. ")
 
     # Attention heads
     if Parameters.ATTN_NUM_HEADS in parameters.keys():
@@ -1228,7 +1234,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         for num_heads in attn_num_heads:
             type_checker(num_heads, "attention head counts must be ints. ", int)
             if num_heads <= 0:
-                raise Exception("GAT allows only positive, larger than 0 values for number of attention heads. ")
+                raise ValueError("GAT allows only positive, larger than 0 values for number of attention heads. ")
 
     # Training accuracy patience
     if Parameters.TR_ACC_PATIENCE in parameters.keys():
@@ -1238,7 +1244,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(tr_acc_patience, "tr_acc_patience must be an iterable object. ", int)
 
         if tr_acc_patience <= 0:
-            raise Exception("Training acc patience flag must be larger than 0.")
+            raise ValueError("Training acc patience flag must be larger than 0.")
 
     # model_save_path
     if Parameters.MODEL_SAVE_PATH in parameters.keys():
@@ -1248,7 +1254,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(model_save_path, "model_save_path must be a string. ", str)
 
         if model_save_path == "":
-            raise Exception("Path must be !=  ")
+            raise ValueError("Path must be !=  ")
 
     # context save dir
     if Parameters.CONTEXT_SAVE_DIR in parameters.keys():
@@ -1258,7 +1264,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(context_save_dir, "context_save_dir must be a string. ", str)
 
         if context_save_dir == "":
-            raise Exception("Path must not be empty string. ")
+            raise ValueError("Path must not be empty string. ")
 
     # target edge type
     if Parameters.TARGET_RELATION in parameters.keys():
@@ -1266,11 +1272,11 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
 
         # check typing
         if not isinstance(target_relation, str) and not isinstance(target_relation, tuple):
-            raise Exception("target relation must be a string or a tuple. ")
+            raise TypeError("target relation must be a string or a tuple. ")
         if isinstance(target_relation, tuple) and (
             len(target_relation) != 3 or not all(isinstance(part, str) for part in target_relation)
         ):
-            raise Exception("A target relation tuple must be [source type, edge type, destination type]. ")
+            raise ValueError("A target relation tuple must be [source type, edge type, destination type]. ")
 
     # num_neg_per_positive_edge
     if Parameters.NUM_NEG_PER_POS_EDGE in parameters.keys():
@@ -1283,7 +1289,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
             int,
         )
         if num_neg_per_pos_edge <= 0:
-            raise Exception("Number of negative edges per positive one must be greater than 0. ")
+            raise ValueError("Number of negative edges per positive one must be greater than 0. ")
 
     # batch size
     if Parameters.BATCH_SIZE in parameters.keys():
@@ -1292,7 +1298,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         # Check typing
         type_checker(batch_size, "batch_size must be an int", int)
         if batch_size <= 0:
-            raise Exception("Batch size must be greater than 0. ")
+            raise ValueError("Batch size must be greater than 0. ")
 
     # sampling workers
     if Parameters.SAMPLING_WORKERS in parameters.keys():
@@ -1301,7 +1307,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         # check typing
         type_checker(sampling_workers, "sampling_workers must be and int", int)
         if sampling_workers < 0:
-            raise Exception("Number of sampling workers must not be negative. ")
+            raise ValueError("Number of sampling workers must not be negative. ")
 
     # last activation function
     if Parameters.LAST_ACTIVATION_FUNCTION in parameters.keys():
@@ -1311,7 +1317,7 @@ def validate_user_parameters(parameters: mgp_Map) -> bool:
         type_checker(last_activation_function, "last_activation_function should be a string", str)
 
         if last_activation_function != Activations.SIGMOID:
-            raise Exception(f"Only {Activations.SIGMOID} is currently supported. ")
+            raise ValueError(f"Only {Activations.SIGMOID} is currently supported. ")
 
     # add reverse edges
     if Parameters.ADD_REVERSE_EDGES in parameters.keys():
@@ -1334,7 +1340,7 @@ def validate_effective_parameters(parameters: dict) -> bool:
     hidden_features_size = parameters.get("hidden_features_size", [])
     attn_num_heads = parameters.get("attn_num_heads", [])
     if parameters.get("layer_type", "") == Models.GRAPH_ATTN and len(attn_num_heads) != len(hidden_features_size):
-        raise Exception(
+        raise ValueError(
             f"Specified network with {len(hidden_features_size)} layers but given attention heads data for "
             f"{len(attn_num_heads)} layers. "
         )

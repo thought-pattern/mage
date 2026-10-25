@@ -218,7 +218,6 @@ class ParallelAlgorithm(Algorithm, ABC):
         parameters: dict,
     ) -> bool:
         """A function that executes an algorithm."""
-        ...
 
     def previous_pid(self, pid: int, no_of_processes: int):
         prev_pid = pid - 1 if pid > 0 else no_of_processes - 1

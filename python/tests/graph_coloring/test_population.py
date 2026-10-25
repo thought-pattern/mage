@@ -2,7 +2,9 @@
 
 from math import fabs as math_fabs
 
-from mage.graph_coloring_module import ChainPopulation, Graph, Individual
+from mage.graph_coloring_module.components.chain_population import ChainPopulation
+from mage.graph_coloring_module.components.individual import Individual
+from mage.graph_coloring_module.graph import Graph
 
 # Five test nodes; the adjacency maps a node to its (neighbor, weight) pairs. Graph copies what it reads.
 GRAPH_NODES = [0, 1, 2, 3, 4]
@@ -21,7 +23,8 @@ CHAIN_MEMBERS = (
 )
 
 
-def error_func(graph, individual):
+# Test double matching the population error-function interface, which passes the graph and the individual.
+def error_func(graph, individual):  # pylint: disable=unused-argument
     return individual.conflicts_weight
 
 

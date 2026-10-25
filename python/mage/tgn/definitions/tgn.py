@@ -52,6 +52,8 @@ from mage.tgn.definitions.time_encoding import TimeEncoder
 
 
 class TGN(nn.Module):
+    """Temporal graph network: memory, messages and embedding layers."""
+
     tgn_net: nn.Module
 
     def __init__(

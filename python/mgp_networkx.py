@@ -13,6 +13,8 @@ except ImportError:
 
 
 class MemgraphAdjlistOuterDict(collections_abc.Mapping):
+    """NetworkX adjacency mapping from each Memgraph vertex to its neighbor mapping."""
+
     __slots__ = ("internal_ctx", "internal_multi", "internal_succ")
 
     def __init__(self, ctx, succ=True, multi=True):
@@ -42,6 +44,8 @@ class MemgraphAdjlistOuterDict(collections_abc.Mapping):
 
 
 class MemgraphAdjlistInnerDict(collections_abc.Mapping):
+    """NetworkX neighbor mapping of one Memgraph vertex."""
+
     __slots__ = (
         "internal_multi",
         "internal_neighbors",
@@ -95,13 +99,15 @@ class MemgraphAdjlistInnerDict(collections_abc.Mapping):
 
         assert len(edge) >= 1
         if len(edge) > 1:
-            raise RuntimeError("Graph contains multiedges but is of non-multigraph type: {}".format(edge))
+            raise RuntimeError(f"Graph contains multiedges but is of non-multigraph type: {edge}")
 
         computed_return_value = edge[0]
         return computed_return_value
 
 
 class MemgraphEdgeKeyDict(collections_abc.Mapping):
+    """NetworkX mapping from edge keys to edge properties between two Memgraph vertices."""
+
     __slots__ = (
         "internal_edges",
         "internal_neighbor",
@@ -154,6 +160,8 @@ class MemgraphEdgeKeyDict(collections_abc.Mapping):
 
 
 class UnhashableProperties(collections_abc.Mapping):
+    """Read-only mapping over Memgraph properties for NetworkX attribute access."""
+
     __slots__ = ("internal_properties",)
 
     def __init__(self, properties):
@@ -183,6 +191,8 @@ class UnhashableProperties(collections_abc.Mapping):
 
 
 class MemgraphNodeDict(collections_abc.Mapping):
+    """NetworkX node mapping from each Memgraph vertex to its properties."""
+
     __slots__ = ("internal_ctx",)
 
     def __init__(self, ctx):
@@ -219,6 +229,8 @@ class MemgraphNodeDict(collections_abc.Mapping):
 
 
 class MemgraphDiGraphBase:
+    """Read-only NetworkX graph backed by the Memgraph procedure context."""
+
     def __init__(self, incoming_graph_data=False, ctx=False, multi=True, **kwargs):
         # NOTE: We assume that our graph will never be given any initial data
         # because we already pull our data from the Memgraph database. This
@@ -298,6 +310,8 @@ class MemgraphDiGraph(MemgraphDiGraphBase, nx_DiGraph):
 
 
 class PropertiesDictionary(collections_abc.Mapping):
+    """Mapping from each Memgraph vertex that has the property to its value."""
+
     __slots__ = ("internal_ctx", "internal_len", "internal_prop")
 
     def __init__(self, ctx, prop):

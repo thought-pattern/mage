@@ -139,9 +139,9 @@ class Individual:
         conflict_edges = self.conflicts_weight
 
         for index, color in zip(indices, colors, strict=False):
-            if not (0 <= color < self.internal_no_of_colors):
+            if not 0 <= color < self.internal_no_of_colors:
                 raise IllegalColorException("The given color is not in the range of allowed colors!")
-            if not (0 <= index < self.no_of_units):
+            if not 0 <= index < self.no_of_units:
                 raise IllegalNodeException("The given node does not exist!")
             conflict_edges, conflicts_counter, conflict_nodes = self.calculate_diff(
                 chromosome=new_chromosome,
@@ -176,7 +176,7 @@ class Individual:
         diff = 0
         for neigh, weight in self.graph.weighted_neighbors(node):
             if chromosome[node] == chromosome[neigh]:
-                if not (color == chromosome[neigh]):
+                if color != chromosome[neigh]:
                     diff -= weight
 
                     conflicts_counter[neigh] -= 1

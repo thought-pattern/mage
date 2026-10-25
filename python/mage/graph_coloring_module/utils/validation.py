@@ -27,9 +27,9 @@ def validate(*params_name):
                 parameters = declared_default
             for param in params_name:
                 if not isinstance(parameters, dict) or not parameters:
-                    raise MissingParametersException("Missing parameters in function {}".format(f.__name__))
+                    raise MissingParametersException(f"Missing parameters in function {f.__name__}")
                 if param not in parameters:
-                    raise MissingParametersException("Missing parameter {} in function {}".format(param, f.__name__))
+                    raise MissingParametersException(f"Missing parameter {param} in function {f.__name__}")
             computed_return_value = f(*args, **kwds)
             return computed_return_value
 

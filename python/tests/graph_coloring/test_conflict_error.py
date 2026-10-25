@@ -5,13 +5,11 @@ from random import seed as random_seed
 
 from pytest import fixture as pytest_fixture, mark as pytest_mark
 
-from mage.graph_coloring_module import (
-    ChainPopulation,
-    ConflictError,
-    Graph,
-    Individual,
-    Parameter,
-)
+from mage.graph_coloring_module.components.chain_population import ChainPopulation
+from mage.graph_coloring_module.components.individual import Individual
+from mage.graph_coloring_module.error_functions.conflict_error import ConflictError
+from mage.graph_coloring_module.graph import Graph
+from mage.graph_coloring_module.parameters import Parameter
 
 # Five test nodes; each adjacency maps a node to its (neighbor, weight) pairs. Graph copies what it reads.
 GRAPH_NODES = [0, 1, 2, 3, 4]
@@ -43,6 +41,7 @@ def set_seed():
     return False
 
 
+@pytest_mark.usefixtures("set_seed")
 @pytest_mark.parametrize(
     "adjacency, no_of_colors, chromosome, expected_error",
     [
@@ -51,14 +50,15 @@ def set_seed():
         (NOT_CONNECTED_ADJACENCY, 3, [1, 1, 0, 2, 0], 2),
     ],
 )
-def test_individual_error_no_setting(set_seed, adjacency, no_of_colors, chromosome, expected_error):
+def test_individual_error_no_setting(adjacency, no_of_colors, chromosome, expected_error):
     graph = Graph(GRAPH_NODES, adjacency)
     individual = Individual(no_of_colors=no_of_colors, graph=graph, chromosome=chromosome)
     error = ConflictError().individual_err(graph, individual)
     assert error == expected_error
 
 
-def test_population_error(set_seed):
+@pytest_mark.usefixtures("set_seed")
+def test_population_error():
     population_graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
     members = [Individual(no_of_colors=3, graph=population_graph, **member) for member in CHAIN_MEMBERS]
     chain_population = ChainPopulation(population_graph, members)

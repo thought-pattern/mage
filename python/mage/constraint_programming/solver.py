@@ -49,7 +49,6 @@ class MatchingProblemSolver(abc_ABC):
         :param matching_problem: matching problem
         :return: set indices
         """
-        ...
 
 
 class GekkoMPSolver(MatchingProblemSolver):
@@ -69,7 +68,7 @@ class GekkoMPSolver(MatchingProblemSolver):
         containing_const = m.Const(1, name="const")
 
         set_list = list(matching_problem.containing_sets)
-        vars = [m.Var(lb=0, ub=1, integer=True, name=GekkoMPSolver.get_variable_name(i)) for i in range(len(set_list))]
+        variables = [m.Var(lb=0, ub=1, integer=True, name=GekkoMPSolver.get_variable_name(i)) for i in range(len(set_list))]
 
         set_ordinal_map = {value: i for i, value in enumerate(set_list)}
 
@@ -79,7 +78,7 @@ class GekkoMPSolver(MatchingProblemSolver):
             for contained_set in containing_sets:
                 if contained_set not in set_ordinal_map:
                     raise KeyError(f"unknown containing set {contained_set!r}")
-                contained_set_variables.append(vars[set_ordinal_map.get(contained_set, 0)])
+                contained_set_variables.append(variables[set_ordinal_map.get(contained_set, 0)])
 
             if not contained_set_variables:
                 raise ValueError(f"element {element!r} is not contained by any set")
@@ -88,11 +87,11 @@ class GekkoMPSolver(MatchingProblemSolver):
                 contained_sets_equation += contained_set_variable
             m.Equation(equation=contained_sets_equation >= containing_const)
 
-        m.Obj(sum(vars))
+        m.Obj(sum(variables))
         m.solve()
 
         resulting_sets = []
-        for idx, var in enumerate(vars):
+        for idx, var in enumerate(variables):
             if var.value[0] == 1.0:
                 resulting_sets.append(set_list[idx])
 

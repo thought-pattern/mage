@@ -10,7 +10,7 @@ from mgp import (
     read_proc as mgp_read_proc,
 )
 
-from mage.union_find import DisjointSet
+from mage.union_find.disjoint_set import DisjointSet
 
 disjoint_set = DisjointSet(node_ids=[])
 

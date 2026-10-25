@@ -8,16 +8,13 @@ class Event:
         self.timestamp = timestamp
 
     def __str__(self):
-        computed_return_value = "{source},{timestamp}".format(source=self.source, timestamp=self.timestamp)
+        computed_return_value = f"{self.source},{self.timestamp}"
         return computed_return_value
 
 
 class NodeEvent(Event):
-    def __init__(self, source: int, timestamp: int):
-        super(NodeEvent, self).__init__(source, timestamp)
-
     def __str__(self):
-        computed_return_value = "{source},{timestamp}".format(source=self.source, timestamp=self.timestamp)
+        computed_return_value = f"{self.source},{self.timestamp}"
         return computed_return_value
 
 
@@ -28,5 +25,5 @@ class InteractionEvent(Event):
         self.edge_idx = edge_idx
 
     def __str__(self):
-        computed_return_value = "{source},{timestamp}".format(source=self.source, timestamp=self.timestamp)
+        computed_return_value = f"{self.source},{self.timestamp}"
         return computed_return_value

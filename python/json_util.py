@@ -5,6 +5,7 @@ from io import DEFAULT_BUFFER_SIZE, TextIOWrapper
 from json import dumps as json_dumps, load as json_load, loads as json_loads
 from pathlib import Path
 from time import monotonic as time_monotonic
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from mgp import (
@@ -106,10 +107,10 @@ def from_json_list(json_str: mgp_Nullable[str]):
     return value
 
 
-def load_from_path(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
+def load_from_path(path: str) -> mgp_Record:
     file = Path(path)
     if file.exists():
-        with file.open() as opened_file:
+        with file.open(encoding="utf-8") as opened_file:
             objects = extract_objects(opened_file)
     else:
         raise FileNotFoundError("There is no file " + path)
@@ -122,7 +123,7 @@ load_from_path.__annotations__["return"] = mgp_Record(objects=mgp_List[object])
 load_from_path = mgp_read_proc(load_from_path)
 
 
-def load_from_str(ctx: mgp_ProcCtx, json_str: str) -> mgp_Record:
+def load_from_str(json_str: str) -> mgp_Record:
     """
     Procedure to load JSON from a string.
 
@@ -148,12 +149,16 @@ def fetch_json_bytes(ctx: mgp_ProcCtx, url: str) -> bytes:
     Fetches a JSON document within JSON_URL_TIMEOUT_SECONDS and JSON_URL_MAX_BYTES, closing the response on every
     path. read1 performs at most one blocking read per call, so the deadline and host abort are checked between reads.
     """
+    # Files load through load_from_path, so a URL is fetched only over HTTP or HTTPS.
+    if urlsplit(url).scheme not in ("http", "https"):
+        raise ValueError(f"JSON URL must use http or https: {url}")
     request = Request(url, headers={"User-Agent": "MAGE module"})
     deadline = time_monotonic() + JSON_URL_TIMEOUT_SECONDS
     chunks: list[bytes] = []
     received_bytes = 0
     try:
-        with urlopen(request, timeout=JSON_URL_TIMEOUT_SECONDS) as response:
+        # The scheme check above admits only http and https, so urlopen never opens a local file or a custom scheme.
+        with urlopen(request, timeout=JSON_URL_TIMEOUT_SECONDS) as response:  # nosec B310
             while True:
                 ctx.check_must_abort()
                 chunk = response.read1(DEFAULT_BUFFER_SIZE)

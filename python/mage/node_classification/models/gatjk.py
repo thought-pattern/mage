@@ -7,6 +7,8 @@ from torch_geometric.nn import GATConv, JumpingKnowledge, Linear
 
 
 class GATJK(torch_nn.Module):
+    """Graph attention network with jumping knowledge for node classification."""
+
     def __init__(
         self,
         in_channels: int,

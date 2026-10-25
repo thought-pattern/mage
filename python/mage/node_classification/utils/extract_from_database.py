@@ -77,7 +77,7 @@ def nodes_fetching(
 
     # if node_types is empty, raise error
     if not node_types:
-        raise Exception("There are no feature vectors found. Please check your database.")
+        raise ValueError("There are no feature vectors found. Please check your database.")
 
     # Dense class vocabulary of the observed task, numbered in sorted class order so that it does not depend on graph
     # iteration order; the model's output width is the size of this vocabulary.

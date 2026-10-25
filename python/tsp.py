@@ -3,18 +3,12 @@
 from mgp import (
     List as mgp_List,
     Nullable as mgp_Nullable,
-    ProcCtx as mgp_ProcCtx,
     Record as mgp_Record,
     Vertex as mgp_Vertex,
     read_proc as mgp_read_proc,
 )
 
-from mage.geography import (
-    create_distance_matrix,
-    solve_1_5_approx,
-    solve_2_approx,
-    solve_greedy,
-)
+from mage.geography.travelling_salesman import create_distance_matrix, solve_1_5_approx, solve_2_approx, solve_greedy
 
 DEFAULT_SOLVING_METHOD = "1.5_approx"
 tsp_solving_methods = {
@@ -24,7 +18,7 @@ tsp_solving_methods = {
 }
 
 
-def solve(context: mgp_ProcCtx, points: list[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD) -> mgp_Record:
+def solve(points: list[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD) -> mgp_Record:
     """
     The tsp solver returns 2 fields whose elements at indexes are correlated
 

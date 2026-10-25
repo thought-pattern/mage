@@ -137,7 +137,7 @@ def format_cyclonedx_data(vulnerabilities: list[dict], components: list[dict]) -
     # references are equal is indexed once, and each reference keeps its components in report order.
     components_by_ref: dict[str, list[dict]] = {}
     for component in components:
-        for ref in {component.get("purl", ""), component.get("bom-ref", "")}:
+        for ref in dict.fromkeys((component.get("purl", ""), component.get("bom-ref", ""))):
             components_by_ref.setdefault(ref, []).append(component)
 
     # deduplicate by package, version and vulnerabilityID, keeping the first occurrence

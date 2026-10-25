@@ -10,8 +10,9 @@ from mgp import (
     read_proc as mgp_read_proc,
 )
 
-from mage.graph_coloring_module import Graph, Parameter
+from mage.graph_coloring_module.graph import Graph
 from mage.graph_coloring_module.parameter_boundary import normalize_parameters
+from mage.graph_coloring_module.parameters import Parameter
 
 DEFAULT_ARGUMENT_DICT = {}
 

@@ -77,25 +77,25 @@ TEMPORAL_DECODERS = (
 )
 
 
-def convert_from_isoformat(property: object):
+def convert_from_isoformat(encoded: object):
     """
     Decodes the typed temporal wrappers convert_to_isoformat writes. A value is decoded only when re-encoding it
     reproduces the string exactly; any other string, including one that merely starts with a wrapper name, stays an
     ordinary string.
     """
-    if not isinstance(property, str) or not property.endswith(")"):
-        return property
+    if not isinstance(encoded, str) or not encoded.endswith(")"):
+        return encoded
     for prefix, decode in TEMPORAL_DECODERS:
-        if not property.startswith(prefix):
+        if not encoded.startswith(prefix):
             continue
         try:
-            value = decode(property[len(prefix) : -1])
+            value = decode(encoded[len(prefix) : -1])
         except ValueError:
-            return property
-        if convert_to_isoformat(value) != property:
-            return property
+            return encoded
+        if convert_to_isoformat(value) != encoded:
+            return encoded
         return value
-    return property
+    return encoded
 
 
 def import_vertex(ctx: mgp_ProcCtx, properties: dict[str, object], labels: list[str]):
@@ -117,7 +117,7 @@ def import_edge(
     properties: dict[str, object],
     start_node_id: object,
     end_node_id: object,
-    type: str,
+    edge_type: str,
     vertex_ids: dict[object, int],
 ):
     # Memgraph vertex ids are non-negative, so -1 marks an endpoint this import never resolved; it must not
@@ -130,7 +130,7 @@ def import_edge(
         raise KeyError(f"Relationship endpoint(s) {unresolved!r} do not identify an imported or explicitly matched node")
     vertex_from = ctx.graph.get_vertex_by_id(start_vertex_id)
     vertex_to = ctx.graph.get_vertex_by_id(end_vertex_id)
-    edge = ctx.graph.create_edge(vertex_from, vertex_to, mgp_EdgeType(type))
+    edge = ctx.graph.create_edge(vertex_from, vertex_to, mgp_EdgeType(edge_type))
     edge_properties = edge.properties
 
     for key, value in properties.items():
@@ -193,7 +193,7 @@ def cypher(ctx: mgp_ProcCtx, path: str, config: mgp_Map = DEFAULT_CYPHER_IMPORT_
     start_line = settings.get("startLine", 1)
 
     try:
-        with open(path, "r") as file:
+        with open(path, "r", encoding="utf-8") as file:
             lines = file.readlines()
     except OSError as err:
         raise OSError("Could not open/read file.") from err
@@ -249,7 +249,7 @@ def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
         Path to the JSON file that is being imported.
     """
     try:
-        with open(path, "r") as file:
+        with open(path, "r", encoding="utf-8") as file:
             graph_objects = js_load(file)
     except Exception as err:
         raise OSError("Could not open/read file.") from err
@@ -269,10 +269,8 @@ def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
             properties_value = graph_object.get(Parameter.PROPERTIES.value, {})
             id_value = graph_object.get(Parameter.ID.value, 0)
         else:
-            raise KeyError(
-                "Each graph object needs to have 'type', \
-                 'properties' and 'id' keys."
-            )
+            raise KeyError("Each graph object needs to have 'type', \
+                 'properties' and 'id' keys.")
 
         if type_value == Parameter.NODE.value:
             if Parameter.LABELS.value in graph_object:
@@ -297,10 +295,8 @@ def json(ctx: mgp_ProcCtx, path: str) -> mgp_Record:
                 end_node_id = graph_object.get(Parameter.END.value, 0)
                 edge_type = graph_object.get(Parameter.LABEL.value, "")
             else:
-                raise KeyError(
-                    "Each relationship object needs to have 'start', \
-                     'end' and 'label' keys."
-                )
+                raise KeyError("Each relationship object needs to have 'start', \
+                     'end' and 'label' keys.")
 
             import_edge(
                 ctx,
@@ -357,47 +353,47 @@ def resolve_graphml_endpoint(ctx: mgp_ProcCtx, endpoint: str, lookup: dict, real
     return vertex_id
 
 
-def cast_element(text: str, type: str) -> object:
+def cast_element(text: str, type_name: str) -> object:
     if text == "":
         return ""
-    if type == "string":
+    if type_name == "string":
         computed_return_value = str(text)
         return computed_return_value
-    if type == "int" or type == "long":
+    if type_name == "int" or type_name == "long":
         computed_return_value = int(text)
         return computed_return_value
-    if type == "boolean":
+    if type_name == "boolean":
         token = text.strip()
         if token in GRAPHML_TRUE_TOKENS:
             return True
         if token in GRAPHML_FALSE_TOKENS:
             return False
         raise ValueError(f"GraphML boolean data must be true, false, 1 or 0, received {text!r}")
-    if type == "float" or type == "double":
+    if type_name == "float" or type_name == "double":
         computed_return_value = float(text)
         return computed_return_value
-    if type == "":
+    if type_name == "":
         return text
     return False
 
 
-def cast_list_member(value: object, type: str) -> object:
+def cast_list_member(value: object, type_name: str) -> object:
     """Admits one decoded JSON array member against the key's declared GraphML element type."""
-    if type in ("string", "") and isinstance(value, str):
+    if type_name in ("string", "") and isinstance(value, str):
         return value
-    if type == "boolean" and isinstance(value, bool):
+    if type_name == "boolean" and isinstance(value, bool):
         return value
-    if type in ("int", "long") and isinstance(value, int) and not isinstance(value, bool):
+    if type_name in ("int", "long") and isinstance(value, int) and not isinstance(value, bool):
         return value
-    if type in ("float", "double") and isinstance(value, (int, float)) and not isinstance(value, bool):
+    if type_name in ("float", "double") and isinstance(value, (int, float)) and not isinstance(value, bool):
         member = float(value)
         return member
-    if type == "" and isinstance(value, (bool, int, float)):
+    if type_name == "" and isinstance(value, (bool, int, float)):
         return value
-    raise ValueError(f"GraphML list member {value!r} does not match the declared element type {type!r}")
+    raise ValueError(f"GraphML list member {value!r} does not match the declared element type {type_name!r}")
 
 
-def cast(text: str, type: str, is_list: bool) -> object:
+def cast(text: str, type_name: str, is_list: bool) -> object:
     if is_list:
         # export_util writes list data as a JSON array (get_value_string), so it is decoded as JSON, not Python.
         try:
@@ -406,9 +402,9 @@ def cast(text: str, type: str, is_list: bool) -> object:
             raise ValueError(f"GraphML list data is not a JSON array: {text!r}") from err
         if not isinstance(values, list):
             raise ValueError(f"GraphML list data is not a JSON array: {text!r}")
-        casted_list = [cast_list_member(value, type) for value in values]
+        casted_list = [cast_list_member(value, type_name) for value in values]
         return casted_list
-    computed_return_value = cast_element(text, type)
+    computed_return_value = cast_element(text, type_name)
     return computed_return_value
 
 
@@ -449,10 +445,8 @@ def set_default_config(config: mgp_Map) -> mgp_Map:
         or (config.get("source", {}) and "label" not in config.get("source", {}).keys())
         or (config.get("target", {}) and "label" not in config.get("target", {}).keys())
     ):
-        raise TypeError(
-            "Config parameter must be a map with specific \
-             keys and values described in documentation."
-        )
+        raise TypeError("Config parameter must be a map with specific \
+             keys and values described in documentation.")
     return config
 
 

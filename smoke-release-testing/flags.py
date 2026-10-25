@@ -2,12 +2,13 @@
 
 from subprocess import PIPE as subprocess_PIPE, run as subprocess_run
 from sys import argv as sys_argv
-from xml.etree import ElementTree as ET
+
+from defusedxml import ElementTree as ET
 
 
 def extract_flags(to_run):
     ret = {}
-    completed = subprocess_run(to_run, stdout=subprocess_PIPE, stderr=subprocess_PIPE)
+    completed = subprocess_run(to_run, stdout=subprocess_PIPE, stderr=subprocess_PIPE, check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"flag extraction failed with status {completed.returncode}: {completed.stderr.decode('utf-8')}")
     data = completed.stdout.decode("utf-8")
@@ -15,7 +16,7 @@ def extract_flags(to_run):
     root = ET.fromstring(data)
     for child in root:
         if child.tag == "usage" and (child.text or "").lower().count("warning"):
-            raise Exception("You should set the usage message!")
+            raise ValueError("You should set the usage message!")
         if child.tag == "flag":
             flag = {}
             for elem in child:

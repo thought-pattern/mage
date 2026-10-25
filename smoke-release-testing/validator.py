@@ -61,7 +61,8 @@ def get_arguments():
     return computed_return_value
 
 
-if __name__ == "__main__":
+def main() -> bool:
+    """Runs the requested validation on the CSV query result read from standard input."""
     args = get_arguments()
     data = read_all_csv_from_stdin()
 
@@ -73,3 +74,8 @@ if __name__ == "__main__":
         validate_is_main(data)
     if args.action == "validate_number_of_results":
         validate_number_of_results(data, args.expected)
+    return False
+
+
+if __name__ == "__main__":
+    main()

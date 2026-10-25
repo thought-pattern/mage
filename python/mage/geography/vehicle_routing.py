@@ -16,14 +16,12 @@ class VRPSolver(ABC):
         """
         Implementation method.
         """
-        ...
 
     @abstractmethod
     def get_result(self):
         """
         Extract the chosen route edges from the solved problem as path dictionaries.
         """
-        ...
 
 
 class InvalidDepotException(Exception):

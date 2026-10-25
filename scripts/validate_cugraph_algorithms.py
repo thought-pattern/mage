@@ -177,13 +177,11 @@ def values_match(expected: float, actual: float, name: str = "") -> tuple[bool, 
 
     if diff <= TOLERANCE:
         return True, ""
-    else:
-        computed_return_value = (
-            False,
-            f"{name}: expected {expected:.6f}, got {actual:.6f} (diff: {diff:.1%})",
-        )
-        return computed_return_value
-    return ()
+    computed_return_value = (
+        False,
+        f"{name}: expected {expected:.6f}, got {actual:.6f} (diff: {diff:.1%})",
+    )
+    return computed_return_value
 
 
 def core_partition(assignment: dict) -> list[list[str]]:
@@ -386,7 +384,7 @@ def create_test_graph(session):
     return computed_return_value
 
 
-def validate_node_identities(records: list, algorithm_name: str) -> tuple[bool, list[str]]:
+def validate_node_identities(records: list) -> tuple[bool, list[str]]:
     """Validate that all expected nodes are returned with correct identities."""
     errors = []
 
@@ -421,19 +419,17 @@ def test_pagerank(session, ground_truth: dict) -> bool:
     """Test PageRank algorithm against NetworkX ground truth."""
     print("\n--- Testing PageRank ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.pagerank.get(100, 0.85, 1e-5)
             YIELD node, pagerank
             RETURN node.id AS id, node.name AS name, pagerank
             ORDER BY pagerank DESC
-        """
-        )
+        """)
 
         records = list(result)
 
         # Validate node identities
-        valid, errors = validate_node_identities(records, "PageRank")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -476,18 +472,16 @@ def test_betweenness_centrality(session, ground_truth: dict) -> bool:
     """Test Betweenness Centrality - HUB must be highest."""
     print("\n--- Testing Betweenness Centrality ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.betweenness_centrality.get(true, true)
             YIELD node, betweenness
             RETURN node.id AS id, node.name AS name, betweenness
             ORDER BY betweenness DESC
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "Betweenness")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -540,18 +534,16 @@ def test_hits(session, ground_truth: dict) -> bool:
     """Test HITS algorithm against NetworkX ground truth."""
     print("\n--- Testing HITS ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.hits.get(100, 1e-5, true)
             YIELD node, hub, authority
             RETURN node.id AS id, node.name AS name, hub, authority
             ORDER BY hub DESC
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "HITS")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -596,18 +588,16 @@ def test_louvain(session, ground_truth: dict) -> bool:
     """Test Louvain community detection - A1-A4 and B1-B4 should be grouped."""
     print("\n--- Testing Louvain ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.louvain.get()
             YIELD node, partition
             RETURN node.id AS id, node.name AS name, partition AS community
             ORDER BY partition, id
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "Louvain")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -638,18 +628,16 @@ def test_leiden(session, ground_truth: dict) -> bool:
     """Test Leiden community detection - A1-A4 and B1-B4 should be grouped."""
     print("\n--- Testing Leiden ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.leiden.get()
             YIELD node, partition
             RETURN node.id AS id, node.name AS name, partition AS community
             ORDER BY partition, id
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "Leiden")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -680,18 +668,16 @@ def test_katz_centrality(session, ground_truth: dict) -> bool:
     """Test Katz Centrality algorithm."""
     print("\n--- Testing Katz Centrality ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.katz_centrality.get(0.1, 1.0, 1e-6, 100, false)
             YIELD node, katz
             RETURN node.id AS id, node.name AS name, katz
             ORDER BY katz DESC
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "Katz")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -732,19 +718,17 @@ def test_personalized_pagerank(session, ground_truth: dict) -> bool:
     """Test Personalized PageRank from A1."""
     print("\n--- Testing Personalized PageRank ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             MATCH (source:Node {id: 1})
             CALL cugraph.personalized_pagerank.get(source, 100, 0.85, 1e-5)
             YIELD node, pagerank
             RETURN node.id AS id, node.name AS name, pagerank
             ORDER BY pagerank DESC
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "Personalized PageRank")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")

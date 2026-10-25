@@ -2,7 +2,7 @@
 
 from pytest import mark as pytest_mark
 
-from mage.graph_coloring_module import Graph
+from mage.graph_coloring_module.graph import Graph
 
 # One five-node graph under integer and under string labels; each adjacency maps a node to its (neighbor, weight)
 # pairs. Graph copies what it reads.

@@ -33,13 +33,11 @@ class Population(ABC):
     def get_prev_individual(self, index: int) -> Individual:
         """Returns the individual that precedes the individual
         on the given index in the chain of individuals."""
-        ...
 
     @abstractmethod
     def get_next_individual(self, index: int) -> Individual:
         """Returns the individual that follows the individual
         on the given index in the chain of individuals."""
-        ...
 
     @property
     def individuals(self) -> list[Individual]:
@@ -70,7 +68,9 @@ class Population(ABC):
         in individuals contained in population"""
         return self.internal_sum_conflicts_weight
 
-    def set_individual(self, index: int, individual: Individual, diff_nodes: list[int]) -> int:
+    # Interface parameter: callers pass the changed nodes to every population and CorrelationPopulation.set_individual
+    # uses them.
+    def set_individual(self, index: int, individual: Individual, diff_nodes: list[int]) -> int:  # pylint: disable=unused-argument
         """Sets the individual on the specified index to the given individual
         and updates appropriate correlations and metrics."""
         old_individual = self.internal_individuals[index]

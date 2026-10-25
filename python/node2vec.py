@@ -307,12 +307,13 @@ set_embeddings.__annotations__["return"] = mgp_Record(nodes=mgp_List[mgp_Vertex]
 set_embeddings = mgp_write_proc(set_embeddings)
 
 
-def help() -> list:
+# Memgraph registers a procedure under its function name, and node2vec.help() is the public Cypher procedure.
+def help() -> list:  # pylint: disable=redefined-builtin
     """Shows manual page for node2vec"""
     # Each procedure's title names its first manual line; its remaining lines carry an empty name.
     records = []
     for func in (help, get_embeddings):
-        title = "Procedure '{}'".format(func.__name__)
+        title = f"Procedure '{func.__name__}'"
         # Python strips docstrings under -OO, which leaves that procedure without manual lines.
         lines = cleandoc(func.__doc__ or "").splitlines()
         records.extend(mgp_Record(name=name, value=line) for name, line in zip(chain([title], repeat("")), lines, strict=False))

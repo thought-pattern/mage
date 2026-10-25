@@ -204,7 +204,7 @@ def record_bulk_results(results, receipt: dict) -> None:
 
 def elastic_search_streaming_bulk(
     objects,
-    index: str,
+    index_name: str,
     chunk_size: int = 500,
     max_chunk_bytes: int = 104857600,
     raise_on_error: bool = True,
@@ -217,7 +217,7 @@ def elastic_search_streaming_bulk(
     (
         "\n    Sends streaming_bulk requests for the given objects to the provided index with the para"  # Continue literal.
         "meters specified.\n    Args:\n        objects (List[Any]): serialized nodes and edges that wil"  # Continue literal.
-        "l be sent to the ElasticSearch.\n        index (str): The name of the index where you want to"  # Continue literal.
+        "l be sent to the ElasticSearch.\n        index_name (str): The name of the index where you want to"  # Continue literal.
         " save the data.\n        chunk_size (int): The number of docs in one chunk sent to es (defaul"  # Continue literal.
         "t: 500).\n        max_chunk_bytes (int): The maximum size of the request in bytes (default: 1"  # Continue literal.
         "00MB).\n        raise_on_error (bool): Raise bulkIndexError containing errors (as .errors) fr"  # Continue literal.
@@ -234,7 +234,7 @@ def elastic_search_streaming_bulk(
     receipt: dict = {ATTEMPTED: 0, REJECTED: []}
     results = streaming_bulk(
         client=connected_client(),
-        index=index,
+        index=index_name,
         actions=counted_documents(objects, receipt),
         chunk_size=chunk_size,
         max_chunk_bytes=max_chunk_bytes,
@@ -252,7 +252,7 @@ def elastic_search_streaming_bulk(
 
 def elastic_search_parallel_bulk(
     objects,
-    index: str,
+    index_name: str,
     thread_count: int = 8,
     chunk_size: int = 500,
     max_chunk_bytes: int = 104857600,
@@ -263,7 +263,7 @@ def elastic_search_parallel_bulk(
     (
         "\n    Sends parallel_bulk requests for the given objects to the provided index with the param"  # Continue literal.
         "eters specified.\n    Args:\n        objects (List[Any]): Serialized nodes and edges that will"  # Continue literal.
-        " be sent to the ElasticSearch.\n        index (str): The name of the index where you want to "  # Continue literal.
+        " be sent to the ElasticSearch.\n        index_name (str): The name of the index where you want to "  # Continue literal.
         "save the data.\n        thread_count (int): Size of the threadpool to use for the bulk reques"  # Continue literal.
         "ts.\n        chunk_size (int): The number of docs in one chunk sent to es (default: 500).\n   "  # Continue literal.
         "     max_chunk_bytes (int): The maximum size of the request in bytes (default: 100MB).\n     "  # Continue literal.
@@ -283,7 +283,7 @@ def elastic_search_parallel_bulk(
     for window in batched(counted_documents(objects, receipt), window_size):
         results = parallel_bulk(
             client=active_client,
-            index=index,
+            index=index_name,
             actions=window,
             thread_count=thread_count,
             chunk_size=chunk_size,
@@ -357,7 +357,6 @@ def schema_section(schema: dict, path: tuple) -> dict:
 
 
 def create_index(
-    context: mgp_ProcCtx,
     index_name: str,
     schema_path: str,
     schema_parameters: mgp_Map,
@@ -374,7 +373,7 @@ def create_index(
        mgp.Map: Response message from Elasticsearch service.
     """
     # Read schema from the path given
-    with open(schema_path, "r") as schema_file:
+    with open(schema_path, "r", encoding="utf-8") as schema_file:
         schema_json = json_loads(schema_file.read())
     # Update default schema if specified
     if NUMBER_OF_SHARDS in schema_parameters:
@@ -513,7 +512,6 @@ index_db = mgp_read_proc(index_db)
 
 
 def index(
-    context: mgp_ProcCtx,
     createdObjects: mgp_List[mgp_Map],
     node_index: str,
     edge_index: str,
@@ -532,7 +530,7 @@ def index(
     (
         "The method serializes all vertices and relationships that came into the Memgraph DB to an El"  # Continue literal.
         "asticSearch schema and sends streaming_bulk request to ElasticSearch's API.\n    Args:\n      "  # Continue literal.
-        "  context (mgp.ProcCtx): Reference to the executing context.\n        createdObjects (List[Di"  # Continue literal.
+        "  createdObjects (List[Di"  # Continue literal.
         "ct[str, Any]]): List of all objects that were created and then sent as arguments to this met"  # Continue literal.
         'hod with the help of "create trigger".\n        node_index (str): The name of the node index.'  # Continue literal.
         "\n        edge_index (str): The name of the edge index.\n        chunk_size (int): The number "  # Continue literal.
@@ -625,7 +623,6 @@ index = mgp_read_proc(index)
 
 
 def reindex(
-    context: mgp_ProcCtx,
     source_index: mgp_Any,
     target_index: str,
     query: str,
@@ -636,8 +633,8 @@ def reindex(
     (
         "Reindex all documents that satisfy a given query from one index to another, potentially (if "  # Continue literal.
         "target_client is specified) on a different cluster. If you don’t specify the query you will "  # Continue literal.
-        "reindex all the documents.\n    Args:\n        context (mgp.ProcCtx): Reference to the executi"  # Continue literal.
-        "ng context.\n        updatatedObjects (List[Dict[str, Any]]): List of all objects that were u"  # Continue literal.
+        "reindex all the documents.\n    Args:\n        "  # Continue literal.
+        "updatatedObjects (List[Dict[str, Any]]): List of all objects that were u"  # Continue literal.
         'pdated and then sent as arguments to this method with the help of the "update trigger".\n    '  # Continue literal.
         "    source_index (Union[str, List[str]]): Identifies source index(or more of them) from wher"  # Continue literal.
         "e documents need to be indexed.\n        target_index (str): Identifies target index to where"  # Continue literal.
@@ -670,7 +667,6 @@ reindex = mgp_read_proc(reindex)
 
 
 def scan(
-    context: mgp_ProcCtx,
     index_name: str,
     query: str,
     scroll: str = "5m",
@@ -683,8 +679,8 @@ def scan(
     max_items: mgp_Nullable[int] = None,
 ) -> mgp_Record:
     (
-        "Runs a query on a index specified by the index_name.\n    Args:\n        context (mgp.ProcCtx)"  # Continue literal.
-        ": Reference to the executing context.\n        index_name (str): A name of the index.\n       "  # Continue literal.
+        "Runs a query on a index specified by the index_name.\n    Args:\n        "  # Continue literal.
+        "index_name (str): A name of the index.\n       "  # Continue literal.
         " query (str): Query written as JSON.\n        scroll (int): Specifies how long a consistent v"  # Continue literal.
         "iew of the index should be maintained for scrolled search.\n        raise_on_error (bool): Ra"  # Continue literal.
         "ises an exception (ScanError) if an error is encountered (some shards fail to execute). By d"  # Continue literal.
@@ -740,7 +736,6 @@ scan = mgp_read_proc(scan)
 
 
 def search(
-    context: mgp_ProcCtx,
     index_name: str,
     query: str,
     size: int = 1000,
@@ -750,7 +745,6 @@ def search(
 ) -> mgp_Record:
     """Searches for all documents by specifying query and index.
     Args:
-        context (mgp.ProcCtx): Reference to the executing context.
         index_name (str): A name of the index.
         query (str): Query written as JSON.
         aggregations (Optional[Mapping[str, Mapping[str, Any]]]): -

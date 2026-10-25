@@ -2,7 +2,7 @@
 
 from pytest import approx as pytest_approx, raises as pytest_raises
 
-from mage.geography import (
+from mage.geography.distance_calculator import (
     InvalidCoordinatesException,
     InvalidMetricException,
     calculate_distance_between_points,

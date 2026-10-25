@@ -19,6 +19,7 @@ def get_memgraph_version(pr):
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     if p.returncode != 0:
         raise RuntimeError(f"unable to list Memgraph PR build pr{pr}: {p.stderr.strip()}")
@@ -33,9 +34,9 @@ def get_memgraph_version(pr):
     # always be the same to reveal the daily build version
     basename = os_path.basename(file)
     version = basename[9:-12]
-    hash = extract_commit_hash(file)
+    commit_hash = extract_commit_hash(file)
 
-    return version, hash
+    return version, commit_hash
 
 
 def pr_build_vars(payload):

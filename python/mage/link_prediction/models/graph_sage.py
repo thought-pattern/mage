@@ -6,6 +6,8 @@ from torch import Tensor as torch_Tensor, device as torch_device, nn as torch_nn
 
 
 class GraphSAGE(torch_nn.Module):
+    """GraphSAGE network that computes node representations for link prediction."""
+
     def __init__(
         self,
         in_feats: int,
@@ -70,9 +72,7 @@ class GraphSAGE(torch_nn.Module):
             self.layers.append(heterogeneous_layer.to(device))
             in_feats = hidden_features_size[i]
 
-    def forward(
-        self, blocks: list[object], h: dict[str, torch_Tensor]
-    ) -> dict[str, torch_Tensor]:
+    def forward(self, blocks: list[object], h: dict[str, torch_Tensor]) -> dict[str, torch_Tensor]:
         (
             "Performs forward pass on batches.\n\n        Args:\n            blocks (List[dgl.heterograph.DG"  # Continue literal.
             "LBlock]): First block is DGLBlock of all nodes that are needed to compute representations fo"  # Continue literal.
@@ -90,9 +90,7 @@ class GraphSAGE(torch_nn.Module):
 
         return h
 
-    def online_forward(
-        self, graph: object, h: dict[str, torch_Tensor]
-    ) -> dict[str, torch_Tensor]:
+    def online_forward(self, graph: object, h: dict[str, torch_Tensor]) -> dict[str, torch_Tensor]:
         """Performs forward pass on batches.
 
         Args:

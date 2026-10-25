@@ -134,9 +134,9 @@ def preprocess(graph: DGLGraph, split_ratio: float, target_relation, device: tor
     # val size is 1-split_ratio specified by the user
     val_size = int(graph_edges_len * (1 - split_ratio))
 
-    # If user wants to split the dataset but it is too small, then raise an Exception
+    # If user wants to split the dataset but it is too small, then raise a ValueError
     if split_ratio < 1.0 and val_size == 0:
-        raise Exception("Graph too small to have a validation dataset. ")
+        raise ValueError("Graph too small to have a validation dataset. ")
 
     # Get training and validation edges
     tr_eids, val_eids = eids[val_size:], eids[:val_size]
@@ -291,7 +291,6 @@ def batch_forward_pass(
     pos_graph: DGLGraph,
     neg_graph: DGLGraph,
     blocks: list[DGLGraph],
-    num_neg_per_pos_edge: int,
     device: torch_device,
 ) -> tuple[torch_Tensor, torch_Tensor, torch_Tensor]:
     (
@@ -322,8 +321,6 @@ def batch_forward_pass(
             torch_zeros(neg_score.shape[0], device=device),
         ]
     )  # concatenation of labels
-    # weights = torch.cat([torch.ones(pos_score.shape[0], dtype=torch.float32), torch.Tensor([1.0 / num_neg_per_pos_edge for _ in
-    # range(neg_score.shape[0])])])
     loss_output = loss(probs, labels)
 
     return probs, labels, loss_output
@@ -487,7 +484,6 @@ def inner_train(
                 pos_graph,
                 neg_graph,
                 blocks,
-                num_neg_per_pos_edge,  # TODO: remove
                 device,
             )
             # Make an optimization step
@@ -521,7 +517,6 @@ def inner_train(
                         pos_graph,
                         neg_graph,
                         blocks,
-                        num_neg_per_pos_edge,  # TODO: remove
                         device,
                     )
                     # Add to the epoch's validation statistics

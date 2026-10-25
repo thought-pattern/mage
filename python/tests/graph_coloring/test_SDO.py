@@ -1,6 +1,8 @@
 """Tests for test SDO."""
 
-from mage.graph_coloring_module import SDO, Graph, Parameter
+from mage.graph_coloring_module.algorithms.greedy.SDO import SDO
+from mage.graph_coloring_module.graph import Graph
+from mage.graph_coloring_module.parameters import Parameter
 
 # Five test nodes; each adjacency maps a node to its (neighbor, weight) pairs. Graph copies what it reads.
 GRAPH_NODES = [0, 1, 2, 3, 4]

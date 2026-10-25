@@ -4,6 +4,8 @@ from enum import Enum
 
 
 class Parameter(Enum):
+    """Names of the graph coloring algorithm parameters."""
+
     ALGORITHM = "algorithm"
     NO_OF_COLORS = "no_of_colors"
 

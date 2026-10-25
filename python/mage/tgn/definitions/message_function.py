@@ -38,6 +38,8 @@ class MessageFunction(nn.Module):
 
 
 class MessageFunctionMLP(MessageFunction):
+    """Computes messages from raw messages with a multilayer perceptron."""
+
     def __init__(self, raw_message_dimension: int, message_dimension: int, device: torch_device):
         super().__init__(raw_message_dimension, message_dimension, device)
 

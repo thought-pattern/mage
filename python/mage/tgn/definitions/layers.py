@@ -86,7 +86,6 @@ class TGNLayerGraphSumEmbedding(TGNLayer):
             raise ValueError(f"Graph-sum data must contain seven values, received {len(data)}")
         node_layers: list[list[tuple[int, int]]]
         mappings: list[dict[tuple[int, int], int]]
-        edge_layers: list[list[int]]
         neighbors_arr: list[list[tuple[int, int]]]
         features: torch_Tensor
         edge_features: list[torch_Tensor]
@@ -94,7 +93,7 @@ class TGNLayerGraphSumEmbedding(TGNLayer):
         (
             node_layers,
             mappings,
-            edge_layers,
+            _,
             neighbors_arr,
             features,
             edge_features,
@@ -237,7 +236,6 @@ class TGNLayerGraphAttentionEmbedding(TGNLayer):
             raise ValueError(f"Graph-attention data must contain eight values, received {len(data)}")
         node_layers: list[list[tuple[int, int]]]
         mappings: list[dict[tuple[int, int], int]]
-        edge_layers: list[list[int]]
         neighbors_arr: list[list[tuple[int, int]]]
         features: torch_Tensor
         edge_features: list[torch_Tensor]
@@ -246,7 +244,7 @@ class TGNLayerGraphAttentionEmbedding(TGNLayer):
         (
             node_layers,
             mappings,
-            edge_layers,
+            _,
             neighbors_arr,
             features,
             edge_features,

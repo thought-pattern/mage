@@ -12,6 +12,8 @@ from torch import (
 
 # time encoding by GAT
 class TimeEncoder(nn.Module):
+    """Encodes time deltas as cosine features of a learned linear map."""
+
     def __init__(self, out_dimension: int, device: torch_device):
         super().__init__()
         self.device = device

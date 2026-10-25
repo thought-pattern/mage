@@ -51,8 +51,10 @@ def canonical_value(value) -> tuple:
 
 
 class Vertex:
-    def __init__(self, id: int, labels: list[str], properties: dict[str, object]):
-        self.internal_id = id
+    """A vertex read from Memgraph or Neo4j, with sorted labels and its properties."""
+
+    def __init__(self, vertex_id: int, labels: list[str], properties: dict[str, object]):
+        self.internal_id = vertex_id
         self.internal_labels = labels
         self.internal_properties = properties
         self.internal_labels.sort()
@@ -105,6 +107,8 @@ class Vertex:
 
 
 class Edge:
+    """An edge read from Memgraph or Neo4j between two vertex ids, with its label and properties."""
+
     def __init__(
         self,
         from_vertex: int,
@@ -142,10 +146,8 @@ class Edge:
 
     def __eq__(self, other):
         assert isinstance(other, Edge), f"Comparing Edge with object of type: {type(other)}"
-        logger.debug(
-            f"comparing Edge ({self.internal_from_vertex}, {self.internal_to_vertex}) to\
-              ({other.internal_from_vertex, other.internal_to_vertex})"
-        )
+        logger.debug(f"comparing Edge ({self.internal_from_vertex}, {self.internal_to_vertex}) to\
+              ({other.internal_from_vertex, other.internal_to_vertex})")
         # Return True if self and other have the same length
         if self.internal_from_vertex != other.internal_from_vertex:
             logger.debug(f"Source vertex is different {self.internal_from_vertex} <> {other.internal_from_vertex}")
@@ -170,6 +172,8 @@ class Edge:
 
 
 class Graph:
+    """The vertices and edges read from one database, compared across Memgraph and Neo4j."""
+
     def __init__(self):
         self.internal_vertices = []
         self.internal_edges = []
@@ -203,13 +207,9 @@ def get_neo4j_data_json(driver) -> list:
 
 
 def get_memgraph_data_json_format(memgraph: gqlalchemy_Memgraph):
-    result = list(
-        memgraph.execute_and_fetch(
-            """
+    result = list(memgraph.execute_and_fetch("""
             CALL export_util.json("", {stream:true}) YIELD data RETURN data;
-            """
-        )
-    )[0].get("data", "")
+            """))[0].get("data", "")
     computed_return_value = json_loads(result)
     return computed_return_value
 

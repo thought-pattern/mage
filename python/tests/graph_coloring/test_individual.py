@@ -2,11 +2,12 @@
 
 from pytest import mark as pytest_mark, raises as pytest_raises
 
-from mage.graph_coloring_module import Graph, Individual
+from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.exceptions import (
     IllegalColorException,
     IllegalNodeException,
 )
+from mage.graph_coloring_module.graph import Graph
 
 # Five test nodes; each adjacency maps a node to its (neighbor, weight) pairs. Graph copies what it reads.
 GRAPH_NODES = [0, 1, 2, 3, 4]

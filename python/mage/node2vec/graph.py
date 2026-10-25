@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 
 
 class Graph(ABC):
+    """Graph with the transition probabilities the second-order random walk samples from."""
+
     def __init__(self, is_directed: bool):
         self.internal_is_directed = is_directed
         self.internal_nodes: list[int] = []
@@ -73,6 +75,8 @@ class Graph(ABC):
 
 
 class GraphHolder(Graph):
+    """Graph built from weighted edges and declared nodes."""
+
     def __init__(
         self,
         edges_weights: dict[tuple[int, int], float],

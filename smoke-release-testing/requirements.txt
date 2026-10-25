@@ -1,3 +1,4 @@
-GQLAlchemy
+defusedxml==0.7.1
+GQLAlchemy==1.8.0
 neo4j==5.23
 semver==3.0.2

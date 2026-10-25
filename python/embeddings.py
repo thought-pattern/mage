@@ -84,13 +84,12 @@ def get_visible_gpus():
         ValueError,
     ) as err:
         logger.warning(f"nvidia-smi GPU discovery failed; probing PyTorch instead: {err}")
-        try:
-            computed_return_value = list(range(torch_cuda.device_count())) if torch_cuda.is_available() else []
-            return computed_return_value
-        # The nvidia-smi failure is already logged and unused here, so the fallback may rebind the name.
-        except (AssertionError, RuntimeError) as err:
-            logger.warning(f"PyTorch GPU discovery failed; no GPU will be used: {err}")
-            return []
+    try:
+        computed_return_value = list(range(torch_cuda.device_count())) if torch_cuda.is_available() else []
+        return computed_return_value
+    except (AssertionError, RuntimeError) as err:
+        logger.warning(f"PyTorch GPU discovery failed; no GPU will be used: {err}")
+        return []
 
 
 def select_device(device: mgp_Any):
@@ -689,7 +688,6 @@ node_sentence = mgp_write_proc(node_sentence)
 
 
 def text(
-    ctx: mgp_ProcCtx,
     input_strings: mgp_List[str],
     configuration: mgp_Map = DEFAULT_ARGUMENT_DICT,
 ) -> mgp_Record:

@@ -50,7 +50,7 @@ def schema(context: mgp_ProcCtx, include_properties: bool = False) -> mgp_Record
             )
 
     if node_counter == 0:
-        raise Exception("Can't generate a graph schema since there is no data in the database.")
+        raise ValueError("Can't generate a graph schema since there is no data in the database.")
 
     node_index_by_labels = {key: i for i, key in enumerate(node_count_by_labels.keys())}
     nodes = [

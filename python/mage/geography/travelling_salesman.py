@@ -5,7 +5,7 @@ from sys import stderr as sys_stderr
 
 from numpy import ndarray as np_ndarray, shape as np_shape, zeros as np_zeros
 
-from mage.geography import calculate_distance_between_points
+from mage.geography.distance_calculator import calculate_distance_between_points
 
 try:
     from networkx import (
@@ -145,8 +145,7 @@ def get_hamiltonian_circuit(euler_circuit):
     :return:
     """
 
-    path = []
-    [path.append(x[0]) for x in euler_circuit]
+    path = [x[0] for x in euler_circuit]
     path = list(dict.fromkeys(path))
     path.append(path[0])
 

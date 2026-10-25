@@ -19,7 +19,7 @@ def read_ignore_list() -> list[str]:
     """
     fname = f"{os_path.dirname(__file__)}/cve-ignore-list"
 
-    with open(fname, "r") as f:
+    with open(fname, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     out = []
@@ -43,7 +43,7 @@ def read_summary_file(filename: str) -> object:
         return False
 
     print(f"Found {filename}")
-    with open(filename, "r") as f:
+    with open(filename, "r", encoding="utf-8") as f:
         if filename.endswith(".json"):
             data = json_load(f)
         else:

@@ -41,10 +41,11 @@ except ImportError:
 MAX_LIST_SIZE = 10
 
 
-def help() -> list:
+# Memgraph registers a procedure under its function name, and graph_analyzer.help() is the public Cypher procedure.
+def help() -> list:  # pylint: disable=redefined-builtin
     """Shows manual page for graph_analyzer."""
-    documented = [("Procedure '{}'".format(func.__name__), func.__doc__) for func in (help, analyze, analyze_subgraph)]
-    documented.extend(("Analysis '{}'".format(name), analysis.__doc__) for name, analysis in ANALYSES.items())
+    documented = [(f"Procedure '{func.__name__}'", func.__doc__) for func in (help, analyze, analyze_subgraph)]
+    documented.extend((f"Analysis '{name}'", analysis.__doc__) for name, analysis in ANALYSES.items())
 
     # Each documented item's title names its first manual line; its remaining lines carry an empty name.
     records = []

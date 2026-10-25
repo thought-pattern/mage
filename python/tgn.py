@@ -108,6 +108,8 @@ from mage.tgn.helper.simple_mlp import MLP
 
 # params TGN must receive
 class TGNParameters:
+    """Names of the TGN parameters set_params accepts."""
+
     NUM_OF_LAYERS = "num_of_layers"
     LAYER_TYPE = "layer_type"
     MEMORY_DIMENSION = "memory_dimension"
@@ -285,7 +287,6 @@ def get_output_records() -> list[mgp_Record]:
 
 
 def is_tgn_initialized() -> bool:
-    global tgn_initialized
     return tgn_initialized
 
 
@@ -848,7 +849,7 @@ def train_eval_epochs(num_epochs: int, train_edges: list[mgp_Edge], eval_edges: 
 
 
 #####################################################
-def predict_link_score(ctx: mgp_ProcCtx, src: mgp_Vertex, dest: mgp_Vertex) -> mgp_Record:
+def predict_link_score(src: mgp_Vertex, dest: mgp_Vertex) -> mgp_Record:
     """
     If you were doing link prediction, with this function you can input some of your vertices, and get the predictions
     Be careful to input vertices in correct order (src->dest) otherwise you might get wrong prediction
@@ -905,7 +906,7 @@ def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> list:
     """
 
     if not is_tgn_initialized():
-        raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
+        raise RuntimeError("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
     vertices = ctx.graph.vertices
     curr_all_edges = []
@@ -918,7 +919,7 @@ def train_and_eval(ctx: mgp_ProcCtx, num_epochs: int) -> list:
     # still do epoch training
     train_eval_index_split = query_module_tgn.get("train_eval_index_split", 0)
     if train_eval_index_split == 0:
-        raise Exception("Can't call train and eval if you didn't change TGN mode to 'eval'")
+        raise RuntimeError("Can't call train and eval if you didn't change TGN mode to 'eval'")
 
     train_eval_epochs(
         num_epochs=num_epochs,
@@ -940,9 +941,7 @@ train_and_eval.__annotations__["return"] = mgp_Record(
 train_and_eval = mgp_read_proc(train_and_eval)
 
 
-def get_results(
-    ctx: mgp_ProcCtx,
-) -> list:
+def get_results() -> list:
     """
     This method returns all results from training and evaluation on all epochs
 
@@ -951,7 +950,7 @@ def get_results(
     """
     # get all records for every epoch and every batch inside it as results
     if not is_tgn_initialized():
-        raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
+        raise RuntimeError("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
     computed_return_value = get_output_records()
     return computed_return_value
@@ -967,7 +966,7 @@ get_results.__annotations__["return"] = mgp_Record(
 get_results = mgp_read_proc(get_results)
 
 
-def set_eval(ctx: mgp_ProcCtx) -> mgp_Record:
+def set_eval() -> mgp_Record:
     """
     Purpose of this function is to switch mode from "train" to "eval" at some point during your stream.
     At that point, we will save current edge count, and this information will later be used in function
@@ -979,7 +978,7 @@ def set_eval(ctx: mgp_ProcCtx) -> mgp_Record:
     :return: mgp.Record(): empty record if everything was fine
     """
     if not is_tgn_initialized():
-        raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
+        raise RuntimeError("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
     in_train_mode = query_module_tgn.get("tgn_mode", INITIAL_TGN_MODE) == TGNMode.Train
     if in_train_mode and query_module_tgn_batch.get("current_batch_size", 0) > 0:
@@ -1021,7 +1020,7 @@ save_tgn_params.__annotations__["return"] = mgp_Record()
 save_tgn_params = mgp_read_proc(save_tgn_params)
 
 
-def reset(ctx: mgp_ProcCtx) -> mgp_Record:
+def reset() -> mgp_Record:
     """
     Resets TGN to the state `set_params` establishes from its admitted parameters: newly initialized model and
     optimizer, empty temporal state, results and counters, Train mode and the configured batch size.
@@ -1053,7 +1052,7 @@ def get(ctx: mgp_ProcCtx) -> list:
     :return: mgp.Record(): empty record if everything was fine
     """
     if not is_tgn_initialized():
-        raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
+        raise RuntimeError("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
     embeddings_dict = {}
 
@@ -1070,7 +1069,7 @@ get.__annotations__["return"] = mgp_Record(node=mgp_Vertex, embedding=mgp_List[f
 get = mgp_read_proc(get)
 
 
-def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record:
+def update(edges: mgp_List[mgp_Edge]) -> mgp_Record:
     (
         "\n    Purpose of following function is to process edges which are created in Memgraph, and ge"  # Continue literal.
         "t features from\n    nodes or edges if they are present and save all that data so when batch "  # Continue literal.
@@ -1096,7 +1095,7 @@ def update(ctx: mgp_ProcCtx, edges: mgp_List[mgp_Edge]) -> mgp_Record:
         "ng or evaluation\n\n    :return: mgp.Record(): empty record if everything was fine\n"
     )
     if not is_tgn_initialized():
-        raise Exception("TGN is not initialized still. Call `set_params` function in order to initialize it.")
+        raise RuntimeError("TGN is not initialized still. Call `set_params` function in order to initialize it.")
 
     # we update our batch with current edges; nothing changes unless every edge is admitted
     parse_mgp_edges_into_tgn_batch(edges)
@@ -1120,7 +1119,6 @@ update = mgp_read_proc(update)
 
 
 def set_params(
-    ctx: mgp_ProcCtx,
     params: mgp_Map,
 ) -> mgp_Record:
     (
@@ -1154,8 +1152,6 @@ def set_params(
         "we read features\n        [optional] node_label_property: name of label property on nodes fro"  # Continue literal.
         "m which we read features\n\n    :return: mgp.Record(): empty record if everything was fine\n"
     )
-    global query_module_tgn_batch, DEFINED_INPUT_TYPES, DEFAULT_VALUES
-
     params = {**DEFAULT_VALUES, **params}  # override any default parameters
     print(params)
     # every defined parameter must be present and hold its declared type
@@ -1164,7 +1160,7 @@ def set_params(
         for name, expected_type in DEFINED_INPUT_TYPES.items()
     )
     if not correctly_typed:
-        raise Exception(f"Input dictionary is not correctly typed. Expected following types {DEFINED_INPUT_TYPES}.")
+        raise TypeError(f"Input dictionary is not correctly typed. Expected following types {DEFINED_INPUT_TYPES}.")
 
     initialize_tgn(params)
 
@@ -1243,7 +1239,7 @@ def get_tgn_layer_enum(layer_type: str) -> TGNLayerType:
     elif TGNLayerType(layer_type) is TGNLayerType.GraphSumEmbedding:
         return TGNLayerType.GraphSumEmbedding
     else:
-        raise Exception(f"Wrong layer type, expected {TGNLayerType.GraphAttentionEmbedding} or {TGNLayerType.GraphSumEmbedding} ")
+        raise ValueError(f"Wrong layer type, expected {TGNLayerType.GraphAttentionEmbedding} or {TGNLayerType.GraphSumEmbedding} ")
 
 
 def get_edge_message_function_type(message_function_type: str) -> MessageFunctionType:
@@ -1252,7 +1248,7 @@ def get_edge_message_function_type(message_function_type: str) -> MessageFunctio
     elif MessageFunctionType(message_function_type) is MessageFunctionType.MLP:
         return MessageFunctionType.MLP
     else:
-        raise Exception(f"Wrong message function type, expected {MessageFunctionType.Identity} or {MessageFunctionType.MLP} ")
+        raise ValueError(f"Wrong message function type, expected {MessageFunctionType.Identity} or {MessageFunctionType.MLP} ")
 
 
 def get_message_aggregator_type(message_aggregator_type: str) -> MessageAggregatorType:
@@ -1261,7 +1257,7 @@ def get_message_aggregator_type(message_aggregator_type: str) -> MessageAggregat
     elif MessageAggregatorType(message_aggregator_type) is MessageAggregatorType.Last:
         return MessageAggregatorType.Last
     else:
-        raise Exception(f"Wrong message aggregator type, expected {MessageAggregatorType.Last} or {MessageAggregatorType.Mean} ")
+        raise ValueError(f"Wrong message aggregator type, expected {MessageAggregatorType.Last} or {MessageAggregatorType.Mean} ")
 
 
 def get_memory_updater_type(memory_updater_type: str) -> MemoryUpdaterType:
@@ -1272,7 +1268,7 @@ def get_memory_updater_type(memory_updater_type: str) -> MemoryUpdaterType:
         return MemoryUpdaterType.RNN
 
     else:
-        raise Exception(f"Wrong memory updater type, expected {MemoryUpdaterType.GRU} or, {MemoryUpdaterType.RNN}")
+        raise ValueError(f"Wrong memory updater type, expected {MemoryUpdaterType.GRU} or, {MemoryUpdaterType.RNN}")
 
 
 def get_learning_type(learning_type: str) -> LearningType:
@@ -1283,7 +1279,7 @@ def get_learning_type(learning_type: str) -> LearningType:
         return LearningType.Supervised
 
     else:
-        raise Exception(f"Wrong learning type, expected {LearningType.Supervised} or, {LearningType.SelfSupervised}")
+        raise ValueError(f"Wrong learning type, expected {LearningType.Supervised} or, {LearningType.SelfSupervised}")
 
 
 def get_device_type(device_type: str) -> DeviceType:
@@ -1294,4 +1290,4 @@ def get_device_type(device_type: str) -> DeviceType:
         return DeviceType.CPU
 
     else:
-        raise Exception(f"Wrong device type, expected {DeviceType.CUDA} or, {DeviceType.CPU}")
+        raise ValueError(f"Wrong device type, expected {DeviceType.CUDA} or, {DeviceType.CPU}")

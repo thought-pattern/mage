@@ -1,12 +1,15 @@
 --extra-index-url https://download.pytorch.org/whl/cu126
+--find-links https://data.dgl.ai/wheels/torch-2.6/repo.html
+--find-links https://data.pyg.org/whl/torch-2.6.0+cu126.html
 defusedxml==0.7.1
+dgl==2.5.0
 elasticsearch==8.17.0
-filelock==3.19.1
+filelock==3.20.3
 gekko==1.2.1
 gensim==4.3.3
 gqlalchemy==1.8.0
 huggingface-hub==0.35.1
-igraph==0.11.8
+igraph==1.0.0
 neo4j==5.28.2
 networkx==2.8.8
 pandas==2.2.3
@@ -14,7 +17,12 @@ platformdirs==4.3.6
 python-Levenshtein==0.26.1
 scikit-learn==1.5.2
 scipy==1.13.1
-sentence-transformers==5.1.1
+sentence-transformers==5.6.0
 six==1.17.0
 torch==2.6.0
+torch-cluster==1.6.3
+torch-geometric==2.8.1
+torch-scatter==2.1.2
+torch-sparse==0.6.18
+torch-spline-conv==1.2.2
 torchmetrics==0.10.0

@@ -9,6 +9,8 @@ from torch import (
 
 
 class Memory:
+    """Per-node memory vectors and their last update times."""
+
     def __init__(self, memory_dimension: int, device: torch_device):
         self.memory_dimension = memory_dimension
         self.device = device

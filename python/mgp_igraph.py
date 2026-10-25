@@ -6,11 +6,18 @@ from igraph import EdgeSeq as igraph_EdgeSeq, Graph as igraph_Graph
 
 
 class MemgraphIgraph(igraph_Graph):
+    """igraph Graph built from the Memgraph procedure context; igraph vertex ids map back to Memgraph vertices."""
+
     def __init__(self, ctx, directed: bool):
         if not hasattr(ctx, "graph"):
             raise TypeError("MemgraphIgraph requires a context with a graph")
+        vertex_count, edge_list, vertex_properties, edge_properties, id_mapping, inverted_id_mapping = graph_structure_from_ctx(ctx)
+        super().__init__(directed=directed, n=vertex_count, edges=edge_list)
+        assign_present_attributes(self.es, edge_properties)
+        assign_present_attributes(self.vs, vertex_properties)
         self.ctx_graph = ctx.graph
-        self.id_mappings, self.reverse_id_mappings = self.create_igraph_from_ctx(ctx=ctx, directed=directed)
+        self.id_mappings = id_mapping
+        self.reverse_id_mappings = inverted_id_mapping
 
     def get_igraph_vertex_id(self, vertex) -> int:
         if not hasattr(vertex, "id"):
@@ -69,14 +76,14 @@ class MemgraphIgraph(igraph_Graph):
         return computed_return_value
 
     def get_all_simple_paths(self, v, to, cutoff: int) -> list[list[object]]:
-        # A negative cutoff (the procedure default -1) considers paths of every
-        # length, which is igraph's documented cutoff semantics.
+        # The procedure's cutoff is igraph's maxlen: the longest path considered,
+        # where a negative value (the procedure default -1) considers every length.
         paths = [
             self.convert_vertex_ids_to_mgp_vertices(path)
             for path in super().get_all_simple_paths(
                 v=self.get_igraph_vertex_id(v),
                 to=self.get_igraph_vertex_id(to),
-                cutoff=cutoff,
+                maxlen=cutoff,
             )
         ]
         return paths
@@ -198,43 +205,36 @@ class MemgraphIgraph(igraph_Graph):
 
         return min_span_tree
 
-    def create_igraph_from_ctx(self, ctx, directed: bool = False) -> tuple[dict[int, int], dict[int, int]]:
-        """Initialize this igraph.Graph from mgp.ProcCtx.
 
-        Args:
-            ctx (mgp.ProcCtx): memgraph ProcCtx object
-            directed (bool, optional): Is graph directed. Defaults to False.
+def graph_structure_from_ctx(ctx) -> tuple[int, list[tuple[int, int]], list[dict], list[dict], dict[int, int], dict[int, int]]:
+    """Reads the igraph structure of the graph in an mgp.ProcCtx.
 
-        Returns:
-            Tuple[Dict[int, int], Dict[int, int]]: vertex id mappings and inverted vertex id mappings
-        """
+    Args:
+        ctx (mgp.ProcCtx): memgraph ProcCtx object
 
-        vertices = list(ctx.graph.vertices)
-        edge_list = []
-        vertex_properties = []
-        edge_properties = []
-        id_mapping = {vertex.id: i for i, vertex in enumerate(vertices)}
-        inverted_id_mapping = {i: vertex.id for i, vertex in enumerate(vertices)}
-        for vertex in vertices:
-            vertex_properties.append(dict(vertex.properties.items()))
-            for edge in vertex.out_edges:
-                edge_properties.append(dict(edge.properties.items()))
-                source_id = id_mapping.get(edge.from_vertex.id, -1)
-                target_id = id_mapping.get(edge.to_vertex.id, -1)
-                if source_id < 0 or target_id < 0:
-                    raise KeyError("Memgraph edge references a vertex outside the graph context")
-                edge_list.append(
-                    (
-                        source_id,
-                        target_id,
-                    )
-                )
+    Returns:
+        The vertex count, the edge list as igraph vertex id pairs, the vertex and edge property maps by position, and
+        the Memgraph-to-igraph vertex id mapping with its inverse.
+    """
 
-        super().__init__(directed=directed, n=len(vertices), edges=edge_list)
-        assign_present_attributes(self.es, edge_properties)
-        assign_present_attributes(self.vs, vertex_properties)
+    vertices = list(ctx.graph.vertices)
+    edge_list = []
+    vertex_properties = []
+    edge_properties = []
+    id_mapping = {vertex.id: i for i, vertex in enumerate(vertices)}
+    inverted_id_mapping = {i: vertex.id for i, vertex in enumerate(vertices)}
+    for vertex in vertices:
+        vertex_properties.append(dict(vertex.properties.items()))
+        for edge in vertex.out_edges:
+            edge_properties.append(dict(edge.properties.items()))
+            source_id = id_mapping.get(edge.from_vertex.id, -1)
+            target_id = id_mapping.get(edge.to_vertex.id, -1)
+            if source_id < 0 or target_id < 0:
+                raise KeyError("Memgraph edge references a vertex outside the graph context")
+            edge_list.append((source_id, target_id))
 
-        return id_mapping, inverted_id_mapping
+    structure = (len(vertices), edge_list, vertex_properties, edge_properties, id_mapping, inverted_id_mapping)
+    return structure
 
 
 def assign_present_attributes(sequence, property_maps: list[dict]) -> None:

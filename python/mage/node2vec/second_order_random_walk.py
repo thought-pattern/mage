@@ -7,6 +7,8 @@ from mage.node2vec.graph import Graph
 
 
 class SecondOrderRandomWalk:
+    """Samples node2vec second-order random walks over a graph."""
+
     def __init__(self, p: float, q: float, num_walks: int, walk_length: int):
         """
         Args:
@@ -82,12 +84,12 @@ class SecondOrderRandomWalk:
 
             previous_node_id = walk[-2]
 
-            next = np_random.choice(
+            next_node_id = np_random.choice(
                 node_neighbors,
                 p=graph.get_edge_transition_probs(edge=(previous_node_id, current_node_id)),
             )
 
-            walk.append(next)
+            walk.append(next_node_id)
         return walk
 
     def set_first_pass_transition_probs(self, graph: Graph) -> bool:

@@ -19,6 +19,7 @@ def get_latest_build() -> int:
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     if p.returncode != 0:
         raise RuntimeError(f"unable to list Memgraph daily builds: {p.stderr.strip()}")
@@ -47,6 +48,7 @@ def get_memgraph_version(date):
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     if p.returncode != 0:
         raise RuntimeError(f"unable to list Memgraph build {date:08d}: {p.stderr.strip()}")
@@ -61,9 +63,9 @@ def get_memgraph_version(date):
     # always be the same to reveal the daily build version
     basename = os_path.basename(file)
     version = basename[9:-12]
-    hash = extract_commit_hash(file)
+    commit_hash = extract_commit_hash(file)
 
-    return version, hash
+    return version, commit_hash
 
 
 def daily_build_vars(payload):

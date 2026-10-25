@@ -9,6 +9,8 @@ from mage.link_prediction.constants import Predictors
 
 
 class DotPredictor(nn.Module):
+    """Scores an edge as the dot product of its endpoint representations."""
+
     def forward(
         self,
         g: DGLGraph,

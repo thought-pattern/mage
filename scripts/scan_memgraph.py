@@ -33,6 +33,7 @@ from os import (
 )
 from stat import S_ISLNK as stat_S_ISLNK
 from subprocess import PIPE as subprocess_PIPE, run as subprocess_run
+from tempfile import TemporaryDirectory
 from uuid import uuid4 as uuid_uuid4
 
 from tqdm import tqdm
@@ -128,7 +129,8 @@ def run_cve_scan(target: str, output_dir: str) -> dict:
     ]
 
     # Run the command, capturing stdout/stderr
-    completed = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
+    # cve-bin-tool exits non-zero when it reports CVEs, so success is judged by the report file below.
+    completed = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True, check=False)
 
     # Some targets produce no JSON at all; check before opening.
     if not os_path.isfile(output_path):
@@ -143,7 +145,7 @@ def run_cve_scan(target: str, output_dir: str) -> dict:
     return data
 
 
-def scan_directories_with_progress(dirs_to_scan: list[str], output_dir: str = f"{CVE_DIR}/tmp", max_workers: int = 20) -> None:
+def scan_directories_with_progress(dirs_to_scan: list[str], output_dir: str, max_workers: int = 20) -> None:
     """
     Given a list of directories, scan each one in parallel using cve-bin-tool.
     - Uses '-u never' and '-f json'.
@@ -258,7 +260,10 @@ def main(rootfs: str, max_workers: int) -> None:
     """
     files = find_memgraph_files(f"{rootfs}/usr/lib/memgraph")
     files = place_slowest_first(rootfs, files)
-    scan_directories_with_progress(files, max_workers=max_workers)
+    # Each run stages its per-target reports in its own directory under CVE_DIR, on the summary's filesystem, so the
+    # staged summary can replace the published one atomically.
+    with TemporaryDirectory(dir=CVE_DIR, prefix="cve-bin-tool-memgraph-") as staging:
+        scan_directories_with_progress(files, staging, max_workers=max_workers)
 
 
 if __name__ == "__main__":

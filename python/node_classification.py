@@ -14,7 +14,7 @@ from os import (
     replace as os_replace,
 )
 from re import compile as re_compile
-from tempfile import mkstemp
+from tempfile import gettempdir, mkstemp
 from time import time
 
 from mgp import (
@@ -121,8 +121,6 @@ GAT_WITH_JK = "GATJK"
 # dictionary of models
 MODELS = {GAT_MODEL: GAT, GATV2_MODEL: GATv2, SAGE_MODEL: SAGE, GAT_WITH_JK: GATJK}
 
-global model, current_values
-
 model: mgp_Any = False
 current_values: dict = {}
 
@@ -191,7 +189,7 @@ DEFAULT_VALUES = {
     HeteroParams.NUM_ITERATIONS_SAMPLE: 4,
     OtherParams.PATH_TO_MODEL: "",
     OtherParams.PATIENCE: 10,
-    OtherParams.MODEL_SAVING_FOLDER: "/tmp/torch_models",
+    OtherParams.MODEL_SAVING_FOLDER: os_path.join(gettempdir(), "torch_models"),
 }
 
 # numeric parameters and their admitted domains: frequencies, retention and sizes are
@@ -246,14 +244,12 @@ def declare_data(ctx: mgp_ProcCtx) -> HeteroData:
     Args:
         ctx (mgp.ProcCtx): current context
     """
-    global current_values
-
     # change device type to cuda if possible
     current_values[OtherParams.DEVICE_TYPE] = available_device()
 
     nodes = list(iter(ctx.graph.vertices))  # obtain nodes from context
     if not nodes:
-        raise Exception("Graph is empty.")
+        raise ValueError("Graph is empty.")
 
     # extraction of data from database to torch.Tensors
     (
@@ -322,7 +318,7 @@ def hetero_network_from_values(values: dict):
     layer_type = values.get(ModelParams.LAYER_TYPE, "")
 
     if layer_type not in MODELS:
-        raise Exception(
+        raise ValueError(
             "You didn't choose one of currently available models (GAT, GATv2, GATJK and SAGE). Please choose one of them."
         )
 
@@ -398,8 +394,8 @@ def set_model_parameters(
         params: (mgp.Map, optional): user defined parameters from query module. Defaults to {}
 
     Raises:
-        Exception: exception is raised if some variable in dictionary params is not
-                    defined as it should be
+        TypeError: a variable in dictionary params does not have its declared type
+        ValueError: a variable in dictionary params is out of its admitted range
 
     Returns:
     mgp.Record(
@@ -420,7 +416,7 @@ def set_model_parameters(
     """
     if params is DEFAULT_ARGUMENT_DICT:
         params = DEFAULT_ARGUMENT_DICT.copy()
-    global DEFINED_INPUT_TYPES, DEFAULT_VALUES, current_values
+    global current_values
 
     # override any default parameters in an isolated candidate; the defaults
     # (including their nested lists and maps) are never shared with run state
@@ -440,7 +436,7 @@ def set_model_parameters(
         for name, expected_type in DEFINED_INPUT_TYPES.items()
     )
     if not correctly_typed:
-        raise Exception("Input dictionary is not correctly typed.")
+        raise TypeError("Input dictionary is not correctly typed.")
     errors = configuration_errors(candidate)
     if errors:
         raise ValueError("Input dictionary is out of range: " + "; ".join(errors))
@@ -559,7 +555,7 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> list:
         num_epochs (int, optional): number of epochs. Defaults to 100.
 
     Raises:
-        Exception: raised if graph is empty
+        ValueError: raised if graph is empty
 
     Returns:
         list of mgp.Record of
@@ -569,7 +565,7 @@ def train(ctx: mgp_ProcCtx, num_epochs: int = 100) -> list:
         train_log (list): list of metrics on training data
         val_log (list): list of metrics on validation data
     """
-    global model, current_values, logged_data
+    global model
 
     if isinstance(num_epochs, bool) or num_epochs < 1:
         raise ValueError(f"{TrainParams.NUM_EPOCHS} must be a positive integer")
@@ -737,7 +733,8 @@ def save_model() -> mgp_Record:
     """This function saves model to model saving folder. If there are already total
     of max_models_to_keep models in model saving folder, oldest model is deleted.
 
-    Exception: raised if model is not initialized or defined
+    Raises:
+        RuntimeError: raised if model is not initialized or defined
 
     Returns:
         mgp.Record(
@@ -747,7 +744,7 @@ def save_model() -> mgp_Record:
     """
 
     if model is False:
-        raise Exception("There are no initialized or loaded models. First load or initialize a model to be able save it.")
+        raise RuntimeError("There are no initialized or loaded models. First load or initialize a model to be able save it.")
 
     path_to_saved_model = save_model_to_folder()
 
@@ -778,10 +775,10 @@ def load_model(num: int = 0) -> mgp_Record:
     model_saving_folder, models = fetch_saved_models()
 
     if len(models) == 0:
-        raise Exception("There are no saved models.")
+        raise FileNotFoundError("There are no saved models.")
 
     if not -len(models) <= num < len(models):
-        raise Exception(f"Model with number {num} does not exist. There are {len(models)} models saved.")
+        raise ValueError(f"Model with number {num} does not exist. There are {len(models)} models saved.")
 
     path_to_load_model = os_path.join(model_saving_folder, models[num])
 
@@ -831,14 +828,14 @@ def predict(ctx: mgp_ProcCtx, vertex: mgp_Vertex) -> mgp_Record:
         ): record to return
     """
     if model is False:
-        raise Exception("Load a model before predicting.")
+        raise RuntimeError("Load a model before predicting.")
 
     # The graph is read with the trained task's observed type and property names;
     # its own labels (if any) never redefine the model's output columns.
     observed_attribute = current_values.get(HeteroParams.OBSERVED_ATTRIBUTE, "")
     nodes = list(iter(ctx.graph.vertices))
     if not nodes:
-        raise Exception("Graph is empty.")
+        raise ValueError("Graph is empty.")
     data, _, _, inv_reindexing, _, _ = extract_from_database(
         nodes,
         current_values.get(DataParams.SPLIT_RATIO, 0.0),

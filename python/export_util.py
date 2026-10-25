@@ -29,7 +29,7 @@ from stat import S_IMODE as stat_S_IMODE
 from uuid import uuid4
 from xml.sax.saxutils import escape as xml_escape
 
-from gqlalchemy import Memgraph, Memgraph as gqlalchemy_Memgraph
+from gqlalchemy import Memgraph as gqlalchemy_Memgraph
 from mgp import (
     Any as mgp_Any,
     Edge as mgp_Edge,
@@ -130,44 +130,44 @@ def publish_file(path: str, render, newline: str) -> None:
             os_remove(staging_path)
 
 
-def convert_to_cypher_format(property: object) -> str:
-    if isinstance(property, timedelta):
-        computed_return_value = to_cypher_duration(property)
+def convert_to_cypher_format(value: object) -> str:
+    if isinstance(value, timedelta):
+        computed_return_value = to_cypher_duration(value)
         return computed_return_value
 
-    elif isinstance(property, time):
-        computed_return_value = f"localTime('{property.isoformat()}')"
+    elif isinstance(value, time):
+        computed_return_value = f"localTime('{value.isoformat()}')"
         return computed_return_value
 
-    elif isinstance(property, datetime):
-        computed_return_value = f"localDateTime('{property.isoformat()}')"
+    elif isinstance(value, datetime):
+        computed_return_value = f"localDateTime('{value.isoformat()}')"
         return computed_return_value
 
-    elif isinstance(property, date):
-        computed_return_value = f"date('{property.isoformat()}')"
+    elif isinstance(value, date):
+        computed_return_value = f"date('{value.isoformat()}')"
         return computed_return_value
 
-    elif isinstance(property, str):
-        computed_return_value = f"'{property.translate(CYPHER_STRING_ESCAPES)}'"
+    elif isinstance(value, str):
+        computed_return_value = f"'{value.translate(CYPHER_STRING_ESCAPES)}'"
         return computed_return_value
 
-    elif isinstance(property, tuple):  # list
-        computed_return_value = "[" + ", ".join([convert_to_cypher_format(item) for item in property]) + "]"
+    elif isinstance(value, tuple):  # list
+        computed_return_value = "[" + ", ".join([convert_to_cypher_format(item) for item in value]) + "]"
         return computed_return_value
 
-    elif isinstance(property, dict):
+    elif isinstance(value, dict):
         computed_return_value = (
-            "{" + ", ".join([f"{cypher_identifier(k)}: {convert_to_cypher_format(v)}" for k, v in property.items()]) + "}"
+            "{" + ", ".join([f"{cypher_identifier(k)}: {convert_to_cypher_format(v)}" for k, v in value.items()]) + "}"
         )
         return computed_return_value
 
-    computed_return_value = str(property)
+    computed_return_value = str(value)
     return computed_return_value
 
 
-def get_properties_cypher(object, write_properties: bool) -> dict:
+def get_properties_cypher(graph_object, write_properties: bool) -> dict:
     computed_return_value = (
-        {key: convert_to_cypher_format(value) for key, value in object.properties.items()} if write_properties else {}
+        {key: convert_to_cypher_format(value) for key, value in graph_object.properties.items()} if write_properties else {}
     )
     return computed_return_value
 
@@ -305,9 +305,9 @@ cypher_all.__annotations__["return"] = mgp_Record(path=str, data=str)
 cypher_all = mgp_read_proc(cypher_all)
 
 
-def get_properties_json(object, write_properties: bool):
+def get_properties_json(graph_object, write_properties: bool):
     computed_return_value = (
-        {key: convert_to_isoformat(value) for key, value in object.properties.items()} if write_properties else {}
+        {key: convert_to_isoformat(value) for key, value in graph_object.properties.items()} if write_properties else {}
     )
     return computed_return_value
 
@@ -468,7 +468,6 @@ json = mgp_read_proc(json)
 
 
 def json_graph(
-    ctx: mgp_ProcCtx,
     nodes: list,
     relationships: list,
     path: str = "",
@@ -536,7 +535,7 @@ def write_query_rows(rows, writers: list) -> None:
         row_count += 1
 
     if row_count == 0:
-        raise Exception("Your query yields no results. Check if the database is empty or rewrite the provided query.")
+        raise ValueError("Your query yields no results. Check if the database is empty or rewrite the provided query.")
 
 
 def write_query_csv(out, rows, stream_writers: list) -> None:
@@ -610,9 +609,9 @@ def csv_rows(
         yield write_list
 
 
-def check_config_valid(config: mgp_Any, type: mgp_Any, name: str):
-    if not isinstance(config, type):
-        raise TypeError("Config attribute {0} must be of type {1}".format(name, type))
+def check_config_valid(config: mgp_Any, expected_type: mgp_Any, name: str):
+    if not isinstance(config, expected_type):
+        raise TypeError(f"Config attribute {name} must be of type {expected_type}")
     return False
 
 
@@ -646,7 +645,7 @@ def csv_process_config(config: mgp_Map):
 
 
 def header_path(path: str):
-    directory, filename = os_path.split(path)
+    directory = os_path.dirname(path)
     new_filename = HEADER_FILENAME
     computed_return_value = os_path.join(directory, new_filename)
     return computed_return_value
@@ -733,7 +732,6 @@ csv_graph = mgp_read_proc(csv_graph)
 
 
 def csv_query(
-    context: mgp_ProcCtx,
     query: str,
     file_path: str = "",
     stream: bool = False,
@@ -741,7 +739,6 @@ def csv_query(
     """
     Procedure to export query results to a CSV file.
     Args:
-        context (mgp.ProcCtx): Reference to the context execution.
         query (str): A query from which the results will be
         saved to a CSV file.
 
@@ -758,7 +755,7 @@ def csv_query(
             data (str): A stream of query results in a CSV format.
         )
     Raises:
-        Exception: If neither file nor config are provided,
+        ValueError: If neither file nor config are provided,
         or if only config is provided with stream set to False.
         Also if query yields no results or if the database is empty.
         PermissionError: If you provided file path that you have
@@ -769,13 +766,13 @@ def csv_query(
 
     # file or config have to be provided
     if not file_path and not stream:
-        raise Exception("Please provide file name and/or config.")
+        raise ValueError("Please provide file name and/or config.")
 
     # only config provided with stream set to false
     if not file_path and not stream:
-        raise Exception("If you provided only stream value, it has to be set to True to get any results.")
+        raise ValueError("If you provided only stream value, it has to be set to True to get any results.")
 
-    memgraph = Memgraph()
+    memgraph = gqlalchemy_Memgraph()
     rows = memgraph.execute_and_fetch(query)
 
     # The query runs once and each row goes to the file and the stream (different CSV dialects) as it arrives, so the
@@ -823,7 +820,7 @@ def translate_types(variable: object):
         return "float"
     if isinstance(variable, int):
         return "int"
-    raise Exception("Property values can only be primitive types or arrays of primitive types.")
+    raise TypeError("Property values can only be primitive types or arrays of primitive types.")
 
 
 def check_if_elements_same_type(variable: mgp_Any):
@@ -832,7 +829,7 @@ def check_if_elements_same_type(variable: mgp_Any):
     list_type = type(variable[0])
     for element in variable:
         if not isinstance(element, list_type):
-            raise Exception("If property value is a list it must consist of same typed elements.")
+            raise TypeError("If property value is a list it must consist of same typed elements.")
     return False
 
 
@@ -1061,7 +1058,7 @@ def graphml(
     # A null (omitted) config is normalized to the defaults; a supplied map is validated.
     config = set_default_config(config)
     if not path and not config.get("stream", False):
-        raise Exception("Please provide file name or set stream to True in config.")
+        raise ValueError("Please provide file name or set stream to True in config.")
 
     render = partial(write_graphml, ctx=ctx, config=config)
     if config.get("stream", False):

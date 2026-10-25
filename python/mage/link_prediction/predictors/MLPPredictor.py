@@ -13,6 +13,8 @@ from mage.link_prediction.constants import Predictors
 
 
 class MLPPredictor(torch_nn.Module):
+    """Scores an edge with a two-layer perceptron over its concatenated endpoint representations."""
+
     def __init__(self, h_feats: int, device: torch_device) -> None:
         super().__init__()
 

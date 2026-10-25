@@ -6,6 +6,8 @@ from mage.union_find.disjoint_set import DisjointSet
 
 
 class TestInit:
+    """Tests for a freshly built DisjointSet."""
+
     def test_nodes_begin_as_independent_components(self):
         disjoint_set = DisjointSet(node_ids=list(range(10)))
         assert all(disjoint_set.connected(node_id, node_id) for node_id in range(10))

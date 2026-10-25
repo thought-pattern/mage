@@ -4,7 +4,7 @@ from numpy import array as np_array
 from pytest import raises as pytest_raises
 
 from mage.constraint_programming.vrp_cp_solver import VRPConstraintProgrammingSolver
-from mage.geography import InvalidDepotException
+from mage.geography.vehicle_routing import InvalidDepotException
 
 # Symmetric route costs between three locations.
 DEFAULT_DISTANCES = [[0, 1, 2], [1, 0, 3], [2, 3, 0]]

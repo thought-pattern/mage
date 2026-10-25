@@ -1,0 +1,51 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/python"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "python"
+  - package-ecosystem: "pip"
+    directory: "/python/tests"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "python"
+  - package-ecosystem: "pip"
+    directory: "/smoke-release-testing"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "python"
+  - package-ecosystem: "cargo"
+    directory: "/rust/rsmgp-sys"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "rust"
+  - package-ecosystem: "cargo"
+    directory: "/rust/rsmgp-example"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "rust"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "docker"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github-actions"

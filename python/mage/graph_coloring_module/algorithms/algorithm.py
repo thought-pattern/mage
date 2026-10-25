@@ -19,4 +19,3 @@ class Algorithm(ABC):
         """Runs the algorithm and returns the best individual. `abort_check` is the host's cancellation probe
         (Memgraph's ProcCtx.check_must_abort), which raises when the host aborts the query; work that can run long
         polls it so that the cancellation propagates out of the procedure."""
-        ...

@@ -20,6 +20,4 @@ class Action(ABC):
         population: Population,
         parameters: dict = DEFAULT_ARGUMENT_DICT,
     ) -> bool:
-        if parameters is DEFAULT_ARGUMENT_DICT:
-            parameters = DEFAULT_ARGUMENT_DICT.copy()
-        ...
+        """Performs the action on the population of the graph with the given parameters."""

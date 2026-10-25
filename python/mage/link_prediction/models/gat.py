@@ -7,6 +7,8 @@ from torch import Tensor as torch_Tensor, device as torch_device, mean as torch_
 
 
 class GAT(torch_nn.Module):
+    """Graph attention network that computes node representations for link prediction."""
+
     def __init__(
         self,
         in_feats: int,
@@ -53,16 +55,10 @@ class GAT(torch_nn.Module):
                 allow_zero_in_degree=True,
             ).to(device)
 
-            self.layers.append(
-                HeteroGraphConv(
-                    dict.fromkeys(edge_types, gat_layer), aggregate="sum"
-                ).to(device)
-            )
+            self.layers.append(HeteroGraphConv(dict.fromkeys(edge_types, gat_layer), aggregate="sum").to(device))
             in_feats = hidden_features_size[i]
 
-    def forward(
-        self, blocks: list[DGLGraph], h: dict[str, torch_Tensor]
-    ) -> dict[str, torch_Tensor]:
+    def forward(self, blocks: list[DGLGraph], h: dict[str, torch_Tensor]) -> dict[str, torch_Tensor]:
         (
             "Performs forward pass on batches.\n\n        Args:\n            blocks (List[dgl.heterograph.DG"  # Continue literal.
             "LBlock]): First block is DGLBlock of all nodes that are needed to compute representations fo"  # Continue literal.
@@ -76,9 +72,7 @@ class GAT(torch_nn.Module):
 
         return h
 
-    def online_forward(
-        self, graph: DGLGraph, h: dict[str, torch_Tensor]
-    ) -> dict[str, torch_Tensor]:
+    def online_forward(self, graph: DGLGraph, h: dict[str, torch_Tensor]) -> dict[str, torch_Tensor]:
         """Performs forward pass on batches.
 
         Args:

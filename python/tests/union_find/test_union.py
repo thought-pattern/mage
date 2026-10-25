@@ -4,6 +4,8 @@ from mage.union_find.disjoint_set import DisjointSet
 
 
 class TestUnion:
+    """Tests for DisjointSet.union."""
+
     def test_equal_height(self):
         disjoint_set = DisjointSet(node_ids=list(range(10)))
         disjoint_set.union(0, 1)

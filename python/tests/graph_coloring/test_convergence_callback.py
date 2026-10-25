@@ -1,13 +1,11 @@
 """Tests for test convergence callback."""
 
-from mage.graph_coloring_module import (
-    ChainPopulation,
-    ConflictError,
-    ConvergenceCallback,
-    Graph,
-    Individual,
-    Parameter,
-)
+from mage.graph_coloring_module.components.chain_population import ChainPopulation
+from mage.graph_coloring_module.components.individual import Individual
+from mage.graph_coloring_module.error_functions.conflict_error import ConflictError
+from mage.graph_coloring_module.graph import Graph
+from mage.graph_coloring_module.iteration_callbacks.convergence_callback import ConvergenceCallback
+from mage.graph_coloring_module.parameters import Parameter
 
 # Five test nodes; the adjacency maps a node to its (neighbor, weight) pairs. Graph copies what it reads.
 GRAPH_NODES = [0, 1, 2, 3, 4]

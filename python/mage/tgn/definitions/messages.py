@@ -18,11 +18,13 @@ class RawMessage:
         raise NotImplementedError("RawMessage subclasses must implement detach_memory")
 
     def __str__(self):
-        computed_return_value = "{source},{timestamp}".format(source=self.source, timestamp=self.timestamp)
+        computed_return_value = f"{self.source},{self.timestamp}"
         return computed_return_value
 
 
 class NodeRawMessage(RawMessage):
+    """Raw message of a node-wise event: source memory, timestamp and node features."""
+
     def __init__(
         self,
         source_memory: torch_Tensor,

@@ -13,6 +13,7 @@ here are our avaliable xpath options
 from io import DEFAULT_BUFFER_SIZE
 from time import monotonic as time_monotonic
 from urllib import request as urllib_request
+from urllib.parse import urlsplit
 
 from defusedxml import ElementTree as ET
 from mgp import (
@@ -79,12 +80,16 @@ def fetch_xml_bytes(xml_url: str, headers: dict) -> bytes:
     Fetches an XML document within XML_URL_TIMEOUT_SECONDS and XML_URL_MAX_BYTES, closing the response on every
     path. read1 performs at most one blocking read per call, so the deadline is checked between bounded reads.
     """
+    # Files load through the path parameter, so a URL is fetched only over HTTP or HTTPS.
+    if urlsplit(xml_url).scheme not in ("http", "https"):
+        raise ValueError(f"XML URL must use http or https: {xml_url}")
     request = urllib_request.Request(xml_url, headers=headers)
     deadline = time_monotonic() + XML_URL_TIMEOUT_SECONDS
     chunks: list[bytes] = []
     received_bytes = 0
     try:
-        with urllib_request.urlopen(request, timeout=XML_URL_TIMEOUT_SECONDS) as response:
+        # The scheme check above admits only http and https, so urlopen never opens a local file or a custom scheme.
+        with urllib_request.urlopen(request, timeout=XML_URL_TIMEOUT_SECONDS) as response:  # nosec B310
             while True:
                 chunk = response.read1(DEFAULT_BUFFER_SIZE)
                 if not chunk:

@@ -9,12 +9,9 @@ from mgp import (
 )
 from numpy import ndarray as np_ndarray
 
-from mage.constraint_programming import VRPConstraintProgrammingSolver
-from mage.geography import (
-    LATITUDE,
-    LONGITUDE,
-    create_distance_matrix,
-)
+from mage.constraint_programming.vrp_cp_solver import VRPConstraintProgrammingSolver
+from mage.geography.distance_calculator import LATITUDE, LONGITUDE
+from mage.geography.travelling_salesman import create_distance_matrix
 
 
 def get_distance_matrix(vertices: list[mgp_Vertex]) -> np_ndarray:
@@ -72,7 +69,7 @@ def route(
     if number_of_vehicles is None:
         number_of_vehicles = 1
     if number_of_vehicles <= 0:
-        raise Exception("Number of vehicles must be greater than 0.")
+        raise ValueError("Number of vehicles must be greater than 0.")
 
     # The ordered vertex list, its distance matrix and the depot position are bound together for this call only;
     # result indexes are mapped back through the same list.

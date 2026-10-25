@@ -89,7 +89,7 @@ class Graph:
 
     def neighbors(self, node: int) -> list[int]:
         """Returns an iterator over neighbors of node n."""
-        computed_return_value = self.__getitem__(node)
+        computed_return_value = self[node]
         return computed_return_value
 
     def weighted_neighbors(self, node: int) -> list[tuple[int, float]]:

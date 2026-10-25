@@ -92,9 +92,9 @@ class QA(ParallelAlgorithm):
                 callback.update(graph, population, parameters)
 
             if iteration % logging_delay == 0:
-                logger.info("Id: {} Iteration: {} Error: {}".format(pid, iteration, population.min_error(error.individual_err)))
+                logger.info("Id: %s Iteration: %s Error: %s", pid, iteration, population.min_error(error.individual_err))
 
-        logger.info("Id: {} Iteration: {} Error: {}".format(pid, iteration, population.min_error(error.individual_err)))
+        logger.info("Id: %s Iteration: %s Error: %s", pid, iteration, population.min_error(error.individual_err))
 
         for callback in iteration_callbacks:
             callback.end(graph, population, parameters)

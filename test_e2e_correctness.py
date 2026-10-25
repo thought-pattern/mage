@@ -44,8 +44,8 @@ def parse_arguments():
         type=str,
         default=ConfigConstants.NEO4J_CONTAINER_NAME,
     )
-    args = parser.parse_args()
-    return args
+    parsed_arguments = parser.parse_args()
+    return parsed_arguments
 
 
 #################################################

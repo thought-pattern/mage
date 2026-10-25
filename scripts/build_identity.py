@@ -24,7 +24,7 @@ def extract_commit_hash(filename):
 
 
 def get_commit():
-    p = subprocess_run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
+    p = subprocess_run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=False)
     if p.returncode != 0:
         raise RuntimeError(f"unable to resolve MAGE commit: {p.stderr.strip()}")
 
@@ -33,7 +33,7 @@ def get_commit():
 
 
 def get_pr():
-    p = subprocess_run(["git", "log", "--pretty=%B"], capture_output=True, text=True)
+    p = subprocess_run(["git", "log", "--pretty=%B"], capture_output=True, text=True, check=False)
     if p.returncode != 0:
         raise RuntimeError(f"unable to inspect MAGE history: {p.stderr.strip()}")
     pattern = re_compile(r"\(#(?P<pr>\d+)\)")
@@ -43,7 +43,8 @@ def get_pr():
 
 
 def get_tag():
-    with urllib_request.urlopen("https://api.github.com/repos/memgraph/mage/tags") as response:
+    # The URL is a fixed https GitHub API address, so urlopen never opens a local file or a custom scheme.
+    with urllib_request.urlopen("https://api.github.com/repos/memgraph/mage/tags") as response:  # nosec B310
         # Read the JSON data from GitHub
         tags = json_load(response)
 

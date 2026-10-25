@@ -104,7 +104,8 @@ def run_language_scan(langfs: str, outfile: str) -> None:
         outfile,  # Write JSON results to this file
         f"{langfs}/",
     ]
-    completed = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
+    # cve-bin-tool exits non-zero when it reports CVEs, so success is judged by the report file below.
+    completed = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True, check=False)
     if not os_path.isfile(outfile):
         raise RuntimeError(f"language CVE scan produced no result (status {completed.returncode}): {completed.stderr.strip()}")
     try:

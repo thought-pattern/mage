@@ -36,7 +36,7 @@ class LDO(Algorithm):
         no_of_colors = param_value(graph, parameters, Parameter.NO_OF_COLORS)
 
         chromosome = [-1 for _ in graph.nodes]
-        sorted_nodes = sorted(list(graph.nodes), key=lambda node: graph.degree(node), reverse=True)
+        sorted_nodes = sorted(list(graph.nodes), key=graph.degree, reverse=True)
 
         for node in sorted_nodes:
             abort_check()

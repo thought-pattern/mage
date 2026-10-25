@@ -36,6 +36,7 @@ def list_build_files(date: int, image_type: str = "mage") -> list[str]:
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     if p.returncode != 0:
         raise RuntimeError(f"unable to list {image_type} build files for {date}: {p.stderr.strip()}")

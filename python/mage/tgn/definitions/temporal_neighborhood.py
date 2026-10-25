@@ -10,6 +10,8 @@ NEIGHBOR_TIMESTAMP = itemgetter(2)
 
 
 class TemporalNeighborhood:
+    """Each node's temporal neighbors with the edge ids and timestamps of their interactions."""
+
     def __init__(self):
         super().__init__()
         self.init_temporal_neighborhood()
