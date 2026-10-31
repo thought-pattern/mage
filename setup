@@ -235,10 +235,10 @@ def build_and_copy_cpp_modules(args: Dict[str, Any]) -> bool:
     logger.info(
         f"[Terminal] (3/8) Copying built C++ modules to {MAGE_BUILD_DIRECTORY}."
     )
-    all_so = set(glob.glob("**/*.so", recursive=True))
-    all_so -= {
-        "mgclient/src/mgclient-proj-build/src/libmgclient.so",
-        "mgclient/lib/libmgclient.so",
+    all_so = {
+        path
+        for path in glob.glob("**/*.so", recursive=True)
+        if os.path.basename(path) != "libmgclient.so"
     }
 
     for file in all_so:
@@ -265,7 +265,9 @@ def copy_python_modules(args: Dict[str, Any]) -> bool:
     ignore_list = [
         "tests",
         "requirements.txt",
+        "requirements-gpu.txt",
         "requirements_no_ml.txt",
+        "*.pyi",
         "pytest.ini",
         "htmlcov",
         "__pycache__",
