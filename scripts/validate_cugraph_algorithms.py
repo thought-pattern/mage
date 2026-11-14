@@ -10,18 +10,20 @@ This script:
 5. Validates node identity mapping is correct
 
 Each run owns exactly one container (named MEMGRAPH_CONTAINER plus a run identifier and labelled with
-that identifier), a fresh data directory, and the loopback Bolt port Docker assigns to that container. It
+that identifier), a fresh data directory, and the Bolt port Docker assigns to that container on MEMGRAPH_HOST. It
 never stops, removes, or clears any other container, directory, or database, and releases its own
 container and then its data directory on every exit unless MEMGRAPH_RETAIN asks to keep them.
 
 Usage:
     # Using default settings (data directory under the system temp directory)
-    python validate_cugraph_algorithms.py
+    MEMGRAPH_HOST=<this host's interface address> python validate_cugraph_algorithms.py
 
     # Using custom settings via environment variables
-    MEMGRAPH_DATA_DIR=/path/to/parent MEMGRAPH_IMAGE=my-image:tag python validate_cugraph_algorithms.py
+    MEMGRAPH_HOST=<address> MEMGRAPH_DATA_DIR=/path/to/parent MEMGRAPH_IMAGE=my-image:tag python validate_cugraph_algorithms.py
 
 Environment Variables:
+    MEMGRAPH_HOST        - This host's network interface address, as config.yml's memgraph.host names it; the
+                           container's Bolt port is published there (required; never the loopback address)
     MEMGRAPH_DATA_DIR    - Parent of the run's data directory (default: system temp directory)
     MEMGRAPH_IMAGE       - Docker image name (default: memgraph-mage-cugraph:latest)
     MEMGRAPH_CONTAINER   - Container name prefix (default: memgraph-cugraph-validation)
@@ -254,8 +256,11 @@ def setup_container(container_name: str, run_id: str, data_dir: Path) -> str:
     uid = os_getuid()
     gid = os_getgid()
 
-    # The Bolt port is published on a Docker-assigned loopback port so the run never binds or reaches a peer's
-    # Memgraph endpoint.
+    # The Bolt port is published on this host's network interface, the address config.yml's memgraph.host names, never
+    # on the loopback address (D-1298); Docker assigns the port, so the run never binds or reaches a peer's endpoint.
+    bolt_host = os_environ.get("MEMGRAPH_HOST", "").strip()
+    if not bolt_host:
+        raise RuntimeError("MEMGRAPH_HOST must name this host's network interface address; it has no default")
     cmd = [
         "docker",
         "run",
@@ -269,7 +274,7 @@ def setup_container(container_name: str, run_id: str, data_dir: Path) -> str:
         "--gpus",
         "all",
         "-p",
-        "127.0.0.1::7687",
+        f"{bolt_host}::7687",
         "-v",
         f"{data_dir}:/var/lib/memgraph:z",
         IMAGE_NAME,
