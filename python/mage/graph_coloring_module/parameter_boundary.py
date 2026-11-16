@@ -8,22 +8,12 @@ from mage.graph_coloring_module.algorithms.greedy.random import Random
 from mage.graph_coloring_module.algorithms.meta_heuristics.quantum_annealing import QA
 from mage.graph_coloring_module.error_functions.conflict_error import ConflictError
 from mage.graph_coloring_module.exceptions import IncorrectParametersException
-from mage.graph_coloring_module.iteration_callbacks.callback_actions.simple_tunneling import (
-    SimpleTunneling,
-)
-from mage.graph_coloring_module.iteration_callbacks.convergence_callback import (
-    ConvergenceCallback,
-)
+from mage.graph_coloring_module.iteration_callbacks.callback_actions.simple_tunneling import SimpleTunneling
+from mage.graph_coloring_module.iteration_callbacks.convergence_callback import ConvergenceCallback
 from mage.graph_coloring_module.operators.mutations.MIS_mutation import MISMutation
-from mage.graph_coloring_module.operators.mutations.multiple_mutation import (
-    MultipleMutation,
-)
-from mage.graph_coloring_module.operators.mutations.random_mutation import (
-    RandomMutation,
-)
-from mage.graph_coloring_module.operators.mutations.simple_mutation import (
-    SimpleMutation,
-)
+from mage.graph_coloring_module.operators.mutations.multiple_mutation import MultipleMutation
+from mage.graph_coloring_module.operators.mutations.random_mutation import RandomMutation
+from mage.graph_coloring_module.operators.mutations.simple_mutation import SimpleMutation
 from mage.graph_coloring_module.parameters import Parameter
 
 

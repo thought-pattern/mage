@@ -1,19 +1,27 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.2.0
+    rev: v5.0.0
     hooks:
       - id: check-yaml
+        exclude: ^cpp/
+
+  - repo: https://github.com/pycqa/isort
+    rev: 6.0.1
+    hooks:
+      - id: isort
+        args: [--settings-path=pyproject.toml]
+        files: ^(python|scripts|smoke-release-testing|e2e|e2e_correctness)/
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.1
+    hooks:
+      - id: ruff
+        args: [--config=pyproject.toml, --fix]
+        files: ^(python|scripts|smoke-release-testing|e2e|e2e_correctness)/
 
   - repo: https://github.com/psf/black
-    rev: 22.3.0  # Should be the same as in python/tests/requirements.txt
+    rev: 26.10.1
     hooks:
       - id: black
-        args: [--quiet]
-        files: ^python/ 
-
-  - repo: https://github.com/pycqa/flake8
-    rev: 3.9.2  # Should be the same as in python/tests/requirements.txt
-    hooks:
-      - id: flake8
-        args: [--config=python/.flake8]
-        files: ^python/ 
+        args: [-l, "132", -t, py311, --quiet]
+        files: ^(python|scripts|smoke-release-testing|e2e|e2e_correctness)/

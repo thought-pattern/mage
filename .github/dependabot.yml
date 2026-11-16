@@ -4,48 +4,78 @@ updates:
     directory: "/python"
     schedule:
       interval: "weekly"
+    reviewers:
+      - "robinje"
     labels:
       - "dependencies"
       - "python"
+
   - package-ecosystem: "pip"
     directory: "/python/tests"
     schedule:
       interval: "weekly"
+    reviewers:
+      - "robinje"
     labels:
       - "dependencies"
       - "python"
+
+  - package-ecosystem: "pip"
+    directory: "/scripts"
+    schedule:
+      interval: "weekly"
+    reviewers:
+      - "robinje"
+    labels:
+      - "dependencies"
+      - "python"
+
   - package-ecosystem: "pip"
     directory: "/smoke-release-testing"
     schedule:
       interval: "weekly"
+    reviewers:
+      - "robinje"
     labels:
       - "dependencies"
       - "python"
+
   - package-ecosystem: "cargo"
     directory: "/rust/rsmgp-sys"
     schedule:
       interval: "weekly"
+    reviewers:
+      - "robinje"
     labels:
       - "dependencies"
       - "rust"
+
   - package-ecosystem: "cargo"
     directory: "/rust/rsmgp-example"
     schedule:
       interval: "weekly"
+    reviewers:
+      - "robinje"
     labels:
       - "dependencies"
       - "rust"
+
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+    reviewers:
+      - "robinje"
     labels:
       - "dependencies"
       - "docker"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    reviewers:
+      - "robinje"
     labels:
       - "dependencies"
       - "github-actions"
