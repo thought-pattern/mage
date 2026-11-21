@@ -1,6 +1,6 @@
 ARG RAPIDS_VERSION=25.12
 ARG CUDA_VERSION=13
-ARG CUDA_VERSION_MINOR=13.1.0
+ARG CUDA_VERSION_MINOR=13.2.1
 ARG PY_VERSION=3.12
 ARG MG_VERSION=3.7.2
 
@@ -47,27 +47,11 @@ COPY . /mage
 ENV CXXFLAGS="-DLIBCUDACXX_ENABLE_EXPERIMENTAL_MEMORY_RESOURCE"
 ENV CUDAFLAGS="-DLIBCUDACXX_ENABLE_EXPERIMENTAL_MEMORY_RESOURCE"
 
-# Install PyTorch with CUDA 13.0 support FIRST
-# Then install all dependencies that require matching PyTorch/CUDA versions
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y && \
     export PATH="/root/.cargo/bin:${PATH}" && \
-    python3 -m pip install --break-system-packages torch torchvision --index-url https://download.pytorch.org/whl/cu130 && \
-    python3 -m pip install --break-system-packages --ignore-installed -r /mage/python/requirements.txt && \
+    if [ "$CACHE_PRESENT" = "true" ]; then export PIP_FIND_LINKS=/mage/wheels; fi && \
+    python3 -m pip install --break-system-packages --ignore-installed -r /mage/python/requirements-gpu.txt && \
     python3 -m pip install --break-system-packages --ignore-installed -r /mage/python/tests/requirements.txt && \
-    (if [ "$CACHE_PRESENT" = "true" ]; then \
-        echo "Using cached packages" && \
-        pip install /mage/wheels/*.whl --break-system-packages; \
-    else \
-        python3 -m pip install --break-system-packages dgl -f https://data.dgl.ai/wheels/torch-2.9/cu130/repo.html && \
-        python3 -m pip install --break-system-packages torch_geometric && \
-        python3 -m pip install --break-system-packages ninja wheel && \
-        python3 -m pip install --break-system-packages --no-build-isolation git+https://github.com/pyg-team/pyg-lib.git && \
-        python3 -m pip install --break-system-packages --no-build-isolation git+https://github.com/rusty1s/pytorch_scatter.git && \
-        python3 -m pip install --break-system-packages --no-build-isolation git+https://github.com/rusty1s/pytorch_sparse.git && \
-        python3 -m pip install --break-system-packages --no-build-isolation git+https://github.com/rusty1s/pytorch_cluster.git && \
-        python3 -m pip install --break-system-packages --no-build-isolation git+https://github.com/rusty1s/pytorch_spline_conv.git && \
-        python3 -m pip install --break-system-packages --upgrade numpy gensim; \
-    fi) && \
     python3 /mage/setup build --gpu \
     --cpp-build-flags MAGE_CUGRAPH_ROOT=/opt/conda/ CMAKE_BUILD_TYPE=Release \
     -p /usr/lib/memgraph/query_modules/

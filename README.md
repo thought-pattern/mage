@@ -260,11 +260,10 @@ Run the following command to install Rust and Python dependencies:
 curl https://sh.rustup.rs -sSf | sh -s -- -y \
 && export PATH="/root/.cargo/bin:${PATH}" \
 && python3 -m  pip install -r /mage/python/requirements.txt \
-&& python3 -m  pip install -r /mage/python/tests/requirements.txt \
-&& python3 -m  pip install torch-sparse torch-cluster torch-spline-conv torch-geometric torch-scatter -f https://data.pyg.org/whl/torch-1.12.0+cu102.html \
+&& python3 -m  pip install -r /mage/python/tests/requirements.txt
 ```
 
-
+GPU builds use `python/requirements-gpu.txt` for PyTorch with CUDA 13.2. The packaged DGL wheel supports running `link_prediction` on CPU.
 
 Now you can run the following command to compile and copy the query modules to the `/usr/lib/memgraph/query_modules` path:
 
