@@ -11,7 +11,7 @@ from torch import (
     concat as torch_concat,
     device as torch_device,
     flatten as torch_flatten,
-    float32 as torch_float32,
+    float64 as torch_float64,
     nn,
     tensor as torch_tensor,
     zeros as torch_zeros,
@@ -418,9 +418,10 @@ class TGN(nn.Module):
 
             # here we use flatten to get shape (memory_dim,)
             updated_memory = torch_flatten(updated_memory)
+            # float64 keeps integer timestamps exact up to 2**53; float32 would round large edge IDs past later ones
             update_time = torch_tensor(
                 [float(update_timestamps.get(node, 0))],
-                dtype=torch_float32,
+                dtype=torch_float64,
                 device=self.device,
             )
             updates[node] = (updated_memory, update_time)

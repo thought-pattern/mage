@@ -4,6 +4,7 @@ from torch import (
     Tensor as torch_Tensor,
     device as torch_device,
     float32 as torch_float32,
+    float64 as torch_float64,
     zeros as torch_zeros,
 )
 
@@ -48,7 +49,8 @@ class Memory:
         return node_memory
 
     def get_last_node_update(self, node: int) -> torch_Tensor:
-        default_update = torch_zeros(1, dtype=torch_float32, device=self.device, requires_grad=True)
+        # last-update times are exact integer timestamps, so they are kept in float64 rather than the model's float32
+        default_update = torch_zeros(1, dtype=torch_float64, device=self.device, requires_grad=True)
         last_update = self.last_node_update.get(node, default_update)
         self.last_node_update[node] = last_update
         return last_update
