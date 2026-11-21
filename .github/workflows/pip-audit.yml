@@ -74,14 +74,26 @@ jobs:
               except InvalidWheelFilename:
                   return ""
 
+          def source_version(name: str, url: str) -> str:
+              # pip-audit's no-pip mode requires a version even for revision-pinned sources.
+              report = subprocess.check_output(
+                  [
+                      sys.executable, "-m", "pip", "--quiet", "install", "--dry-run",
+                      "--ignore-installed", "--no-deps", "--report", "-", f"{name} @ {url}",
+                  ],
+                  text=True,
+              )
+              [package] = json.loads(report)["install"]
+              return package["metadata"]["version"]
+
           def audited_requirement(line: str) -> str:
               text = line.split(" #", 1)[0].strip()
               if not text or text.startswith(("#", "-")):
                   return ""
               req = Requirement(text)
               if req.url:
-                  ver = wheel_version(req.url)
-                  return f"{req.name}=={Version(ver).base_version}" if ver else f"{req.name} @ {req.url}"
+                  ver = wheel_version(req.url) or source_version(req.name, req.url)
+                  return f"{req.name}=={Version(ver).base_version}"
               specs = []
               for sp in req.specifier:
                   if sp.operator == "==":

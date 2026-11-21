@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "python/**/*.py"
+      - "python/**/*.pyi"
       - "scripts/**/*.py"
       - "smoke-release-testing/**/*.py"
       - "e2e/**/*.py"
@@ -19,6 +20,7 @@ on:
     branches: [develop, main]
     paths:
       - "python/**/*.py"
+      - "python/**/*.pyi"
       - "scripts/**/*.py"
       - "smoke-release-testing/**/*.py"
       - "e2e/**/*.py"
@@ -91,7 +93,7 @@ jobs:
         run: python -m pip check
 
       - name: Install type-checking and unit-test dependencies
-        run: python -m pip install PyYAML==6.0.2 pyright==1.1.411 pytest==9.0.3 rich
+        run: python -m pip install PyYAML==6.0.2 pyright pytest==9.0.3 rich
 
       - name: Verify combined dependency compatibility
         run: python -m pip check
@@ -105,7 +107,7 @@ jobs:
           import sys
 
           # Native C/GPU/CVE-scan packages installed in separate container or scan environments.
-          EXTERNAL_ENV_PACKAGES = {"cudf", "cugraph", "cuml", "cupy", "cve_bin_tool", "mgclient", "semver"}
+          EXTERNAL_ENV_PACKAGES = {"cudf", "cugraph", "cuml", "cupy", "cve_bin_tool", "semver"}
           MISSING_IMPORT_RE = re.compile(r'Import "([^".]+)(?:\.[^"]*)?" could not be resolved')
 
           proc = subprocess.run([sys.executable, "-m", "pyright", "--outputjson"], capture_output=True, text=True)
