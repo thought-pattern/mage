@@ -209,3 +209,17 @@ python/mage/link_prediction/cora_results.txt
 python/mage/link_prediction/random_features_services_results.txt
 python/mage/link_prediction/issue.py
 python/mage/link_prediction/issue2.py.build-staging/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.DocumentRevisions-V100
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.apdisk

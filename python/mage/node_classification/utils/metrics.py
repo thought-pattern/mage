@@ -1,7 +1,9 @@
 """Utilities for metrics."""
 
 from torch import Tensor as torch_Tensor
-from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, MulticlassPrecision, MulticlassRecall
+from torchmetrics.classification.accuracy import MulticlassAccuracy
+from torchmetrics.classification.f_beta import MulticlassF1Score
+from torchmetrics.classification.precision_recall import MulticlassPrecision, MulticlassRecall
 from torchmetrics.utilities.compute import auc
 
 METRICS = {
