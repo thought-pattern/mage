@@ -13,8 +13,10 @@
 // limitations under the License.
 //! Abstraction to interact with Memgraph.
 
+use std::cell::Cell;
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use std::rc::Rc;
 
 use crate::list::*;
 use crate::mgp::*;
@@ -39,6 +41,8 @@ pub enum MgpError {
     ImmutableObject,
     ValueConversion,
     SerializationError,
+    AuthorizationError,
+    NotYetImplemented,
 }
 
 pub(crate) trait MgpDefault {
@@ -101,6 +105,7 @@ mgp_default_const_ptr!(u64);
 mgp_default_zero!(i32);
 mgp_default_zero!(i64);
 mgp_default_zero!(u64);
+mgp_default_zero!(usize);
 
 impl MgpDefault for mgp_edge_id {
     fn default() -> Self {
@@ -156,6 +161,8 @@ pub(crate) fn to_rust_mgp_error(error: mgp_error) -> Option<MgpError> {
         mgp_error::MGP_ERROR_IMMUTABLE_OBJECT => Some(MgpError::ImmutableObject),
         mgp_error::MGP_ERROR_VALUE_CONVERSION => Some(MgpError::ValueConversion),
         mgp_error::MGP_ERROR_SERIALIZATION_ERROR => Some(MgpError::SerializationError),
+        mgp_error::MGP_ERROR_AUTHORIZATION_ERROR => Some(MgpError::AuthorizationError),
+        mgp_error::MGP_ERROR_NOT_YET_IMPLEMENTED => Some(MgpError::NotYetImplemented),
     }
 }
 
@@ -251,38 +258,153 @@ fn resolve_mgp_type(types: &[Type]) -> *mut mgp_type {
     }
 }
 
-/// Main object to interact with Memgraph instance.
+unsafe fn configure_procedure(
+    procedure: *mut mgp_proc,
+    required_arg_types: &[NamedType],
+    optional_arg_types: &[OptionalNamedType],
+    result_field_types: &[NamedType],
+) -> Result<()> {
+    for required_type in required_arg_types {
+        let mgp_type = resolve_mgp_type(required_type.types);
+        if ffi::mgp_proc_add_arg(procedure, required_type.name.as_ptr(), mgp_type)
+            != mgp_error::MGP_ERROR_NO_ERROR
+        {
+            return Err(Error::UnableToAddRequiredArguments);
+        }
+    }
+
+    for optional_input in optional_arg_types {
+        let mgp_type = resolve_mgp_type(optional_input.types);
+
+        if ffi::mgp_proc_add_opt_arg(
+            procedure,
+            optional_input.name.as_ptr(),
+            mgp_type,
+            optional_input.default.mgp_ptr(),
+        ) != mgp_error::MGP_ERROR_NO_ERROR
+        {
+            return Err(Error::UnableToAddOptionalArguments);
+        }
+    }
+
+    for result_field in result_field_types {
+        let mgp_type = resolve_mgp_type(result_field.types);
+        if result_field.deprecated {
+            if ffi::mgp_proc_add_deprecated_result(
+                procedure,
+                result_field.name.as_ptr(),
+                mgp_type,
+            ) != mgp_error::MGP_ERROR_NO_ERROR
+            {
+                return Err(Error::UnableToAddDeprecatedReturnType);
+            }
+        } else if ffi::mgp_proc_add_result(procedure, result_field.name.as_ptr(), mgp_type)
+            != mgp_error::MGP_ERROR_NO_ERROR
+        {
+            return Err(Error::UnableToAddReturnType);
+        }
+    }
+
+    Ok(())
+}
+
+/// Crate-private seal token preventing external implementations or direct calls on
+/// [MemgraphMemory] internal methods.
+#[doc(hidden)]
+pub struct MemorySeal(pub(crate) ());
+
+/// Trait implemented by callback contexts ([Memgraph] and [MemgraphModule]) that own an
+/// [mgp_memory] arena.
+pub trait MemgraphMemory {
+    #[doc(hidden)]
+    fn sealed_memory_ptr(&self, _seal: MemorySeal) -> *mut mgp_memory;
+
+    #[doc(hidden)]
+    fn sealed_as_memgraph(&self, _seal: MemorySeal) -> Memgraph;
+}
+
+/// Procedure-execution handle exposing the arguments, graph, result, and memory valid during a
+/// procedure call.
 #[derive(Clone)]
 pub struct Memgraph {
     args: *mut mgp_list,
     graph: *mut mgp_graph,
     result: *mut mgp_result,
     memory: *mut mgp_memory,
+    record_generation: Rc<Cell<u64>>,
+}
+
+/// Module-initialization handle exposing procedure registration and default-argument memory
+/// allocation valid during `mgp_init_module`.
+#[derive(Clone)]
+pub struct MemgraphModule {
     module: *mut mgp_module,
+    memory: *mut mgp_memory,
+}
+
+impl MemgraphMemory for Memgraph {
+    fn sealed_memory_ptr(&self, _seal: MemorySeal) -> *mut mgp_memory {
+        self.memory
+    }
+
+    fn sealed_as_memgraph(&self, _seal: MemorySeal) -> Memgraph {
+        self.clone()
+    }
+}
+
+impl MemgraphMemory for MemgraphModule {
+    fn sealed_memory_ptr(&self, _seal: MemorySeal) -> *mut mgp_memory {
+        self.memory
+    }
+
+    fn sealed_as_memgraph(&self, _seal: MemorySeal) -> Memgraph {
+        Memgraph::from_memory(self.memory)
+    }
+}
+
+impl<T: MemgraphMemory + ?Sized> MemgraphMemory for &T {
+    fn sealed_memory_ptr(&self, seal: MemorySeal) -> *mut mgp_memory {
+        (**self).sealed_memory_ptr(seal)
+    }
+
+    fn sealed_as_memgraph(&self, seal: MemorySeal) -> Memgraph {
+        (**self).sealed_as_memgraph(seal)
+    }
 }
 
 impl Memgraph {
-    /// Create a new Memgraph object.
+    /// Creates a procedure-execution [Memgraph] context from raw callback pointers.
     ///
-    /// Required to be public because the required pointers have to passed during module
-    /// initialization and procedure call phase.
-    pub fn new(
+    /// # Safety
+    ///
+    /// The pointers must come from the active Memgraph procedure invocation.
+    #[doc(hidden)]
+    pub unsafe fn new(
         args: *mut mgp_list,
         graph: *mut mgp_graph,
         result: *mut mgp_result,
         memory: *mut mgp_memory,
-        module: *mut mgp_module,
     ) -> Memgraph {
         Memgraph {
             args,
             graph,
             result,
             memory,
-            module,
+            record_generation: Rc::new(Cell::new(0)),
         }
     }
 
-    /// Creates a new object with all underlying data set to null. Used for the testing purposes.
+    pub(crate) fn from_memory(memory: *mut mgp_memory) -> Memgraph {
+        Memgraph {
+            args: std::ptr::null_mut(),
+            graph: std::ptr::null_mut(),
+            result: std::ptr::null_mut(),
+            memory,
+            record_generation: Rc::new(Cell::new(0)),
+        }
+    }
+
+    /// Creates a new object with all underlying data set to null. Used for testing purposes.
     #[cfg(test)]
     pub(crate) fn new_default() -> Memgraph {
         Memgraph {
@@ -290,14 +412,27 @@ impl Memgraph {
             graph: std::ptr::null_mut(),
             result: std::ptr::null_mut(),
             memory: std::ptr::null_mut(),
-            module: std::ptr::null_mut(),
+            record_generation: Rc::new(Cell::new(0)),
         }
+    }
+
+    pub(crate) fn next_record_generation(&self) -> Option<u64> {
+        let next = self.record_generation.get().checked_add(1)?;
+        self.record_generation.set(next);
+        Some(next)
+    }
+
+    pub(crate) fn is_active_record_generation(&self, generation: u64) -> bool {
+        generation != 0 && self.record_generation.get() == generation
     }
 
     /// Arguments passed to the procedure call.
     pub fn args(&self) -> Result<List> {
-        // TODO(gitbuda): Avoid list copy when accessing procedure arguments.
-        unsafe { List::mgp_copy(self.args_ptr(), &self) }
+        #[cfg(not(test))]
+        if self.args.is_null() {
+            return Err(Error::UnableToCopyList);
+        }
+        unsafe { List::mgp_copy(self.args_ptr(), self) }
     }
 
     /// Returns pointer to the object with all arguments passed to the procedure call.
@@ -320,27 +455,31 @@ impl Memgraph {
         self.memory
     }
 
-    /// Returns pointer to the module object.
-    pub fn module_ptr(&self) -> *mut mgp_module {
-        self.module
-    }
-
     pub fn vertices_iter(&self) -> Result<VerticesIterator> {
+        #[cfg(not(test))]
+        if self.graph.is_null() {
+            return Err(Error::UnableToCreateGraphVerticesIterator);
+        }
         unsafe {
             let mgp_iterator = invoke_mgp_func!(
                 *mut mgp_vertices_iterator,
                 ffi::mgp_graph_iter_vertices,
                 self.graph_ptr(),
                 self.memory_ptr()
-            );
-            if mgp_iterator.is_err() {
+            )
+            .map_err(|_| Error::UnableToCreateGraphVerticesIterator)?;
+            if mgp_iterator.is_null() {
                 return Err(Error::UnableToCreateGraphVerticesIterator);
             }
-            Ok(VerticesIterator::new(mgp_iterator.unwrap(), &self))
+            Ok(VerticesIterator::new(mgp_iterator, self))
         }
     }
 
     pub fn vertex_by_id(&self, id: i64) -> Result<Vertex> {
+        #[cfg(not(test))]
+        if self.graph.is_null() {
+            return Err(Error::UnableToFindVertexById);
+        }
         unsafe {
             let mgp_vertex_ptr = invoke_mgp_func!(
                 *mut mgp_vertex,
@@ -348,32 +487,62 @@ impl Memgraph {
                 self.graph_ptr(),
                 mgp_vertex_id { as_int: id },
                 self.memory_ptr()
-            );
-            if mgp_vertex_ptr.is_err() {
+            )
+            .map_err(|_| Error::UnableToFindVertexById)?;
+            if mgp_vertex_ptr.is_null() {
                 return Err(Error::UnableToFindVertexById);
             }
-            Ok(Vertex::new(mgp_vertex_ptr.unwrap(), &self))
+            Ok(Vertex::new(mgp_vertex_ptr, self))
         }
     }
 
     /// Creates a new result record.
     ///
-    /// Keep this object on the stack and add data that will be returned to Memgraph / client
-    /// during/after the procedure call.
+    /// Creating a new record invalidates any previously created [ResultRecord] on the same query
+    /// result across all handles.
     pub fn result_record(&self) -> Result<ResultRecord> {
         ResultRecord::create(self)
     }
 
-    /// Registers a new read procedure.
+    /// Return `true` if the currently executing procedure should abort as soon as possible.
+    pub fn must_abort(&self) -> bool {
+        if self.graph.is_null() {
+            return false;
+        }
+        unsafe { ffi::mgp_must_abort(self.graph_ptr()) != 0 }
+    }
+}
+
+impl MemgraphModule {
+    /// Creates a module-initialization [MemgraphModule] context from raw callback pointers.
     ///
-    /// * `proc_ptr` - Identifier of the top level C function that represents the procedure.
-    /// * `name` - A string that will be registered as a procedure name inside Memgraph instance.
-    /// * `required_arg_types` - An array of all [NamedType]s, each one define by name and an array
-    ///    of [Type]s.
-    /// * `optional_arg_types` - An array of all [OptionalNamedType]s, each one defined by name, an
-    ///    array of [Type]s, and default value.
-    /// * `result_field_types` - An array of all [NamedType]s, each one defined by name and an
-    ///    array of [Type]s.
+    /// # Safety
+    ///
+    /// The pointers must come from the active `mgp_init_module` invocation.
+    #[doc(hidden)]
+    pub unsafe fn new(module: *mut mgp_module, memory: *mut mgp_memory) -> MemgraphModule {
+        MemgraphModule { module, memory }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_default() -> MemgraphModule {
+        MemgraphModule {
+            module: std::ptr::null_mut(),
+            memory: std::ptr::null_mut(),
+        }
+    }
+
+    /// Returns pointer to the module object.
+    pub fn module_ptr(&self) -> *mut mgp_module {
+        self.module
+    }
+
+    /// Returns pointer to the memory object.
+    pub(crate) fn memory_ptr(&self) -> *mut mgp_memory {
+        self.memory
+    }
+
+    /// Registers a new read procedure.
     pub fn add_read_procedure(
         &self,
         proc_ptr: extern "C" fn(*mut mgp_list, *mut mgp_graph, *mut mgp_result, *mut mgp_memory),
@@ -382,64 +551,57 @@ impl Memgraph {
         optional_arg_types: &[OptionalNamedType],
         result_field_types: &[NamedType],
     ) -> Result<()> {
+        #[cfg(not(test))]
+        if self.module.is_null() {
+            return Err(Error::UnableToRegisterReadProcedure);
+        }
         unsafe {
-            let maybe_procedure = invoke_mgp_func!(
+            let procedure = invoke_mgp_func!(
                 *mut mgp_proc,
                 ffi::mgp_module_add_read_procedure,
                 self.module_ptr(),
                 name.as_ptr(),
                 Some(proc_ptr)
-            );
-            if maybe_procedure.is_err() {
-                return Err(Error::UnableToRegisterReadProcedure);
-            }
-            let procedure = maybe_procedure.unwrap();
-
-            for required_type in required_arg_types {
-                let mgp_type = resolve_mgp_type(&required_type.types);
-                if ffi::mgp_proc_add_arg(procedure, required_type.name.as_ptr(), mgp_type)
-                    != mgp_error::MGP_ERROR_NO_ERROR
-                {
-                    return Err(Error::UnableToAddRequiredArguments);
-                }
-            }
-
-            for optional_input in optional_arg_types {
-                let mgp_type = resolve_mgp_type(&optional_input.types);
-
-                if ffi::mgp_proc_add_opt_arg(
-                    procedure,
-                    optional_input.name.as_ptr(),
-                    mgp_type,
-                    optional_input.default.mgp_ptr(),
-                ) != mgp_error::MGP_ERROR_NO_ERROR
-                {
-                    return Err(Error::UnableToAddOptionalArguments);
-                }
-            }
-
-            for result_field in result_field_types {
-                let mgp_type = resolve_mgp_type(&result_field.types);
-                if ffi::mgp_proc_add_result(procedure, result_field.name.as_ptr(), mgp_type)
-                    != mgp_error::MGP_ERROR_NO_ERROR
-                {
-                    return Err(Error::UnableToAddReturnType);
-                }
-            }
-
-            Ok(())
+            )
+            .map_err(|_| Error::UnableToRegisterReadProcedure)?;
+            configure_procedure(
+                procedure,
+                required_arg_types,
+                optional_arg_types,
+                result_field_types,
+            )
         }
     }
 
-    /// Return `true` if the currently executing procedure should abort as soon as possible.
-    ///
-    /// Procedures which perform heavyweight processing run the risk of running too long and going
-    /// over the query execution time limit. To prevent this, such procedures should periodically
-    /// call this function at critical points in their code in order to determine whether they
-    /// should abort or not. Note that this mechanism is purely cooperative and depends on the
-    /// procedure doing the checking and aborting on its own.
-    pub fn must_abort(&self) -> bool {
-        unsafe { ffi::mgp_must_abort(self.graph_ptr()) != 0 }
+    /// Registers a new write procedure.
+    pub fn add_write_procedure(
+        &self,
+        proc_ptr: extern "C" fn(*mut mgp_list, *mut mgp_graph, *mut mgp_result, *mut mgp_memory),
+        name: &CStr,
+        required_arg_types: &[NamedType],
+        optional_arg_types: &[OptionalNamedType],
+        result_field_types: &[NamedType],
+    ) -> Result<()> {
+        #[cfg(not(test))]
+        if self.module.is_null() {
+            return Err(Error::UnableToRegisterWriteProcedure);
+        }
+        unsafe {
+            let procedure = invoke_mgp_func!(
+                *mut mgp_proc,
+                ffi::mgp_module_add_write_procedure,
+                self.module_ptr(),
+                name.as_ptr(),
+                Some(proc_ptr)
+            )
+            .map_err(|_| Error::UnableToRegisterWriteProcedure)?;
+            configure_procedure(
+                procedure,
+                required_arg_types,
+                optional_arg_types,
+                result_field_types,
+            )
+        }
     }
 }
 

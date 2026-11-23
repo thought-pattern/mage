@@ -143,7 +143,7 @@ void runMultiPhaseColoring(graph *G, mgp_graph *mg_graph, long *C_orig, int colo
 
         //Check for modularity gain and build the graph for next phase
         //In case coloring is used, make sure the non-coloring routine is run at least once
-        if( (currMod - prevMod) > threshold ) {
+        if( std::isfinite(currMod) && ((currMod - prevMod) > threshold) ) {
             Gnew = (graph *) malloc (sizeof(graph)); assert(Gnew != 0);
             tmpTime =  buildNextLevelGraphOpt(G, mg_graph, Gnew, C, numClusters, numThreads);
             totTimeBuildingPhase += tmpTime;
@@ -162,31 +162,33 @@ void runMultiPhaseColoring(graph *G, mgp_graph *mg_graph, long *C_orig, int colo
                 C[i] = -1;
             }
             phase++; //Increment phase number
-            //If coloring is enabled & graph is of minimum size, recolor the new graph
-            if((coloring > 0)&&(G->numVertices > minGraphSize)&&(nonColor == false)){
+            //If coloring remains active, either recolor the new graph or switch to non-colored Louvain below minGraphSize
+            if((coloring > 0) && (nonColor == false)){
+                if (G->numVertices < minGraphSize) {
+                    nonColor = true;
+                } else {
 #pragma omp parallel for
-                for (long i=0; i<G->numVertices; i++){
-                    colors[i] = -1;
-                }
-                nColors = 0;
-                // Coloring Steps
-                if((coloring == 1)||(coloring == 2)) {
-                    nColors = algoDistanceOneVertexColoringOpt(G, colors, numThreads, &tmpTime)+1;
-                    totTimeColoring += tmpTime;
-                    //Check if balanced coloring is enabled:
-                    if(coloring == 2)
-                        vBaseRedistribution(G, colors, nColors, 0);
-                }
-                //Check if incomplete coloring is requested:
-                if(coloring == 3) {
-                    //maxColor = 2 * nHash * nItrs; //Two colors for each hash per iteration
-                    int nHash = 2; //Use two hash functions
-                    int nItrs = (int) (ceil((float)(numColors / 4))); //Round off to the number of iterations
-                    if (nItrs <= 0)
-                        nItrs = 1;
-                    //int nItrs = numColors / 4;
-                    nColors = algoColoringMultiHashMaxMin(G, colors, numThreads, &tmpTime, nHash, nItrs)+1;
-                    totTimeColoring += tmpTime;
+                    for (long i=0; i<G->numVertices; i++){
+                        colors[i] = -1;
+                    }
+                    nColors = 0;
+                    // Coloring Steps
+                    if((coloring == 1)||(coloring == 2)) {
+                        nColors = algoDistanceOneVertexColoringOpt(G, colors, numThreads, &tmpTime)+1;
+                        totTimeColoring += tmpTime;
+                        //Check if balanced coloring is enabled:
+                        if(coloring == 2)
+                            vBaseRedistribution(G, colors, nColors, 0);
+                    }
+                    //Check if incomplete coloring is requested:
+                    if(coloring == 3) {
+                        int nHash = 2; //Use two hash functions
+                        int nItrs = (int) (ceil((float)(numColors / 4))); //Round off to the number of iterations
+                        if (nItrs <= 0)
+                            nItrs = 1;
+                        nColors = algoColoringMultiHashMaxMin(G, colors, numThreads, &tmpTime, nHash, nItrs)+1;
+                        totTimeColoring += tmpTime;
+                    }
                 }
             }
         } else { //To force another phase with coloring again

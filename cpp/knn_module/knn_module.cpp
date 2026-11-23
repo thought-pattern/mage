@@ -139,8 +139,7 @@ void Get(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_memo
     config.node_properties = ParseNodeProperties(config_map[kConfigNodeProperties]);
 
     // Parse other parameters with defaults
-    config.top_k =
-        config_map.KeyExists(kConfigTopK) ? static_cast<int>(config_map[kConfigTopK].ValueInt()) : kDefaultTopK;
+    config.top_k = config_map.KeyExists(kConfigTopK) ? config_map[kConfigTopK].ValueInt() : kDefaultTopK;
     config.similarity_cutoff = config_map.KeyExists(kConfigSimilarityCutoff)
                                    ? config_map[kConfigSimilarityCutoff].ValueDouble()
                                    : kDefaultSimilarityCutoff;

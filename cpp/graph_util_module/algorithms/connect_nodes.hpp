@@ -12,18 +12,19 @@ void ConnectNodes(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result,
     mgp::List result = mgp::List();
 
     std::set<uint64_t> graph_nodes;
+    std::vector<mgp::Node> unique_nodes;
     for (const auto node_element : list_of_nodes) {
       const auto node = node_element.ValueNode();
-      graph_nodes.insert(node.Id().AsUint());
+      if (graph_nodes.insert(node.Id().AsUint()).second) {
+        unique_nodes.push_back(node);
+      }
     }
 
-    for (const auto node_element : list_of_nodes) {
-      const auto node = node_element.ValueNode();
+    for (const auto &node : unique_nodes) {
       for (const auto relationship : node.OutRelationships()) {
         const auto in_node_id = relationship.To().Id().AsUint();
-        const auto out_node_id = node.Id().AsUint();
 
-        if (graph_nodes.find(in_node_id) != graph_nodes.end() && graph_nodes.find(out_node_id) != graph_nodes.end()) {
+        if (graph_nodes.find(in_node_id) != graph_nodes.end()) {
           result.AppendExtend(mgp::Value(relationship));
         }
       }

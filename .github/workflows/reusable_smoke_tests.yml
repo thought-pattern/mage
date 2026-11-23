@@ -48,28 +48,42 @@ jobs:
           aws-region: eu-west-1
 
       - name: Determine Input Types
+        env:
+          INPUT_NEXT_VERSION: ${{ inputs.next_version }}
+          INPUT_LAST_VERSION: ${{ inputs.last_version }}
+          INPUT_ARCH: ${{ inputs.arch }}
+          INPUT_MALLOC: ${{ inputs.malloc }}
         run: |
+          target_arch="$INPUT_ARCH"
+          if [ "$target_arch" = "all" ]; then
+            target_arch="amd64"
+          fi
+
           # default to latest daily build (from the previous day)
-          if [ -z "${{ inputs.next_version }}" ]; then
+          if [ -z "$INPUT_NEXT_VERSION" ]; then
             next_version="$(date -d "yesterday" +%Y%m%d)"
           else
-            next_version="${{ inputs.next_version }}"
+            next_version="$INPUT_NEXT_VERSION"
           fi
 
           # default to latest release version
-          if [ -z "${{ inputs.last_version }}" ]; then
-            tag="$( git tag | grep -v rc | tail -n 1)"
+          if [ -z "$INPUT_LAST_VERSION" ]; then
+            tag="$(git tag --sort=version:refname | grep -Ev 'rc' | tail -n 1)"
+            if [ -z "$tag" ]; then
+              echo "No non-RC release tag found in repository." >&2
+              exit 1
+            fi
             last_version="${tag#v}"
           else
-            last_version="${{ inputs.last_version }}"
+            last_version="$INPUT_LAST_VERSION"
           fi
 
-          read next_type next_image < <(python3 scripts/workflow_image_setup.py "${next_version}" "${{ inputs.arch }}" "${{ inputs.malloc }}")
-          echo "NEXT_IMAGE=${next_image}" >> $GITHUB_ENV
-          echo "NEXT_TYPE=${next_type}" >> $GITHUB_ENV
-          read last_type last_image < <(python3 scripts/workflow_image_setup.py "${last_version}" "${{ inputs.arch }}" "${{ inputs.malloc }}")
-          echo "LAST_IMAGE=${last_image}" >> $GITHUB_ENV
-          echo "LAST_TYPE=${last_type}" >> $GITHUB_ENV
+          read next_type next_image < <(python3 scripts/workflow_image_setup.py "${next_version}" "${target_arch}" "${INPUT_MALLOC}")
+          echo "NEXT_IMAGE=${next_image}" >> "$GITHUB_ENV"
+          echo "NEXT_TYPE=${next_type}" >> "$GITHUB_ENV"
+          read last_type last_image < <(python3 scripts/workflow_image_setup.py "${last_version}" "${target_arch}" "${INPUT_MALLOC}")
+          echo "LAST_IMAGE=${last_image}" >> "$GITHUB_ENV"
+          echo "LAST_TYPE=${last_type}" >> "$GITHUB_ENV"
 
       - name: Load Next Image (Docker)
         if: ${{ env.NEXT_TYPE == 'docker' }}

@@ -50,6 +50,24 @@ def canonical_value(value) -> tuple:
     return computed_return_value
 
 
+def property_values_equal(left, right) -> bool:
+    """Compare exported property values while distinguishing booleans from numeric 0/1."""
+    if isinstance(left, bool) != isinstance(right, bool):
+        return False
+    if isinstance(left, list) and isinstance(right, list):
+        if len(left) != len(right):
+            return False
+        computed_list_eq = all(property_values_equal(a, b) for a, b in zip(left, right))
+        return computed_list_eq
+    if isinstance(left, dict) and isinstance(right, dict):
+        if set(left.keys()) != set(right.keys()):
+            return False
+        computed_dict_eq = all(property_values_equal(left.get(k, False), right.get(k, False)) for k in left)
+        return computed_dict_eq
+    computed_eq = left == right
+    return computed_eq
+
+
 class Vertex:
     """A vertex read from Memgraph or Neo4j, with sorted labels and its properties."""
 
@@ -99,8 +117,9 @@ class Vertex:
             if k not in other.internal_properties:
                 logger.debug(f"Property with key {k} not in {other.internal_properties.keys()}")
                 return False
-            if v != other.internal_properties.get(k, False):
-                logger.debug(f"Value {v} not equal to {other.internal_properties.get(k, False)}")
+            other_val = other.internal_properties.get(k, False)
+            if not property_values_equal(v, other_val):
+                logger.debug(f"Value {v} not equal to {other_val}")
                 return False
 
         return True
@@ -165,8 +184,9 @@ class Edge:
             if k not in other.internal_properties:
                 logger.debug(f"Property with key {k} not in {other.internal_properties.keys()}")
                 return False
-            if v != other.internal_properties.get(k, False):
-                logger.debug(f"Value {v} not equal to {other.internal_properties.get(k, False)}")
+            other_val = other.internal_properties.get(k, False)
+            if not property_values_equal(v, other_val):
+                logger.debug(f"Value {v} not equal to {other_val}")
                 return False
         return True
 

@@ -107,7 +107,5 @@ def test_next_out_of_range():
         graph,
         [Individual(no_of_colors=3, graph=graph, **member) for member in CHAIN_MEMBERS],
     )
-    result_indv = chain_population.get_next_individual(2)
-    expected_indv = chain_population[0]
-
-    assert result_indv == expected_indv
+    with pytest_raises(IndexError):
+        chain_population.get_next_individual(len(CHAIN_MEMBERS))

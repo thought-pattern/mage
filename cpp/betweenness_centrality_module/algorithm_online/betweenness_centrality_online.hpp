@@ -40,6 +40,9 @@ class OnlineBC {
   /// Maps nodes (i.e. Memgraph IDs) to their betweenness centrality scores
   std::unordered_map<std::uint64_t, double> node_bc_scores;
 
+  /// Canonical undirected edges (min_id, max_id) present when node_bc_scores was computed
+  std::multiset<std::pair<std::uint64_t, std::uint64_t>> cached_edges;
+
   /// Betweenness centrality score initialization flag
   bool initialized = false;
 

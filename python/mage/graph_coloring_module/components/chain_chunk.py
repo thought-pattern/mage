@@ -7,6 +7,28 @@ from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.graph import Graph
 
 
+def split_chain_chunks(graph: Graph, individuals: list[Individual], no_of_processes: int) -> list["ChainChunk"]:
+    """Partition individuals into at most min(no_of_processes, len(individuals)) non-empty ring-connected ChainChunks."""
+    if not individuals or no_of_processes < 1:
+        return []
+    active_chunks = min(no_of_processes, len(individuals))
+    chunk_size, remainder = divmod(len(individuals), active_chunks)
+    chunks = [
+        list(individuals[pid * chunk_size + min(pid, remainder) : (pid + 1) * chunk_size + min(pid + 1, remainder)])
+        for pid in range(active_chunks)
+    ]
+    populations = [
+        ChainChunk(
+            graph,
+            chunk,
+            chunks[pid - 1 if pid > 0 else active_chunks - 1][-1],
+            chunks[(pid + 1) % active_chunks][0],
+        )
+        for pid, chunk in enumerate(chunks)
+    ]
+    return populations
+
+
 class ChainChunk(CorrelationPopulation):
     """A class that represents a population that is just a part
     of the whole population. First and last individuals of this

@@ -161,9 +161,9 @@ void Create::SetElementProp(mgp::Relationship &element, const mgp::List &prop_ke
                             const mgp::List &prop_value_list, const mgp::RecordFactory &record_factory) {
   for (size_t i = 0; i < prop_key_list.Size(); i++) {
     element.SetProperty(std::string(prop_key_list[i].ValueString()), prop_value_list[i]);
-    auto record = record_factory.NewRecord();
-    record.Insert(std::string(kResultRelProp).c_str(), std::move(element));
   }
+  auto record = record_factory.NewRecord();
+  record.Insert(std::string(kResultRelProp).c_str(), std::move(element));
 }
 
 void Create::ProcessElement(const mgp::Value &element, const mgp::Graph graph, const mgp::List &prop_key_list,
@@ -303,9 +303,9 @@ void Create::SetElementProp(mgp::Node &element, const mgp::List &prop_key_list, 
                             const mgp::RecordFactory &record_factory) {
   for (size_t i = 0; i < prop_key_list.Size(); i++) {
     element.SetProperty(std::string(prop_key_list[i].ValueString()), prop_value_list[i]);
-    auto record = record_factory.NewRecord();
-    record.Insert(std::string(kResultProperties).c_str(), std::move(element));
   }
+  auto record = record_factory.NewRecord();
+  record.Insert(std::string(kResultProperties).c_str(), std::move(element));
 }
 
 void Create::ProcessElement(const mgp::Value &element, const mgp::Graph graph, const mgp::List &prop_key_list,

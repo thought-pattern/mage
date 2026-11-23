@@ -106,9 +106,14 @@ void HitsProc(mgp_list *args, mgp_graph *graph, mgp_result *result, mgp_memory *
 }  // namespace
 
 extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *memory) {
-  mgp_value *default_max_iterations;
-  mgp_value *default_tolerance;
-  mgp_value *default_normalize;
+  mgp_value *default_max_iterations = nullptr;
+  mgp_value *default_tolerance = nullptr;
+  mgp_value *default_normalize = nullptr;
+  auto cleanup = [&]() {
+    if (default_max_iterations) mgp_value_destroy(default_max_iterations);
+    if (default_tolerance) mgp_value_destroy(default_tolerance);
+    if (default_normalize) mgp_value_destroy(default_normalize);
+  };
   try {
     auto *hits_proc = mgp::module_add_read_procedure(module, kProcedureHits, HitsProc);
 
@@ -124,15 +129,11 @@ extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *mem
     mgp::proc_add_result(hits_proc, kResultFieldHubScore, mgp::type_float());
     mgp::proc_add_result(hits_proc, kResultFieldAuthoritiesScore, mgp::type_float());
   } catch (const std::exception &e) {
-    mgp_value_destroy(default_max_iterations);
-    mgp_value_destroy(default_tolerance);
-    mgp_value_destroy(default_normalize);
+    cleanup();
     return 1;
   }
 
-  mgp_value_destroy(default_max_iterations);
-  mgp_value_destroy(default_tolerance);
-  mgp_value_destroy(default_normalize);
+  cleanup();
   return 0;
 }
 

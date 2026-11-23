@@ -80,7 +80,6 @@ try:
         is_tree as nx_is_tree,
         isolates as nx_isolates,
         jaccard_coefficient as nx_jaccard_coefficient,
-        k_components as nx_k_components,
         k_edge_components as nx_k_edge_components,
         local_efficiency as nx_local_efficiency,
         lowest_common_ancestor as nx_lowest_common_ancestor,
@@ -106,6 +105,7 @@ try:
         weakly_connected_components as nx_weakly_connected_components,
         wiener_index as nx_wiener_index,
     )
+    from networkx.algorithms.approximation import k_components as nx_approx_k_components
 
     numpy = imported_import_module("numpy")
     scipy = imported_import_module("scipy")
@@ -192,8 +192,7 @@ node_boundary = mgp_read_proc(node_boundary)
 # networkx.algorithms.bridges.bridges
 def bridges(ctx: mgp_ProcCtx, root: mgp_Nullable[mgp_Vertex] = None) -> mgp_Record:
     g = MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True)
-    simple_graph = MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True)
-    computed_return_value = mgp_Record(bridges=[next(iter(g[u][v])) for u, v in nx_bridges(simple_graph, root=root)])
+    computed_return_value = mgp_Record(bridges=[next(iter(g[u][v])) for u, v in nx_bridges(g, root=root) if len(g[u][v]) == 1])
     return computed_return_value
 
 
@@ -331,7 +330,7 @@ k_clique_communities = mgp_read_proc(k_clique_communities)
 
 # networkx.algorithms.approximation.kcomponents.k_components
 def k_components(ctx: mgp_ProcCtx, density: mgp_Number = 0.95) -> list:
-    kcomps = nx_k_components(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True), density)
+    kcomps = nx_approx_k_components(MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True), min_density=density)
 
     computed_return_value = [mgp_Record(k=k, components=[list(s) for s in comps]) for k, comps in kcomps.items()]
     return computed_return_value
@@ -412,7 +411,7 @@ def find_cycle(
 ) -> mgp_Record:
     try:
         computed_return_value = mgp_Record(
-            cycle=[e for _, _, e in nx_find_cycle(MemgraphMultiDiGraph(ctx=ctx), source, orientation)]
+            cycle=[edge_tuple[2] for edge_tuple in nx_find_cycle(MemgraphMultiDiGraph(ctx=ctx), source, orientation)]
         )
         return computed_return_value
     except nx_NetworkXNoCycle:
@@ -509,7 +508,7 @@ diameter = mgp_read_proc(diameter)
 # networkx.algorithms.distance_regular.is_distance_regular
 def is_distance_regular(ctx: mgp_ProcCtx) -> mgp_Record:
     computed_return_value = mgp_Record(
-        is_distance_regular=nx_is_distance_regular(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True))
+        is_distance_regular=nx_is_distance_regular(MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True))
     )
     return computed_return_value
 
@@ -521,7 +520,7 @@ is_distance_regular = mgp_read_proc(is_distance_regular)
 # networkx.algorithms.strongly_regular.is_strongly_regular
 def is_strongly_regular(ctx: mgp_ProcCtx) -> mgp_Record:
     computed_return_value = mgp_Record(
-        is_strongly_regular=nx_is_strongly_regular(MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True))
+        is_strongly_regular=nx_is_strongly_regular(MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True))
     )
     return computed_return_value
 
@@ -981,15 +980,17 @@ def bfs_edges(
     reverse: bool = False,
     depth_limit: mgp_Nullable[int] = None,
 ) -> mgp_Record:
+    g = MemgraphMultiDiGraph(ctx=ctx)
     computed_return_value = mgp_Record(
-        edges=list(
-            nx_bfs_edges(
-                MemgraphMultiDiGraph(ctx=ctx),
+        edges=[
+            next(iter(g[v][u] if reverse else g[u][v]))
+            for u, v in nx_bfs_edges(
+                g,
                 source,
                 reverse=reverse,
                 depth_limit=depth_limit,
             )
-        )
+        ]
     )
     return computed_return_value
 
@@ -1139,7 +1140,7 @@ def edge_bfs(
     orientation: mgp_Nullable[str] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(
-        edges=list(e for _, _, e in nx_edge_bfs(MemgraphMultiDiGraph(ctx=ctx), source=source, orientation=orientation))
+        edges=[edge_tuple[2] for edge_tuple in nx_edge_bfs(MemgraphMultiDiGraph(ctx=ctx), source=source, orientation=orientation)]
     )
     return computed_return_value
 
@@ -1155,7 +1156,7 @@ def edge_dfs(
     orientation: mgp_Nullable[str] = None,
 ) -> mgp_Record:
     computed_return_value = mgp_Record(
-        edges=list(e for _, _, e in nx_edge_dfs(MemgraphMultiDiGraph(ctx=ctx), source=source, orientation=orientation))
+        edges=[edge_tuple[2] for edge_tuple in nx_edge_dfs(MemgraphMultiDiGraph(ctx=ctx), source=source, orientation=orientation)]
     )
     return computed_return_value
 

@@ -252,7 +252,7 @@ reduction(+:e_xx) reduction(+:a2_x)
 #endif
 #ifdef PRINT_TERSE_STATS_
 #endif
-		if((currMod - prevMod) < thresMod) {
+		if(!std::isfinite(currMod) || (currMod - prevMod) < thresMod) {
 			break;
 		}
 
@@ -271,6 +271,6 @@ reduction(+:e_xx) reduction(+:a2_x)
 	free(pastCommAss);
     free(clusterLocalMap);
 
-	return prevMod;
+	return currMod;
 
 }//End of algoLouvainWithDistOneColoring()

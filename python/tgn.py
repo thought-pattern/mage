@@ -361,6 +361,7 @@ def set_tgn(
         "learning_type": learning_type,
         "all_edges": set(),
         "all_embeddings": {},
+        "all_embedding_timestamps": {},
         "results_per_epochs": {},
         "current_epoch": EPOCH_START,
         "global_edge_count": 0,
@@ -379,18 +380,39 @@ def set_tgn(
 
 def sample_negative(negative_num: int) -> tuple[np_ndarray, np_ndarray]:
     """
-    Currently sampling of negative nodes is done in completely random fashion, and it is possible to sample
-    source-dest pair that are real edges
+    Samples negative (source, destination) pairs strictly outside observed interactions in all_edges.
+    Prefers distinct endpoints when unobserved distinct pairs exist; returns empty arrays only when every
+    possible pair among known nodes has already been observed.
     """
+    if negative_num <= 0:
+        return np_empty(0, dtype=int), np_empty(0, dtype=int)
     all_edges = query_module_tgn.get("all_edges", set())
-    all_src = list(set([src for src, dest in all_edges]))
-    all_dest = list(set([dest for src, dest in all_edges]))
-
-    computed_return_value = (
-        np_random.choice(all_src, negative_num, replace=True),
-        np_random.choice(all_dest, negative_num, replace=True),
+    known_nodes = sorted({int(node) for src, dest in all_edges for node in (src, dest)})
+    distinct_candidates = [(u, v) for u in known_nodes for v in known_nodes if u != v and (u, v) not in all_edges]
+    candidates = (
+        distinct_candidates
+        if distinct_candidates
+        else [(u, v) for u in known_nodes for v in known_nodes if (u, v) not in all_edges]
     )
-    return computed_return_value
+    if not candidates:
+        return np_empty(0, dtype=int), np_empty(0, dtype=int)
+    chosen = np_random.choice(len(candidates), negative_num, replace=len(candidates) < negative_num)
+    neg_sources = np_array([candidates[idx][0] for idx in chosen], dtype=int)
+    neg_destinations = np_array([candidates[idx][1] for idx in chosen], dtype=int)
+    return neg_sources, neg_destinations
+
+
+def binary_precision(true_label: np_ndarray, pred_score: np_ndarray) -> float:
+    """Computes positive predictive value TP / (TP + FP), returning 0.0 when no positive predictions are made."""
+    if len(true_label) == 0:
+        return 0.0
+    pred_positive = pred_score > 0.5
+    true_positive = np_rint(true_label) == 1
+    tp = int(np_sum(pred_positive & true_positive))
+    fp = int(np_sum(pred_positive & ~true_positive))
+    denom = tp + fp
+    precision = (tp / denom) if denom > 0 else 0.0
+    return float(precision)
 
 
 def update_mode_reset_grads_check_dims() -> bool:
@@ -425,13 +447,20 @@ def update_embeddings(
     embeddings_dest: np_ndarray,
     sources: np_ndarray,
     destinations: np_ndarray,
+    timestamps: np_ndarray,
 ) -> bool:
     all_embeddings = query_module_tgn.get("all_embeddings", {})
-    for i, node in enumerate(sources):
-        all_embeddings[node] = embeddings_source[i]
-
-    for i, node in enumerate(destinations):
-        all_embeddings[node] = embeddings_dest[i]
+    all_stamps = query_module_tgn.setdefault("all_embedding_timestamps", {})
+    for i in range(len(sources)):
+        stamp = (int(timestamps[i]), i)
+        src_node = int(sources[i])
+        if src_node not in all_stamps or stamp >= all_stamps[src_node]:
+            all_embeddings[src_node] = embeddings_source[i]
+            all_stamps[src_node] = stamp
+        dest_node = int(destinations[i])
+        if dest_node not in all_stamps or stamp >= all_stamps[dest_node]:
+            all_embeddings[dest_node] = embeddings_dest[i]
+            all_stamps[dest_node] = stamp
     return False
 
 
@@ -455,6 +484,7 @@ def process_batch_self_supervised() -> float:
 
     current_batch_size = len(sources)
     negative_src, negative_dest = sample_negative(current_batch_size)
+    neg_count = len(negative_src)
 
     graph_data = (
         sources,
@@ -472,34 +502,34 @@ def process_batch_self_supervised() -> float:
     embeddings_source = embeddings[:current_batch_size]
     embeddings_dest = embeddings[current_batch_size:]
 
-    embeddings_source_neg = embeddings_negative[:current_batch_size]
-    embeddings_dest_neg = embeddings_negative[current_batch_size:]
-
-    # first row concatenation
-    src_embeddings, dest_embeddings = (
-        torch_cat([embeddings_source, embeddings_source_neg], dim=0),
-        torch_cat([embeddings_dest, embeddings_dest_neg], dim=0),
-    )
-    # score shape = (num_positive_edges + num_negative_edges,) ->
-    # num_positive_edges == num_negative_edges == current_batch_size
-    score = get_link_score(src_embeddings, dest_embeddings)
-
-    pos_score = score[:current_batch_size]
-    neg_score = score[current_batch_size:]
-    pos_prob, neg_prob = pos_score.sigmoid(), neg_score.sigmoid()
+    if neg_count > 0:
+        embeddings_source_neg = embeddings_negative[:neg_count]
+        embeddings_dest_neg = embeddings_negative[neg_count:]
+        src_embeddings, dest_embeddings = (
+            torch_cat([embeddings_source, embeddings_source_neg], dim=0),
+            torch_cat([embeddings_dest, embeddings_dest_neg], dim=0),
+        )
+        score = get_link_score(src_embeddings, dest_embeddings)
+        pos_score = score[:current_batch_size]
+        neg_score = score[current_batch_size:]
+        pos_prob, neg_prob = pos_score.sigmoid(), neg_score.sigmoid()
+    else:
+        pos_score = get_link_score(embeddings_source, embeddings_dest)
+        pos_prob = pos_score.sigmoid()
+        neg_prob = pos_prob[:0]
 
     if query_module_tgn.get("tgn_mode", INITIAL_TGN_MODE) == TGNMode.Train:
         pos_label = torch_ones(current_batch_size, dtype=torch_float, device=tgn_device)
-        neg_label = torch_zeros(current_batch_size, dtype=torch_float, device=tgn_device)
-        # use reshape to get 1 dimension in every case
-        loss = PREDICTION_LOSS(pos_prob.reshape((-1,)), pos_label) + PREDICTION_LOSS(neg_prob.reshape((-1,)), neg_label)
+        loss = PREDICTION_LOSS(pos_prob.reshape((-1,)), pos_label)
+        if neg_count > 0:
+            neg_label = torch_zeros(neg_count, dtype=torch_float, device=tgn_device)
+            loss = loss + PREDICTION_LOSS(neg_prob.reshape((-1,)), neg_label)
 
         loss.backward()
         tgn_optimizer.step()
         query_module_tgn.get("m_loss", []).append(loss.item())
     pos_prob_cpu = pos_prob.reshape((-1,)).detach().cpu()
     neg_prob_cpu = neg_prob.reshape((-1,)).detach().cpu()
-    # todo antoniofilipovic - update once we have logging API
     print(
         "POS PROB | NEG PROB",
         pos_prob_cpu,
@@ -511,19 +541,16 @@ def process_batch_self_supervised() -> float:
             neg_prob_cpu.numpy(),
         ]
     )
-    true_label = np_concatenate([np_ones(current_batch_size), np_zeros(current_batch_size)])
-    # rint - round int to nearest even number
-    # x = 0, x <= 0.5
-    # x = 1, x > 0.5
-    # sum correct labels, divide by total number of labels
-    precision = np_sum(np_rint(true_label) == np_rint(pred_score)) * 1.0 / len(true_label)
+    true_label = np_concatenate([np_ones(current_batch_size), np_zeros(neg_count)])
+    precision = binary_precision(true_label, pred_score)
 
-    # update embeddings to the newest ones that we can return on user request
+    # update embeddings to the newest ones that we can return on caller request
     update_embeddings(
         embeddings_source.detach().cpu().numpy(),
         embeddings_dest.detach().cpu().numpy(),
         sources,
         destinations,
+        timestamps,
     )
 
     return precision
@@ -544,7 +571,7 @@ def process_batch_supervised() -> float:
     edge_idxs = query_module_tgn_batch.get("edge_idxs", np_empty(0, dtype=int))
     node_features = query_module_tgn_batch.get("node_features", {})
     edge_features = query_module_tgn_batch.get("edge_features", {})
-    labels = query_module_tgn_batch.get("labels", np_empty((0, 2), dtype=int))
+    labels = query_module_tgn_batch.get("labels", np_empty((0, 2), dtype=float))
 
     current_batch_size = len(sources)
 
@@ -575,31 +602,31 @@ def process_batch_supervised() -> float:
 
     pred_score = np_concatenate(
         [
-            src_prob.detach().cpu().numpy(),
-            dest_prob.detach().cpu().numpy(),
+            src_prob.reshape((-1,)).detach().cpu().numpy(),
+            dest_prob.reshape((-1,)).detach().cpu().numpy(),
         ]
     )
-    true_label = np_concatenate([np_array(labels[:, 0]), np_array(labels[:, 1])])
+    true_label = np_concatenate([np_array(labels[:, 0], dtype=float), np_array(labels[:, 1], dtype=float)])
+    observed_mask = true_label >= 0.0
+    precision = binary_precision(true_label[observed_mask], pred_score[observed_mask]) if bool(observed_mask.any()) else 0.0
 
-    precision = np_sum(np_rint(true_label) == np_rint(pred_score)) * 1.0 / len(true_label)
-
-    # update embeddings to newest ones that we can return on user request
+    # update embeddings to newest ones that we can return on caller request
     update_embeddings(
         embeddings_source.detach().cpu().numpy(),
-        embeddings_dest.cpu().detach().cpu().numpy(),
+        embeddings_dest.detach().cpu().numpy(),
         sources,
         destinations,
+        timestamps,
     )
 
-    if query_module_tgn.get("tgn_mode", INITIAL_TGN_MODE) == TGNMode.Eval:
+    if query_module_tgn.get("tgn_mode", INITIAL_TGN_MODE) == TGNMode.Eval or not bool(observed_mask.any()):
         return precision
 
-    # backprop only in case of training
-    with torch_no_grad():
-        src_label = torch_tensor(labels[:, 0], dtype=torch_float, device=tgn_device)
-        dest_label = torch_tensor(labels[:, 1], dtype=torch_float, device=tgn_device)
+    all_probs = torch_cat([src_prob.reshape((-1,)), dest_prob.reshape((-1,))], dim=0)
+    observed_positions = torch_tensor([idx for idx, flag in enumerate(observed_mask.tolist()) if flag], device=tgn_device)
+    observed_targets = torch_tensor(true_label[observed_mask], dtype=torch_float, device=tgn_device)
 
-    loss = PREDICTION_LOSS(src_prob, src_label) + PREDICTION_LOSS(dest_prob, dest_label)
+    loss = PREDICTION_LOSS(all_probs[observed_positions], observed_targets)
     loss.backward()
     tgn_optimizer.step()
     query_module_tgn.get("m_loss", []).append(loss.item())
@@ -663,10 +690,12 @@ def parse_mgp_edges_into_tgn_batch(edges: mgp_List[mgp_Edge]) -> dict:
         sources.append(src_id)
         destinations.append(dest_id)
         edge_idxs.append(edge_idx)
+        raw_src_label = source.properties.get(node_label_property, None)
+        raw_dest_label = dest.properties.get(node_label_property, None)
         labels.append(
             [
-                source.properties.get(node_label_property, 0),
-                dest.properties.get(node_label_property, 0),
+                -1.0 if raw_src_label is None else float(raw_src_label),
+                -1.0 if raw_dest_label is None else float(raw_dest_label),
             ]
         )
 
@@ -702,8 +731,8 @@ def parse_mgp_edges_into_tgn_batch(edges: mgp_List[mgp_Edge]) -> dict:
     )
     query_module_tgn_batch["labels"] = np_concatenate(
         [
-            query_module_tgn_batch.get("labels", np_empty((0, 2), dtype=int)),
-            np_array(labels).reshape((-1, 2)),
+            query_module_tgn_batch.get("labels", np_empty((0, 2), dtype=float)),
+            np_array(labels, dtype=float).reshape((-1, 2)),
         ]
     )
     query_module_tgn_batch["current_batch_size"] = len(batch_sources)
@@ -721,7 +750,7 @@ def reset_tgn_batch(batch_size: int) -> bool:
         "node_features": {},
         "edge_features": {},
         "batch_size": batch_size,
-        "labels": np_empty((0, 2), dtype=int),
+        "labels": np_empty((0, 2), dtype=float),
     }
     return False
 
@@ -808,8 +837,11 @@ def train_eval_epochs(num_epochs: int, train_edges: list[mgp_Edge], eval_edges: 
         tgn_model.init_memory()
         tgn_model.init_temporal_neighborhood()
         tgn_model.init_message_store()
+        tgn_model.init_features()
 
         query_module_tgn["all_edges"] = set()
+        query_module_tgn["all_embeddings"] = {}
+        query_module_tgn["all_embedding_timestamps"] = {}
         query_module_tgn["m_loss"] = []
 
         reset_tgn_batch(batch_size=batch_size)
@@ -1152,17 +1184,23 @@ def set_params(
         "we read features\n        [optional] node_label_property: name of label property on nodes fro"  # Continue literal.
         "m which we read features\n\n    :return: mgp.Record(): empty record if everything was fine\n"
     )
-    params = {**DEFAULT_VALUES, **params}  # override any default parameters
-    print(params)
-    # every defined parameter must be present and hold its declared type
+    raw_params = dict(params)
+    unknown_keys = sorted(key for key in raw_params if key not in DEFAULT_VALUES)
+    if unknown_keys:
+        raise ValueError(f"Unknown TGN parameter(s): {', '.join(unknown_keys)}")
+    merged_params = {**DEFAULT_VALUES, **raw_params}  # override any default parameters
+    print(merged_params)
+    # every defined parameter must be present and hold its declared type (bool is not int)
     correctly_typed = all(
-        name in params and isinstance(params.get(name, expected_type()), expected_type)
+        name in merged_params
+        and isinstance(merged_params.get(name, expected_type()), expected_type)
+        and (not isinstance(merged_params.get(name), bool) if expected_type is int else True)
         for name, expected_type in DEFINED_INPUT_TYPES.items()
     )
     if not correctly_typed:
         raise TypeError(f"Input dictionary is not correctly typed. Expected following types {DEFINED_INPUT_TYPES}.")
 
-    initialize_tgn(params)
+    initialize_tgn(merged_params)
 
     computed_return_value = mgp_Record()
     return computed_return_value
@@ -1181,6 +1219,20 @@ def initialize_tgn(params: dict) -> bool:
     batch_size: int = params.get(OtherProperties.BATCH_SIZE, 0)
     if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
         raise ValueError(f"batch_size must be a positive integer, received {batch_size!r}")
+
+    positive_int_keys = (
+        TGNParameters.NUM_OF_LAYERS,
+        TGNParameters.MEMORY_DIMENSION,
+        TGNParameters.TIME_DIMENSION,
+        TGNParameters.NUM_EDGE_FEATURES,
+        TGNParameters.NUM_NODE_FEATURES,
+        TGNParameters.MESSAGE_DIMENSION,
+        TGNParameters.NUM_NEIGHBORS,
+    )
+    for key in positive_int_keys:
+        val = params.get(key, 0)
+        if isinstance(val, bool) or not isinstance(val, int) or val < 1:
+            raise ValueError(f"{key} must be a positive integer, received {val!r}")
 
     layer_type = get_tgn_layer_enum(params.get(TGNParameters.LAYER_TYPE, ""))
     tgn_config = {

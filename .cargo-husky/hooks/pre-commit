@@ -21,10 +21,10 @@ fi
 # (Cargo.toml exists).
 cd "$MAGE_ROOT" || exit 1
 for project in "$MAGE_ROOT"/rust/*; do
-    if [ -d "$project" ]; then
-        if [ -f "$project/Cargo.toml" ]; then
+    if [ -d "$project" ] && [ -f "$project/Cargo.toml" ]; then
+        (
             cd "$project" || exit 1
             check
-        fi
+        )
     fi
 done

@@ -37,21 +37,30 @@ CHILDREN = "_children"
 
 
 def parse_element(element, simple):
-    result = {TYPE: element.tag}
+    children = list(element)
+    children_name = "_" + str(element.tag) if simple else CHILDREN
+    reserved = {TYPE, TEXT, children_name}
 
+    result = {}
     attributes = element.attrib
     if attributes:
-        result.update(attributes)
+        for attr_key, attr_val in attributes.items():
+            if attr_key in reserved:
+                result[f"@{attr_key}"] = attr_val
+            else:
+                result[attr_key] = attr_val
+    result[TYPE] = element.tag
 
-    text_content = element.text
-    if text_content and text_content.strip():
-        result[TEXT] = text_content
+    text_segments = []
+    if element.text and element.text.strip():
+        text_segments.append(element.text)
+    for child in children:
+        if child.tail and child.tail.strip():
+            text_segments.append(child.tail)
+    if text_segments:
+        result[TEXT] = "".join(text_segments)
 
-    children = list(element)
     if children:
-        children_name = CHILDREN
-        if simple:
-            children_name = "_" + str(element.tag)
         result[children_name] = [parse_element(child, simple) for child in children]
 
     return result

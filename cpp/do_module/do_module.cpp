@@ -73,45 +73,85 @@ std::string Join(std::vector<std::string> const &strings, std::string_view delim
   return joined_strings;
 }
 
-std::string GetGraphFirstClassEntityAlias(const std::string &entity_name) {
-  return fmt::format("${0} AS __{0}_id", entity_name);
+std::string QuoteCypherIdentifier(std::string_view identifier) {
+  std::string escaped;
+  escaped.reserve(identifier.size() + 2);
+  escaped.push_back('`');
+  for (const char ch : identifier) {
+    if (ch == '`') {
+      escaped.push_back('`');
+    }
+    escaped.push_back(ch);
+  }
+  escaped.push_back('`');
+  return escaped;
+}
+
+std::string SelectInternalAliasPrefix(const ParamNames &names) {
+  std::string prefix = "__mg_do_entity_id_";
+  auto collides = [&names](std::string_view candidate) {
+    auto has_prefix = [candidate](const std::vector<std::string> &items) {
+      for (const auto &name : items) {
+        if (name.starts_with(candidate)) return true;
+      }
+      return false;
+    };
+    return has_prefix(names.node_names) || has_prefix(names.relationship_names) || has_prefix(names.primitive_names);
+  };
+  while (collides(prefix)) {
+    prefix.push_back('_');
+  }
+  return prefix;
+}
+
+std::string GetGraphFirstClassEntityAlias(const std::string &entity_name, const std::string &internal_alias) {
+  return fmt::format("${} AS {}", QuoteCypherIdentifier(entity_name), QuoteCypherIdentifier(internal_alias));
 }
 
 std::string GetPrimitiveEntityAlias(const std::string &primitive_name) {
-  return fmt::format("${0} AS {0}", primitive_name);
+  const auto quoted = QuoteCypherIdentifier(primitive_name);
+  return fmt::format("${0} AS {0}", quoted);
 }
 
-std::string ConstructWithStatement(const ParamNames &names) {
+std::string ConstructWithStatement(const ParamNames &names, const std::string &alias_prefix) {
   std::vector<std::string> with_entity_vector;
+  std::size_t entity_index = 0;
   for (const auto &node_name : names.node_names) {
-    with_entity_vector.emplace_back(GetGraphFirstClassEntityAlias(node_name));
+    with_entity_vector.emplace_back(
+        GetGraphFirstClassEntityAlias(node_name, fmt::format("{}{}", alias_prefix, entity_index++)));
   }
   for (const auto &rel_name : names.relationship_names) {
-    with_entity_vector.emplace_back(GetGraphFirstClassEntityAlias(rel_name));
+    with_entity_vector.emplace_back(
+        GetGraphFirstClassEntityAlias(rel_name, fmt::format("{}{}", alias_prefix, entity_index++)));
   }
   for (const auto &prim_name : names.primitive_names) {
     with_entity_vector.emplace_back(GetPrimitiveEntityAlias(prim_name));
   }
 
-  return fmt::format("WITH {}", Join(std::move(with_entity_vector), ", "));
+  return fmt::format("WITH {}", Join(with_entity_vector, ", "));
 }
 
-std::string ConstructMatchingNodeById(const std::string &node_name) {
-  return fmt::format("MATCH ({0}) WHERE ID({0}) = __{0}_id", node_name);
+std::string ConstructMatchingNodeById(const std::string &node_name, const std::string &internal_alias) {
+  const auto quoted_node = QuoteCypherIdentifier(node_name);
+  return fmt::format("MATCH ({0}) WHERE ID({0}) = {1}", quoted_node, QuoteCypherIdentifier(internal_alias));
 }
 
-std::string ConstructMatchingRelationshipById(const std::string &rel_name) {
-  return fmt::format("MATCH ()-[{0}]->() WHERE ID({0}) = __{0}_id", rel_name);
+std::string ConstructMatchingRelationshipById(const std::string &rel_name, const std::string &internal_alias) {
+  const auto quoted_rel = QuoteCypherIdentifier(rel_name);
+  return fmt::format("MATCH ()-[{0}]->() WHERE ID({0}) = {1}", quoted_rel, QuoteCypherIdentifier(internal_alias));
 }
 
-std::string ConstructMatchGraphEntitiesById(const ParamNames &names) {
+std::string ConstructMatchGraphEntitiesById(const ParamNames &names, const std::string &alias_prefix) {
   std::string match_string{""};
   std::vector<std::string> match_by_id_vector;
+  std::size_t entity_index = 0;
   for (const auto &node_name : names.node_names) {
-    match_by_id_vector.emplace_back(ConstructMatchingNodeById(node_name));
+    match_by_id_vector.emplace_back(
+        ConstructMatchingNodeById(node_name, fmt::format("{}{}", alias_prefix, entity_index++)));
   }
   for (const auto &rel_name : names.relationship_names) {
-    match_by_id_vector.emplace_back(ConstructMatchingRelationshipById(rel_name));
+    match_by_id_vector.emplace_back(
+        ConstructMatchingRelationshipById(rel_name, fmt::format("{}{}", alias_prefix, entity_index++)));
   }
 
   if (match_by_id_vector.size()) {
@@ -126,8 +166,9 @@ std::string ConstructQueryPreffix(const ParamNames &names) {
     return std::string();
   }
 
-  auto with_variables = ConstructWithStatement(names);
-  auto match_string = ConstructMatchGraphEntitiesById(names);
+  const auto alias_prefix = SelectInternalAliasPrefix(names);
+  auto with_variables = ConstructWithStatement(names, alias_prefix);
+  auto match_string = ConstructMatchGraphEntitiesById(names, alias_prefix);
 
   return fmt::format("{} {}", with_variables, match_string);
 }

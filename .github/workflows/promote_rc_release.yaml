@@ -103,11 +103,11 @@ jobs:
             echo "RC package does not exist at ${s3_input_arm}"
           fi
   
-      - name: Early exit if no RC packages are found
+      - name: Fail if no RC packages are found
         if: ${{ env.has_rc_package_amd == 'false' && env.has_rc_package_arm == 'false' }}
         run: |
-          echo "Neither RC package exists. Skipping the rest of the workflow."
-          exit 0
+          echo "Neither RC package exists (${s3_input_amd}, ${s3_input_arm}). Aborting promotion." >&2
+          exit 1
 
       - name: Check if release image for this build already exists
         run: |
@@ -197,24 +197,21 @@ jobs:
             manifest_images="$manifest_images --amend ${release_image_arm}"
           fi
 
-          if [ -n "$manifest_images" ]; then
-            echo "Creating and pushing manifest for ${release_image} with images:$manifest_images"
-            docker manifest create ${release_image} $manifest_images
-            docker manifest push ${release_image}
-            echo "Successfully published ${release_image} to DockerHub!"
-          else
-            echo "No images promoted; skipping manifest creation."
+          if [ -z "$manifest_images" ]; then
+            echo "No images promoted; cannot create or publish release manifest." >&2
+            exit 1
           fi
+
+          echo "Creating and pushing manifest for ${release_image} with images:$manifest_images"
+          docker manifest create ${release_image} $manifest_images
+          docker manifest push ${release_image}
+          echo "Successfully published ${release_image} to DockerHub!"
 
           # Setup and push the 'latest' manifest if production image
           if [[ -z "${{ matrix.image_ext }}" ]]; then
-            if [ -n "$manifest_images" ]; then
-              docker manifest create ${release_image_latest} $manifest_images
-              docker manifest push ${release_image_latest}
-              echo "Successfully published ${release_image_latest} to DockerHub!"
-            else
-              echo "No images promoted; skipping 'latest' manifest creation."
-            fi
+            docker manifest create ${release_image_latest} $manifest_images
+            docker manifest push ${release_image_latest}
+            echo "Successfully published ${release_image_latest} to DockerHub!"
           fi
 
       - name: Clean up temporary images

@@ -53,8 +53,7 @@ DEFAULT_ARGUMENT_DICT = {}
 
 HEADER_FILENAME = "header.csv"
 
-# A Cypher string literal escapes its quote and backslash (openCypher string grammar) and its line breaks, because
-# import_util.cypher reads one statement per line.
+# A Cypher string literal escapes its quote, backslash and line breaks (openCypher string grammar).
 CYPHER_STRING_ESCAPES = str.maketrans({"\\": "\\\\", "'": "\\'", "\n": "\\n", "\r": "\\r"})
 # A double-quoted XML attribute also escapes its quote, and the whitespace attribute-value normalization would fold.
 XML_ATTRIBUTE_ESCAPES = {'"': "&quot;", "\n": "&#10;", "\r": "&#13;", "\t": "&#9;"}
@@ -151,7 +150,7 @@ def convert_to_cypher_format(value: object) -> str:
         computed_return_value = f"'{value.translate(CYPHER_STRING_ESCAPES)}'"
         return computed_return_value
 
-    elif isinstance(value, tuple):  # list
+    elif isinstance(value, (list, tuple)):  # list
         computed_return_value = "[" + ", ".join([convert_to_cypher_format(item) for item in value]) + "]"
         return computed_return_value
 
@@ -177,11 +176,166 @@ def format_properties_cypher(properties) -> str:
     return computed_return_value
 
 
+def cypher_property_names(properties) -> list[str]:
+    """Normalizes the property column of SHOW INDEX/CONSTRAINT INFO (None, str, or sequence of strs)."""
+    if properties is None or properties == "":
+        return []
+    if isinstance(properties, str):
+        return [properties]
+    return [str(name) for name in properties]
+
+
+def cypher_property_path(path_text: str) -> str:
+    """Quotes each segment of a property name or dotted nested property path."""
+    if "." in path_text:
+        rendered_path = ".".join(cypher_identifier(part) for part in path_text.split("."))
+        return rendered_path
+    quoted = cypher_identifier(path_text)
+    return quoted
+
+
 def cypher_property_list(properties) -> str:
     """Renders the n.`property` list of an index or constraint; Memgraph reports one name or a sequence of names."""
-    names = [properties] if isinstance(properties, str) else list(properties)
-    rendered = ", ".join(f"n.{cypher_identifier(name)}" for name in names)
+    names = cypher_property_names(properties)
+    rendered = ", ".join(f"n.{cypher_property_path(name)}" for name in names)
     return rendered
+
+
+def format_vector_filter(raw_filter: str) -> str:
+    """Renders the ON target of a vector index ('' for wildcard '*', else ':Label' / ':A|B' / ':A&B' backtick-quoted)."""
+    if not raw_filter or raw_filter == "*":
+        return ""
+    body = raw_filter[1:] if raw_filter.startswith(":") else raw_filter
+    for separator in ("|", "&"):
+        if separator in body:
+            joined = separator.join(cypher_identifier(part) for part in body.split(separator))
+            return f":{joined}"
+    single = f":{cypher_identifier(body)}"
+    return single
+
+
+def open_memgraph_client(config: mgp_Map, ctx: object = None) -> gqlalchemy_Memgraph:
+    """Opens a GQLAlchemy client honoring optional endpoint and multi-tenant database settings in config or ctx."""
+    cfg = dict(config) if config is not None else {}
+    conn_kwargs = {}
+    expected_types = {"host": str, "port": int, "username": str, "password": str, "encrypted": bool}
+    for key, expected in expected_types.items():
+        if key in cfg and cfg.get(key) is not None:
+            val = cfg.get(key)
+            if not isinstance(val, expected) or (expected is int and isinstance(val, bool)):
+                raise TypeError(f"Config attribute {key!r} must be of type {expected.__name__}.")
+            conn_kwargs[key] = val
+    if "host" in conn_kwargs and not conn_kwargs.get("host"):
+        raise ValueError("Config attribute 'host' must not be empty.")
+    if "port" in conn_kwargs and not 0 < conn_kwargs.get("port", 0) < 65536:
+        raise ValueError("Config attribute 'port' must be between 1 and 65535.")
+    client = gqlalchemy_Memgraph(**conn_kwargs) if conn_kwargs else gqlalchemy_Memgraph()
+    database = cfg.get("database") if "database" in cfg else cfg.get("db")
+    if database is None and ctx is not None:
+        database = getattr(ctx, "database", None) or getattr(getattr(ctx, "graph", None), "database", None)
+    if database:
+        if not isinstance(database, str):
+            raise TypeError("Config attribute 'database' must be a string.")
+        list(client.execute_and_fetch(f"USE DATABASE {cypher_identifier(database)};"))
+    return client
+
+
+def render_constraint_cypher(constraint: dict) -> str:
+    """Renders one SHOW CONSTRAINT INFO row as a CREATE CONSTRAINT statement."""
+    constraint_type = constraint.get("constraint type", "")
+    label = cypher_identifier(constraint.get("label", ""))
+    properties = cypher_property_list(constraint.get("properties", []))
+    if constraint_type == "exists":
+        return f"CREATE CONSTRAINT ON (n:{label}) ASSERT EXISTS ({properties});\n"
+    if constraint_type == "unique":
+        return f"CREATE CONSTRAINT ON (n:{label}) ASSERT {properties} IS UNIQUE;\n"
+    if constraint_type == "data_type":
+        data_type = constraint.get("data_type", "")
+        if not data_type:
+            raise ValueError("Data-type constraint row is missing 'data_type'.")
+        return f"CREATE CONSTRAINT ON (n:{label}) ASSERT {properties} IS TYPED {data_type};\n"
+    raise ValueError(f"Unknown constraint type {constraint_type!r}.")
+
+
+def render_index_cypher(index: dict) -> str:
+    """Renders one non-vector SHOW INDEX INFO row as its CREATE ... INDEX statement."""
+    index_type = index.get("index type", "")
+    raw_label = index.get("label", "") or ""
+    label = cypher_identifier(raw_label) if raw_label else ""
+    prop_names = cypher_property_names(index.get("property", []))
+    quoted_props = ", ".join(cypher_property_path(name) for name in prop_names)
+
+    if index_type == "label":
+        return f"CREATE INDEX ON :{label};\n"
+    if index_type == "label+property":
+        return f"CREATE INDEX ON :{label}({quoted_props});\n"
+    if index_type == "label+property (DESC)":
+        return f'CREATE INDEX ON :{label}({quoted_props}) WITH CONFIG {{"order": "DESC"}};\n'
+    if index_type == "edge-type":
+        return f"CREATE EDGE INDEX ON :{label};\n"
+    if index_type == "edge-type+property":
+        return f"CREATE EDGE INDEX ON :{label}({quoted_props});\n"
+    if index_type == "edge-property":
+        return f"CREATE GLOBAL EDGE INDEX ON :({quoted_props});\n"
+    if index_type == "vertex-property":
+        return f"CREATE GLOBAL INDEX ON :({quoted_props});\n"
+    if index_type == "point":
+        return f"CREATE POINT INDEX ON :{label}({quoted_props});\n"
+    if index_type.startswith("label_text (name: ") and index_type.endswith(")"):
+        index_name = cypher_identifier(index_type[len("label_text (name: ") : -1])
+        target = "*" if raw_label in ("", "*") else label
+        suffix = f"({quoted_props})" if quoted_props else ""
+        return f"CREATE TEXT INDEX {index_name} ON :{target}{suffix};\n"
+    if index_type.startswith("edge-type_text (name: ") and index_type.endswith(")"):
+        index_name = cypher_identifier(index_type[len("edge-type_text (name: ") : -1])
+        target = "*" if raw_label in ("", "*") else label
+        suffix = f"({quoted_props})" if quoted_props else ""
+        return f"CREATE TEXT EDGE INDEX {index_name} ON :{target}{suffix};\n"
+    raise ValueError(f"Unknown index type {index_type!r}.")
+
+
+def render_vector_index_cypher(spec: dict) -> str:
+    """Renders one SHOW VECTOR INDEX INFO row as a CREATE VECTOR [EDGE] INDEX statement."""
+    index_name = cypher_identifier(str(spec.get("index_name", "")))
+    filter_clause = format_vector_filter(str(spec.get("label", "") or ""))
+    prop_name = cypher_identifier(str(spec.get("property", "")))
+    dimension = int(spec.get("dimension", 0))
+    metric = str(spec.get("metric", "cos"))
+    capacity = int(spec.get("capacity", 1000))
+    scalar_kind = str(spec.get("scalar_kind", "f32"))
+    index_kind = "VECTOR EDGE INDEX" if spec.get("index_type") == "edge-type+property_vector" else "VECTOR INDEX"
+    config_json = (
+        f'{{"dimension": {dimension}, "metric": {js_dumps(metric)}, '
+        f'"capacity": {capacity}, "scalar_kind": {js_dumps(scalar_kind)}}}'
+    )
+    return f"CREATE {index_kind} {index_name} ON {filter_clause}({prop_name}) WITH CONFIG {config_json};\n"
+
+
+def fetch_vector_index_specs(memgraph: gqlalchemy_Memgraph, vector_rows: list[dict]) -> list[dict]:
+    """Reads full vector index definitions via SHOW VECTOR INDEX INFO or vector_search.show_index_info()."""
+    for query in ("SHOW VECTOR INDEX INFO;", "CALL vector_search.show_index_info() YIELD *;"):
+        try:
+            specs = list(memgraph.execute_and_fetch(query))
+        except Exception:
+            specs = []
+        if specs:
+            return specs
+    fallback_specs = []
+    for idx, row in enumerate(vector_rows):
+        prop_list = cypher_property_names(row.get("property", []))
+        fallback_specs.append(
+            {
+                "index_name": row.get("index_name") or f"vector_index_{idx}",
+                "label": row.get("label", ""),
+                "property": prop_list[0] if prop_list else "",
+                "dimension": row.get("dimension", 1),
+                "metric": row.get("metric", "cos"),
+                "capacity": row.get("capacity", 1000),
+                "scalar_kind": row.get("scalar_kind", "f32"),
+                "index_type": row.get("index type", ""),
+            }
+        )
+    return fallback_specs
 
 
 def write_cypher_export(
@@ -192,47 +346,38 @@ def write_cypher_export(
     import_id: str,
 ) -> None:
     """
-    Writes the export one statement per line. The graph is read twice, nodes then relationships, so neither the graph
-    nor the rendered script is held in memory.
+    Writes the export one statement per semicolon. The graph is read twice, nodes then relationships, so neither the
+    graph nor the rendered script is held in memory.
     """
     if config.get("write_triggers", True):
         triggers = memgraph.execute_and_fetch("SHOW TRIGGERS;")
         for trigger in triggers:
             trigger_name = cypher_identifier(trigger.get("trigger name", ""))
-            event_type = trigger.get("event type", "")
-            phase = trigger.get("phase", "")
-            statement = trigger.get("statement", "")
-            out.write(f"CREATE TRIGGER {trigger_name} ON {event_type} {phase} EXECUTE {statement};\n")
+            event_type = (trigger.get("event type", "") or "").strip()
+            phase = (trigger.get("phase", "") or "").strip()
+            statement = (trigger.get("statement", "") or "").strip().rstrip(";").strip()
+            on_clause = f" ON {event_type}" if event_type else ""
+            out.write(f"CREATE TRIGGER {trigger_name}{on_clause} {phase} EXECUTE {statement};\n")
         out.write("\n")
 
     if config.get("write_constraints", True):
         constraints = memgraph.execute_and_fetch("SHOW CONSTRAINT INFO;")
         for constraint in constraints:
-            constraint_type = constraint.get("constraint type", "")
-            label = cypher_identifier(constraint.get("label", ""))
-            properties = cypher_property_list(constraint.get("properties", []))
-
-            if constraint_type == "exists":
-                out.write(f"CREATE CONSTRAINT ON (n:{label}) ASSERT EXISTS ({properties});\n")
-            elif constraint_type == "unique":
-                out.write(f"CREATE CONSTRAINT ON (n:{label}) ASSERT {properties} IS UNIQUE;\n")
-            else:
-                raise ValueError("Unknown constraint type.")
+            out.write(render_constraint_cypher(constraint))
         out.write("\n")
 
     if config.get("write_indexes", True):
-        indexes = memgraph.execute_and_fetch("SHOW INDEX INFO;")
+        indexes = list(memgraph.execute_and_fetch("SHOW INDEX INFO;"))
+        vector_rows = []
         for index in indexes:
             index_type = index.get("index type", "")
-            label = cypher_identifier(index.get("label", ""))
-            if index_type == "label":
-                out.write(f"CREATE INDEX ON :{label};\n")
-            elif index_type == "label+property":
-                properties = index.get("property", [])
-                names = [properties] if isinstance(properties, str) else list(properties)
-                out.write(f"CREATE INDEX ON :{label}({', '.join(cypher_identifier(name) for name in names)});\n")
-            else:
-                raise ValueError("Unknown index type.")
+            if index_type in ("label+property_vector", "edge-type+property_vector"):
+                vector_rows.append(index)
+                continue
+            out.write(render_index_cypher(index))
+        if vector_rows:
+            for spec in fetch_vector_index_specs(memgraph, vector_rows):
+                out.write(render_vector_index_cypher(spec))
         out.write("\n")
 
     write_properties = config.get("write_properties", True)
@@ -277,14 +422,16 @@ def cypher_all(
     if config is DEFAULT_ARGUMENT_DICT:
         config = DEFAULT_ARGUMENT_DICT.copy()
 
-    # The temporary import label/property is unique to this export, so replay never overwrites or removes a user label
+    # The temporary import label/property is unique to this export, so replay never overwrites or removes a caller label
     # or property of any name, and the final cleanup matches only the nodes this import created, even in a populated
     # target graph.
+    need_catalog = any(config.get(flag, True) for flag in ("write_triggers", "write_constraints", "write_indexes"))
+    memgraph = open_memgraph_client(config, ctx=ctx) if need_catalog else None
     import_id = f"{IMPORT_ID_PREFIX}{uuid4().hex}"
     render = partial(
         write_cypher_export,
         ctx=ctx,
-        memgraph=gqlalchemy_Memgraph(),
+        memgraph=memgraph,
         config=config,
         import_id=import_id,
     )
@@ -644,10 +791,9 @@ def csv_process_config(config: mgp_Map):
     return delimiter, quoting_type, separate_header, stream
 
 
-def header_path(path: str):
-    directory = os_path.dirname(path)
-    new_filename = HEADER_FILENAME
-    computed_return_value = os_path.join(directory, new_filename)
+def header_path(path: str) -> str:
+    """Returns a path-specific sidecar header path (<path>.header.csv) that never collides with path or sibling exports."""
+    computed_return_value = f"{path}.{HEADER_FILENAME}"
     return computed_return_value
 
 
@@ -711,8 +857,11 @@ def csv_graph(
         data = render_to_string(render)
     else:
         if separate_header:
+            hdr_path = header_path(path)
+            if os_path.realpath(hdr_path) == os_path.realpath(path):
+                raise ValueError(f"Separate header path {hdr_path!r} resolves to the same file as {path!r}.")
             publish_file(
-                header_path(path),
+                hdr_path,
                 partial(
                     write_csv_rows,
                     rows=header,
@@ -735,6 +884,7 @@ def csv_query(
     query: str,
     file_path: str = "",
     stream: bool = False,
+    config: mgp_Map = DEFAULT_ARGUMENT_DICT,
 ) -> mgp_Record:
     """
     Procedure to export query results to a CSV file.
@@ -772,7 +922,9 @@ def csv_query(
     if not file_path and not stream:
         raise ValueError("If you provided only stream value, it has to be set to True to get any results.")
 
-    memgraph = gqlalchemy_Memgraph()
+    if config is DEFAULT_ARGUMENT_DICT:
+        config = DEFAULT_ARGUMENT_DICT.copy()
+    memgraph = open_memgraph_client(config)
     rows = memgraph.execute_and_fetch(query)
 
     # The query runs once and each row goes to the file and the stream (different CSV dialects) as it arrives, so the
@@ -809,7 +961,7 @@ def write_graphml_header(output: io_StringIO):
 
 
 def translate_types(variable: object):
-    if isinstance(variable, tuple):
+    if isinstance(variable, (tuple, list)):
         computed_return_value = get_value_string(variable)
         return computed_return_value
     if isinstance(variable, str):
@@ -824,17 +976,17 @@ def translate_types(variable: object):
 
 
 def check_if_elements_same_type(variable: mgp_Any):
-    if not isinstance(variable, (tuple, list)):
+    if not isinstance(variable, (tuple, list)) or len(variable) == 0:
         return False
     list_type = type(variable[0])
     for element in variable:
-        if not isinstance(element, list_type):
+        if type(element) is not list_type:
             raise TypeError("If property value is a list it must consist of same typed elements.")
     return False
 
 
 def get_type_string(variable: mgp_Any) -> tuple[str, bool]:
-    if not isinstance(variable, tuple):
+    if not isinstance(variable, (tuple, list)):
         computed_return_value = translate_types(variable), False
         return computed_return_value
     if len(variable) == 0:
@@ -1015,18 +1167,21 @@ def write_graphml_footer(output: io_StringIO):
 def set_default_config(config: mgp_Map) -> mgp_Map:
     if config is None:
         config = dict()
-    if not config.get("stream", False):
-        config.update({"stream": False})
-    if not config.get("format", ""):
-        config.update({"format": ""})
-    if not config.get("caption", ()):
-        config.update({"caption": tuple()})
-    if not config.get("useTypes", False):
-        config.update({"useTypes": False})
-    if not config.get("leaveOutLabels", False):
-        config.update({"leaveOutLabels": False})
-    if not config.get("leaveOutProperties", False):
-        config.update({"leaveOutProperties": False})
+    else:
+        config = dict(config)
+    defaults = {
+        "stream": False,
+        "format": "",
+        "caption": tuple(),
+        "useTypes": False,
+        "leaveOutLabels": False,
+        "leaveOutProperties": False,
+    }
+    for key, default_val in defaults.items():
+        if config.get(key) is None:
+            config[key] = default_val
+    if isinstance(config.get("caption"), list):
+        config["caption"] = tuple(config.get("caption", ()))
     if (
         not isinstance(config.get("stream", False), bool)
         or not isinstance(config.get("format", ""), str)

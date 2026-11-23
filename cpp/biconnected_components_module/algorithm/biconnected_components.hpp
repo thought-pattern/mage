@@ -3,6 +3,7 @@
 #include <mg_graph.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
@@ -14,6 +15,7 @@ namespace bcc_utility {
 struct NodeState {
   std::unordered_map<std::uint64_t, bool> visited;
   std::unordered_map<std::uint64_t, std::uint64_t> discovery, low_link;
+  std::unordered_set<std::uint64_t> pushed_edges;
   std::uint64_t counter;
 
   explicit NodeState(std::uint64_t number_of_nodes);
@@ -33,7 +35,8 @@ struct NodeState {
 void BccDFS(std::uint64_t node_id, std::uint64_t parent_id, bcc_utility::NodeState *state,
             std::stack<mg_graph::Edge<>> *edge_stack, std::vector<std::vector<mg_graph::Edge<>>> *bcc_edges,
             std::vector<std::unordered_set<std::uint64_t>> *bcc_nodes, const mg_graph::GraphView<> &graph,
-            std::unordered_set<std::uint64_t> &articulation_points);
+            std::unordered_set<std::uint64_t> &articulation_points,
+            std::optional<std::uint64_t> parent_edge_id = std::nullopt);
 
 }  // namespace bcc_utility
 

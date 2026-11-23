@@ -41,21 +41,25 @@
 
 #include "defs.h"
 #include "RngStream.h"
+#include <algorithm>
+#include <vector>
 
 using namespace std;
 
 void generateRandomNumbers(double *RandVec, long size) {
-    int nT;
+    int nT = 1;
 #pragma omp parallel
     {
+#pragma omp single
         nT = omp_get_num_threads();
     }
+    nT = std::max(1, nT);
 #ifdef PRINT_DETAILED_STATS_
 #endif
     //Initialize parallel pseudo-random number generator
     unsigned long seed[6] = {1, 2, 3, 4, 5, 6};
     RngStream::SetPackageSeed(seed);
-    RngStream RngArray[nT]; //array of RngStream Objects
+    std::vector<RngStream> RngArray(nT); //per-call array of RngStream Objects
     
     long block = size / nT;
 #ifdef PRINT_DETAILED_STATS_

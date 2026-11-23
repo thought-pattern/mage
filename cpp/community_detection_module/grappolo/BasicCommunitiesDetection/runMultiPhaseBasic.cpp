@@ -111,9 +111,8 @@ void runMultiPhaseBasic(graph *G, mgp_graph *mg_graph, long *C_orig, int basicOp
             break;
         }
 
-        //Check for modularity gain and build the graph for next phase
-        //In case coloring is used, make sure the non-coloring routine is run at least once
-        if( (currMod - prevMod) > threshold ) {
+        //Check for modularity gain and minimum coarsened graph size before building next phase
+        if((numClusters >= minGraphSize) && std::isfinite(currMod) && ((currMod - prevMod) > threshold)) {
             Gnew = (graph *) malloc (sizeof(graph)); assert(Gnew != 0);
             tmpTime =  buildNextLevelGraphOpt(G, mg_graph, Gnew, C, numClusters, numThreads);
             totTimeBuildingPhase += tmpTime;
@@ -195,9 +194,8 @@ void runMultiPhaseBasicOnce(graph *G, mgp_graph *mg_graph, long *C_orig, int bas
             C_orig[i] = C[i]; //After the first phase
         }
 
-        //Check for modularity gain and build the graph for next phase
-        //In case coloring is used, make sure the non-coloring routine is run at least once
-        if( (currMod - prevMod) > threshold ) {
+        //Check for modularity gain and minimum coarsened graph size before building next phase
+        if((numClusters >= minGraphSize) && std::isfinite(currMod) && ((currMod - prevMod) > threshold)) {
             Gnew = (graph *) malloc (sizeof(graph)); assert(Gnew != 0);
             tmpTime =  buildNextLevelGraphOpt(G, mg_graph, Gnew, C, numClusters, numThreads);
             totTimeBuildingPhase += tmpTime;

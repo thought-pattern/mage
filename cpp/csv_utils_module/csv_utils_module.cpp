@@ -6,14 +6,14 @@
 extern "C" int mgp_init_module(mgp_module *module, mgp_memory *memory) {
   try {
     mgp::MemoryDispatcherGuard guard(memory);
-    mgp::AddProcedure(CsvUtils::CreateCsvFile, CsvUtils::kProcedureCreateCsvFile, mgp::ProcedureType::Read,
+    mgp::AddProcedure(CsvUtils::CreateCsvFile, CsvUtils::kProcedureCreateCsvFile, mgp::ProcedureType::Write,
                       {
                           mgp::Parameter(CsvUtils::kArgumentCreateCsvFile1, mgp::Type::String),
                           mgp::Parameter(CsvUtils::kArgumentCreateCsvFile2, mgp::Type::String),
                           mgp::Parameter(CsvUtils::kArgumentCreateCsvFile3, mgp::Type::Bool, false),
                       },
                       {mgp::Return(CsvUtils::kArgumentDeleteCsvFile1, {mgp::Type::String})}, module, memory);
-    mgp::AddProcedure(CsvUtils::DeleteCsvFile, CsvUtils::kProcedureDeleteCsvFile, mgp::ProcedureType::Read,
+    mgp::AddProcedure(CsvUtils::DeleteCsvFile, CsvUtils::kProcedureDeleteCsvFile, mgp::ProcedureType::Write,
                       {
                           mgp::Parameter(CsvUtils::kArgumentDeleteCsvFile1, mgp::Type::String),
                       },

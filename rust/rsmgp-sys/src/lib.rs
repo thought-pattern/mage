@@ -35,7 +35,7 @@
 //! use std::os::raw::c_int;
 //! use std::panic;
 //!
-//! init_module!(|memgraph: &Memgraph| -> Result<()> {
+//! init_module!(|memgraph: &MemgraphModule| -> Result<()> {
 //!     memgraph.add_read_procedure(
 //!         basic, // Has to be the same as specified in the `define_procedure!`.
 //!         c_str!("basic"), // Name under which Memgraph will register the procedure.

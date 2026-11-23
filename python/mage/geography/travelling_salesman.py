@@ -201,6 +201,7 @@ def get_mst(dm: np_ndarray):
     """
 
     g = nx_Graph()
+    g.add_nodes_from(range(len(dm)))
 
     for i in range(len(dm) - 1):
         for j in range(i + 1, len(dm)):

@@ -1,5 +1,7 @@
 #include "path.hpp"
 
+#include <iterator>
+
 #include "mgp.hpp"
 
 Path::PathHelper::PathHelper(const mgp::List &labels, const mgp::List &relationships, int64_t min_hops,
@@ -254,7 +256,8 @@ void Path::Slice(mgp_list *args, mgp_func_context *ctx, mgp_func_result *res, mg
 
     mgp::Path new_path{path.GetNodeAt(offset)};
     size_t old_path_length = path.Length();
-    size_t max_iteration = std::min((length == -1 ? old_path_length : offset + length), old_path_length);
+    size_t max_iteration =
+        std::min<size_t>((length == -1 ? old_path_length : static_cast<size_t>(offset + length)), old_path_length);
     for (int i = static_cast<int>(offset); i < max_iteration; ++i) {
       new_path.Expand(path.GetRelationshipAt(i));
     }
@@ -271,44 +274,41 @@ void Path::Create(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result,
   const auto arguments = mgp::List(args);
   const auto record_factory = mgp::RecordFactory(result);
   try {
+    if (arguments[0].IsNull()) {
+      return;
+    }
     auto start_node{arguments[0].ValueNode()};
     auto relationships{arguments[1].ValueMap()};
 
     mgp::Path path{start_node};
-    for (const auto &relationship : relationships["rel"].ValueList()) {
-      if (relationship.IsNull()) {
-        break;
-      }
-      if (!relationship.IsRelationship()) {
-        std::ostringstream oss;
-        oss << relationship.Type();
-        throw mgp::ValueException("Expected relationship or null type, got " + oss.str());
-      }
-
-      const auto rel = relationship.ValueRelationship();
-      auto last_node = path.GetNodeAt(path.Length());
-
-      bool endpoint_is_from = false;
-
-      if (last_node.Id() == rel.From().Id()) {
-        endpoint_is_from = true;
-      }
-
-      auto contains = [](mgp::Relationships relationships, const mgp::Id id) {
-        for (const auto relationship : relationships) {
-          if (relationship.To().Id() == id) {
-            return true;
-          }
+    const auto rel_entry = relationships.At("rel");
+    if (!rel_entry.IsNull()) {
+      for (const auto &relationship : rel_entry.ValueList()) {
+        if (relationship.IsNull()) {
+          break;
         }
-        return false;
-      };
+        if (!relationship.IsRelationship()) {
+          std::ostringstream oss;
+          oss << relationship.Type();
+          throw mgp::ValueException("Expected relationship or null type, got " + oss.str());
+        }
 
-      if ((endpoint_is_from && !contains(rel.From().OutRelationships(), rel.To().Id())) ||
-          (!endpoint_is_from && !contains(rel.To().OutRelationships(), rel.From().Id()))) {
-        break;
+        const auto rel = relationship.ValueRelationship();
+        auto last_node = path.GetNodeAt(path.Length());
+
+        if (last_node.Id() != rel.From().Id()) {
+          break;
+        }
+
+        auto out_rels = last_node.OutRelationships();
+        const bool has_rel = std::any_of(
+            out_rels.begin(), out_rels.end(), [&rel](const auto &candidate) { return candidate.Id() == rel.Id(); });
+        if (!has_rel) {
+          break;
+        }
+
+        path.Expand(rel);
       }
-
-      path.Expand(rel);
     }
 
     auto record = record_factory.NewRecord();

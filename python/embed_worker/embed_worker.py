@@ -1,42 +1,28 @@
-"""Utilities for embed worker."""
-
-from os import environ as os_environ
-
-from sentence_transformers import SentenceTransformer
-from torch import cuda as torch_cuda
-
-# The encoder this spawned worker process loads once for the request that owns it. The process, and with it the model's
-# device memory, ends when that request shuts its pool down.
-MODEL = "model"
-worker_model: dict[str, SentenceTransformer] = {}
+import os
 
 
-def load_model(visible_gpu: int, model_id: str) -> None:
+def encode_chunk(visible_gpu, model_id: str, texts: list[str], batch_size: int):
     """
-    Pool initializer: runs once in each spawned worker process and loads the encoder every later chunk reuses.
+    Runs in a spawned process. Returns (count, embeddings_as_list)
     """
-    # Restrict device visibility before CUDA is initialized in this process.
-    os_environ["CUDA_VISIBLE_DEVICES"] = str(visible_gpu)
+    # Set device visibility BEFORE importing torch/transformers
+    if visible_gpu is None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(visible_gpu)
 
-    os_environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
-    os_environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
-    os_environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-    device = "cuda" if torch_cuda.is_available() else "cpu"
-    worker_model[MODEL] = SentenceTransformer(model_id, device=device)
+    import torch
+    from sentence_transformers import SentenceTransformer
 
-
-def encode_chunk(texts: list[str], batch_size: int):
-    """
-    Runs in a worker process prepared by load_model. Returns (count, embeddings_as_list)
-    """
-    model = worker_model.get(MODEL, False)
-    if not isinstance(model, SentenceTransformer):
-        raise RuntimeError("Embedding worker has no loaded model; load_model must run as the pool initializer.")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = SentenceTransformer(model_id, device=device)
 
     if not texts:
-        empty_result = 0, []
-        return empty_result
+        return 0, []
 
     embs = model.encode(
         texts,
@@ -45,5 +31,4 @@ def encode_chunk(texts: list[str], batch_size: int):
         normalize_embeddings=True,
         show_progress_bar=False,
     )
-    computed_return_value = len(texts), embs.tolist()
-    return computed_return_value
+    return len(texts), embs.tolist()

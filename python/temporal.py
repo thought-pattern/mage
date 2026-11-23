@@ -10,6 +10,7 @@ from datetime import (
 from mgp import Any as mgp_Any, Record as mgp_Record, read_proc as mgp_read_proc
 
 from mage.date.constants import Epoch
+from mage.export_import_util.duration import to_duration_iso_format
 
 
 # Memgraph registers a procedure under its function name, and temporal.format(temporal, format) is the public Cypher
@@ -31,9 +32,10 @@ def format(  # pylint: disable=redefined-builtin,redefined-outer-name
         raise ValueError("Memgraph works with UTC zone only so\
             '%Z' in format is not supported.")
 
-    if format == "ISO" and (
-        isinstance(temporal, datetime_datetime) or isinstance(temporal, datetime_date) or isinstance(temporal, datetime_time)
-    ):
+    if format == "ISO":
+        if isinstance(temporal, datetime_timedelta):
+            computed_return_value = mgp_Record(formatted=to_duration_iso_format(temporal))
+            return computed_return_value
         computed_return_value = mgp_Record(formatted=temporal.isoformat())
         return computed_return_value
 

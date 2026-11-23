@@ -91,62 +91,33 @@ class StringTokenizer
 inline
 long StringTokenizer::CountTokens()
 {
-  long TokenCounter = 1;
+  const size_t n = TokenString.size();
+  const size_t dlen = DelimiterString.size();
 
-  long DelimiterPosition;
-  
-  long LastPosition;
-
-  long TokenStringLength = TokenString.size();
-  long DelimiterStringLength = DelimiterString.size();
-
-  string DelimiterSubString;
-
-  if(TokenStringLength == 0)
-  {
-    return(0);
+  if (n == 0) {
+    return 0;
+  }
+  if (dlen == 0) {
+    return 1;
   }
 
-  if(DelimiterStringLength == 0)
-  {
-    return(1);
+  long count = 0;
+  size_t pos = 0;
+  while (pos < n) {
+    while (pos + dlen <= n && TokenString.compare(pos, dlen, DelimiterString) == 0) {
+      pos += dlen;
+    }
+    if (pos >= n) {
+      break;
+    }
+    ++count;
+    size_t next_delim = TokenString.find(DelimiterString, pos);
+    if (next_delim == string::npos) {
+      break;
+    }
+    pos = next_delim + dlen;
   }
-
-  DelimiterPosition = 0;
-  LastPosition = 0;
-
-  while(1)
-  {
-    
-    DelimiterPosition = TokenString.find(DelimiterString, DelimiterPosition);
-
-    if(DelimiterPosition == 0)
-    { 
-      DelimiterPosition += DelimiterStringLength;
-
-      continue;
-    }
-
-    if((DelimiterPosition < 0) || (DelimiterPosition == TokenStringLength))
-    { 
-      return(TokenCounter);
-    }
-    
-    if(DelimiterStringLength != (DelimiterPosition - LastPosition))
-    {
-      //      cout<<"Delimiter Position = "<<DelimiterPosition<<endl;
-
-      TokenCounter++;
-    }
-
-    LastPosition = DelimiterPosition;
-    
-    DelimiterPosition += DelimiterStringLength;
-
-  }
-
-  return(TokenCounter);
-
+  return count;
 }
 
 // ***Public Function No. 2***
@@ -221,75 +192,48 @@ string StringTokenizer::GetLastToken()
 inline
 string StringTokenizer::GetNextToken()
 {
+  const size_t dlen = DelimiterString.size();
+
+  if (TokenString.empty())
+  {
+    return string();
+  }
+
+  if (dlen == 0)
+  {
+    string Token = TokenString;
+    TokenString.clear();
+    return Token;
+  }
+
+  while (TokenString.size() >= dlen && TokenString.compare(0, dlen, DelimiterString) == 0)
+  {
+    TokenString.erase(0, dlen);
+  }
+
+  if (TokenString.empty())
+  {
+    return string();
+  }
+
   string Token;
-  
-  long DelimiterPosition;
-  
-  long TokenStringLength = TokenString.size();
-  long DelimiterStringLength = DelimiterString.size();
-
-  string DelimiterSubString;
-
-  if((TokenStringLength == 0))
-  {
-    return(NULL);
-  }
-
-  if(DelimiterStringLength == 0)
-  {
-    return(InputString);
-  }
-  
-  DelimiterPosition = TokenString.find(DelimiterString);
-
-  if(DelimiterPosition == 0)
-  {
-    while(1)
-    {
-      if(TokenString.substr(0, DelimiterStringLength) == DelimiterString)
-      {
-	TokenString.erase(0, DelimiterStringLength);
-      }
-      else
-      {
-	break;
-      }
-    }
-
-    DelimiterPosition = TokenString.find(DelimiterString);
-  }
-    
-  if(DelimiterPosition < 0)
+  size_t next_delim = TokenString.find(DelimiterString);
+  if (next_delim == string::npos)
   {
     Token = TokenString;
-
-    TokenString.erase();
+    TokenString.clear();
   }
   else
   {
-
-    Token = TokenString.substr(0, DelimiterPosition);
-
-    TokenString.erase(0, DelimiterPosition+DelimiterStringLength);
-  
-
-    DelimiterPosition = 0;
-
-    while(1)
+    Token = TokenString.substr(0, next_delim);
+    TokenString.erase(0, next_delim + dlen);
+    while (TokenString.size() >= dlen && TokenString.compare(0, dlen, DelimiterString) == 0)
     {
-      if(TokenString.substr(0, DelimiterStringLength) == DelimiterString)
-      {
-	TokenString.erase(0, DelimiterStringLength);
-      }
-      else
-      {
-	break;
-      }
+      TokenString.erase(0, dlen);
     }
-    
   }
 
-  return(Token);
+  return Token;
 }  
 
 // ***Public Function No. 8***

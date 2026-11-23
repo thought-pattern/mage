@@ -35,6 +35,14 @@ on:
         type: boolean
         description: "Run tests"
         default: false
+      memgraph_ref:
+        type: string
+        description: "Memgraph submodule branch or tag to build query modules from; empty keeps the submodule commit pinned by checkout"
+        default: ''
+      memgraph_ref_update:
+        type: boolean
+        description: "Update Memgraph submodule when on a branch"
+        default: false
 
   workflow_dispatch:
     inputs:
@@ -64,6 +72,14 @@ on:
       run_tests:
         type: boolean
         description: "Run tests"
+        default: false
+      memgraph_ref:
+        type: string
+        description: "Memgraph submodule branch or tag to build query modules from; empty keeps the submodule commit pinned by checkout"
+        default: ''
+      memgraph_ref_update:
+        type: boolean
+        description: "Update Memgraph submodule when on a branch"
         default: false
 
 jobs:
@@ -128,6 +144,8 @@ jobs:
       cuda: ${{ matrix.cuda }}
       run_smoke_tests: ${{ inputs.run_smoke_tests }}
       ref: "${{ inputs.ref }}"
+      memgraph_ref: "${{ inputs.memgraph_ref }}"
+      memgraph_ref_update: ${{ inputs.memgraph_ref_update }}
       run_tests: ${{ inputs.run_tests }}
       generate_sbom: ${{ matrix.build_arch == 'amd64' && matrix.build_type == 'Release' && !matrix.malloc }}
     secrets: inherit

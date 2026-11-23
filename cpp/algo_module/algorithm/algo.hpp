@@ -27,12 +27,12 @@ class PathFinder {
   const mgp::Node start_node_;
   const mgp::Id end_node_id_;
   const int64_t max_length_;
-  bool any_incoming_;
-  bool any_outgoing_;
-  bool all_incoming_;
-  bool all_outgoing_;
+  bool any_incoming_{false};
+  bool any_outgoing_{false};
+  bool all_incoming_{false};
+  bool all_outgoing_{false};
 
-  std::unordered_map<std::string_view, RelDirection> rel_direction_;
+  std::unordered_map<std::string, RelDirection> rel_direction_;
   const mgp::RecordFactory &record_factory_;
 };
 
@@ -215,6 +215,9 @@ class Config {
       auto list = map.At("relationships_filter").ValueList();
       for (const auto value : list) {
         auto rel_type = std::string(value.ValueString());
+        if (rel_type.empty()) {
+          throw mgp::ValueException("Relationship filter entry must not be empty!");
+        }
         const size_t size = rel_type.size();
         const char first_elem = rel_type[0];
         const char last_elem = rel_type[size - 1];

@@ -99,7 +99,7 @@ void PersonalizedPagerankProc(mgp_list *args, mgp_graph *graph, mgp_result *resu
       old_to_new[renumber_map[i]] = static_cast<vertex_t>(i);
     }
 
-    // --- Prepare personalization seeds (support multiple seeds, skipping isolated nodes) ---
+    // --- Prepare personalization seeds ---
     std::vector<vertex_t> h_personalization_vertices;
     std::vector<result_t> h_personalization_values;
     h_personalization_vertices.reserve(n_seeds);
@@ -109,13 +109,10 @@ void PersonalizedPagerankProc(mgp_list *args, mgp_graph *graph, mgp_result *resu
       auto *v = mgp::value_get_vertex(mgp::list_at(l_personalization_vertices, i));
       auto memgraph_id = static_cast<vertex_t>(mgp::vertex_get_id(v).as_int);
 
-      // Map Memgraph ID -> old GraphView internal ID (pre-filter)
+      // Map Memgraph ID -> GraphView internal ID -> cuGraph contiguous ID
       auto old_internal = static_cast<vertex_t>(mg_graph->GetInnerNodeId(memgraph_id));
-
-      // Map old GraphView internal ID -> new cuGraph internal ID (post-filter/renumber)
       auto it = old_to_new.find(old_internal);
       if (it == old_to_new.end()) {
-        // Seed is isolated/filtered-out in cuGraph graph; skip it.
         continue;
       }
 
@@ -124,7 +121,6 @@ void PersonalizedPagerankProc(mgp_list *args, mgp_graph *graph, mgp_result *resu
       h_personalization_values.push_back(value);
     }
 
-    // If all seeds got skipped (e.g., they were isolated), return empty results
     if (h_personalization_vertices.empty()) return;
 
     // Copy personalization to device
@@ -197,17 +193,17 @@ extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *mem
     mgp::proc_add_result(proc, kResultFieldNode, mgp::type_node());
     mgp::proc_add_result(proc, kResultFieldPageRank, mgp::type_float());
   } catch (const std::exception &) {
-    mgp_value_destroy(default_max_iterations);
-    mgp_value_destroy(default_damping_factor);
-    mgp_value_destroy(default_stop_epsilon);
-    mgp_value_destroy(default_weight_property);
+    if (default_max_iterations) mgp_value_destroy(default_max_iterations);
+    if (default_damping_factor) mgp_value_destroy(default_damping_factor);
+    if (default_stop_epsilon) mgp_value_destroy(default_stop_epsilon);
+    if (default_weight_property) mgp_value_destroy(default_weight_property);
     return 1;
   }
 
-  mgp_value_destroy(default_max_iterations);
-  mgp_value_destroy(default_damping_factor);
-  mgp_value_destroy(default_stop_epsilon);
-  mgp_value_destroy(default_weight_property);
+  if (default_max_iterations) mgp_value_destroy(default_max_iterations);
+  if (default_damping_factor) mgp_value_destroy(default_damping_factor);
+  if (default_stop_epsilon) mgp_value_destroy(default_stop_epsilon);
+  if (default_weight_property) mgp_value_destroy(default_weight_property);
   return 0;
 }
 

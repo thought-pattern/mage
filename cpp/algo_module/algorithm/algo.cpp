@@ -9,6 +9,8 @@ Algo::PathFinder::PathFinder(const mgp::Node &start_node, const mgp::Node &end_n
 }
 
 void Algo::PathFinder::UpdateRelationshipDirection(const mgp::List &relationship_types) {
+  any_incoming_ = false;
+  any_outgoing_ = false;
   all_incoming_ = false;
   all_outgoing_ = false;
 
@@ -84,10 +86,10 @@ void Algo::PathFinder::DFS(const mgp::Node &curr_node, mgp::Path &curr_path, std
   }
 
   visited.insert(curr_node.Id().AsInt());
-  std::unordered_set<int64_t> seen;
+  std::unordered_map<std::string, std::unordered_set<int64_t>> seen_by_type;
 
-  auto iterate = [&visited, &seen, &curr_path, this](mgp::Relationships relationships, RelDirection direction,
-                                                     bool always_expand) {
+  auto iterate = [&visited, &seen_by_type, &curr_path, this](mgp::Relationships relationships, RelDirection direction,
+                                                             bool always_expand) {
     for (const auto relationship : relationships) {
       auto next_node_id =
           direction == RelDirection::kOutgoing ? relationship.To().Id().AsInt() : relationship.From().Id().AsInt();
@@ -104,12 +106,15 @@ void Algo::PathFinder::DFS(const mgp::Node &curr_node, mgp::Path &curr_path, std
         DFS(direction == RelDirection::kOutgoing ? relationship.To() : relationship.From(), curr_path, visited);
         curr_path.Pop();
       } else if (wanted_direction == RelDirection::kBoth) {
-        if (direction == RelDirection::kOutgoing && seen.contains(relationship.To().Id().AsInt())) {
-          curr_path.Expand(relationship);
-          DFS(relationship.To(), curr_path, visited);
-          curr_path.Pop();
+        if (direction == RelDirection::kOutgoing) {
+          const auto seen_it = seen_by_type.find(type);
+          if (seen_it != seen_by_type.end() && seen_it->second.contains(relationship.To().Id().AsInt())) {
+            curr_path.Expand(relationship);
+            DFS(relationship.To(), curr_path, visited);
+            curr_path.Pop();
+          }
         } else if (direction == RelDirection::kIncoming) {
-          seen.insert(relationship.From().Id().AsInt());
+          seen_by_type[type].insert(relationship.From().Id().AsInt());
         }
       }
     }
@@ -254,6 +259,7 @@ double Algo::GetHaversineDistance(double lat1, double lon1, double lat2, double 
   double dLat = lat2 - lat1;
   double dLon = lon2 - lon1;
   double a = sin(dLat / 2) * sin(dLat / 2) + cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
+  a = std::clamp(a, 0.0, 1.0);
   double c = 2 * atan2(sqrt(a), sqrt(1 - a));
   double distance = earthRadius * c;
 
@@ -281,7 +287,7 @@ double Algo::CalculateHeuristic(const Config &config, const mgp::Node &node, con
 
 std::pair<double, double> Algo::GetLatLon(const mgp::Node &target, const Config &config) {
   auto latitude = target.GetProperty(config.latitude_name);
-  auto longitude = target.GetProperty(config.latitude_name);
+  auto longitude = target.GetProperty(config.longitude_name);
   if (latitude.IsNull() || longitude.IsNull()) {
     throw mgp::ValueException(
         "Latitude and longitude properties, or a custom heuristic value, must be specified in every node!");
@@ -328,14 +334,19 @@ bool Algo::RelOk(const mgp::Relationship &rel, const Config &config,
 
 bool Algo::IsLabelOk(const mgp::Node &node, const Config &config) {
   bool whitelist_empty = config.whitelist.empty();
+  bool has_label = false;
 
   for (auto label : node.Labels()) {
+    has_label = true;
     if (config.blacklist.find(std::string(label)) != config.blacklist.end()) {
       return false;
     }
     if (!whitelist_empty && config.whitelist.find(std::string(label)) == config.whitelist.end()) {
       return false;
     }
+  }
+  if (!whitelist_empty && !has_label) {
+    return false;
   }
   return true;
 }
@@ -350,7 +361,7 @@ void Algo::ExpandRelationships(const std::shared_ptr<NodeObject> &prev, const Re
     if (!IsLabelOk(node, config)) {
       continue;
     }
-    auto heuristic = CalculateHeuristic(config, node, nodes) * config.epsilon;  // epsilon 0 == UCS
+    auto heuristic = (config.epsilon == 0.0) ? 0.0 : CalculateHeuristic(config, node, nodes) * config.epsilon;
     auto distance = CalculateDistance(config, rel);
     auto nb = std::make_shared<NodeObject>(heuristic, distance + prev->total_distance, node, rel, prev);
     if (!lists.closed.FindAndCompare(nb)) {
@@ -373,6 +384,10 @@ std::shared_ptr<Algo::NodeObject> Algo::InitializeStart(const mgp::Node &start) 
 }
 
 std::pair<mgp::Path, double> Algo::HelperAstar(const GoalNodes &nodes, const Config &config) {
+  if (nodes.start == nodes.target) {
+    return std::pair<mgp::Path, double>(mgp::Path(nodes.start), 0.0);
+  }
+
   TrackingLists lists = TrackingLists();
 
   auto start_nb = InitializeStart(nodes.start);
@@ -419,9 +434,10 @@ void Algo::AStar(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, 
     auto config_map = arguments[2].ValueMap();
     CheckConfigTypes(config_map);
     auto config = Config(config_map);
-    // if there is a custom heuristic, there is no need for target latitude and lognitude
-    auto nodes = config.heuristic_name == kDefaultHeuristic ? GoalNodes(start, target, GetLatLon(target, config))
-                                                            : GoalNodes(start, target);
+    // Uniform-cost search (epsilon == 0), start == target, or custom heuristic requires no target lat/lon lookup.
+    auto nodes = (start != target && config.epsilon != 0.0 && config.heuristic_name == kDefaultHeuristic)
+                     ? GoalNodes(start, target, GetLatLon(target, config))
+                     : GoalNodes(start, target);
     std::pair<mgp::Path, double> pair = HelperAstar(nodes, config);
     mgp::Path &path = pair.first;
     const double weight = pair.second;

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <mgp.hpp>
+#include <string>
+#include <string_view>
 
 namespace Math {
 
@@ -12,6 +14,7 @@ const std::string kArgumentPrecision = "precision";
 const std::string kArgumentMode = "mode";
 const std::string kArgumentResult = "result";
 
+RoundingMode StringToRoundingMode(std::string_view mode_str);
 RoundingMode StringToRoundingMode(const std::string &mode_str);
 
 void Round(mgp_list *args, mgp_func_context *ctx, mgp_func_result *res, mgp_memory *memory);

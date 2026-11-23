@@ -63,7 +63,7 @@ bool anti, incPrec;
 std::string name;
 
 
-static double nextSeed[6];
+static thread_local double nextSeed[6];
 
 
 double U01 ();

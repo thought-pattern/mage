@@ -11,7 +11,7 @@ from multiprocessing.connection import wait as mp_connection_wait
 from pickle import PicklingError
 
 from mage.graph_coloring_module.algorithms.algorithm import Algorithm, no_host_abort
-from mage.graph_coloring_module.components.chain_chunk import ChainChunk
+from mage.graph_coloring_module.components.chain_chunk import ChainChunk, split_chain_chunks
 from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.components.population import Population
 from mage.graph_coloring_module.exceptions import PopulationCreationException
@@ -57,8 +57,8 @@ class ParallelAlgorithm(Algorithm, ABC):
         error = param_value(graph, parameters, Parameter.ERROR)
         if not isinstance(no_of_processes, int) or isinstance(no_of_processes, bool) or no_of_processes < 1:
             raise ValueError("no_of_processes must be a positive integer")
-        if not isinstance(population_size, int) or isinstance(population_size, bool) or population_size < no_of_processes:
-            raise ValueError("population_size must be an integer at least as large as no_of_processes")
+        if not isinstance(population_size, int) or isinstance(population_size, bool) or population_size < 1:
+            raise ValueError("population_size must be a positive integer")
         if not isinstance(no_of_colors, int) or isinstance(no_of_colors, bool) or no_of_colors < 1:
             raise ValueError("no_of_colors must be a positive integer")
         if not isinstance(init_algorithms, list):
@@ -84,20 +84,8 @@ class ParallelAlgorithm(Algorithm, ABC):
                 raise PopulationCreationException("An initialization algorithm did not produce an Individual")
             individuals.append(individual)
         individuals.extend(Individual(no_of_colors, graph) for _ in range(population_size - len(individuals)))
-        chunk_size, remainder = divmod(population_size, no_of_processes)
-        chunks = [
-            list(individuals[pid * chunk_size + min(pid, remainder) : (pid + 1) * chunk_size + min(pid + 1, remainder)])
-            for pid in range(no_of_processes)
-        ]
-        populations = [
-            ChainChunk(
-                graph,
-                chunk,
-                chunks[pid - 1][-1],
-                chunks[(pid + 1) % no_of_processes][0],
-            )
-            for pid, chunk in enumerate(chunks)
-        ]
+        populations = split_chain_chunks(graph, individuals, no_of_processes)
+        active_processes = len(populations)
 
         initial_best_solutions = {
             pid: population.best_individual(individual_error_value) for pid, population in enumerate(populations)
@@ -118,13 +106,16 @@ class ParallelAlgorithm(Algorithm, ABC):
         except Exception as err:
             raise RuntimeError("Failed to create graph-coloring process coordination") from err
 
+        worker_parameters = dict(parameters)
+        worker_parameters[Parameter.NO_OF_PROCESSES] = active_processes
+
         with manager_context as manager:
             running_flag = mp_Value("i", 1)
             best_solutions = manager.dict(initial_best_solutions)
             last_individuals = manager.dict()
             first_individuals = manager.dict()
 
-            for pid in range(no_of_processes):
+            for pid in range(active_processes):
                 last_individuals[pid] = populations[pid][-1]
                 first_individuals[pid] = populations[pid][0]
 
@@ -139,10 +130,10 @@ class ParallelAlgorithm(Algorithm, ABC):
                         first_individuals,
                         last_individuals,
                         running_flag,
-                        parameters,
+                        worker_parameters,
                     ),
                 )
-                for pid in range(no_of_processes)
+                for pid in range(active_processes)
             ]
 
             started_processes = []

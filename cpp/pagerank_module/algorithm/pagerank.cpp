@@ -73,14 +73,18 @@ std::vector<std::uint64_t> CalculateOptimalBorders(const PageRankGraph &graph, c
 /// PageRank block
 void ThreadPageRankIteration(const PageRankGraph &graph, const std::vector<double> &old_rank, const std::uint64_t lo,
                              const std::uint64_t hi, std::promise<std::vector<double>> new_rank_promise) {
-  std::vector<double> new_rank(graph.GetNodeCount(), 0);
-  // Calculate sums of PR(page)/C(page) scores for the entire block (from lo to hi edges).
-  for (std::size_t edge_id = lo; edge_id < hi; edge_id++) {
-    const auto [source, target] = graph.GetOrderedEdges()[edge_id];
-    // Add the score of target node to the sum.
-    new_rank[source] += old_rank[target] / graph.GetOutDegree(target);
+  try {
+    std::vector<double> new_rank(graph.GetNodeCount(), 0);
+    // Calculate sums of PR(page)/C(page) scores for the entire block (from lo to hi edges).
+    for (std::size_t edge_id = lo; edge_id < hi; edge_id++) {
+      const auto [source, target] = graph.GetOrderedEdges()[edge_id];
+      // Add the score of target node to the sum.
+      new_rank[source] += old_rank[target] / graph.GetOutDegree(target);
+    }
+    new_rank_promise.set_value(std::move(new_rank));
+  } catch (...) {
+    new_rank_promise.set_exception(std::current_exception());
   }
-  new_rank_promise.set_value(std::move(new_rank));
 }
 
 /// Merging PageRank blocks from ThreadPageRankIteration.
@@ -142,7 +146,15 @@ bool CheckContinueIterate(const std::vector<double> &rank, const std::vector<dou
 ///
 /// @param rank -- PageRank
 void NormalizeRank(std::vector<double> &rank) {
+  if (rank.empty()) {
+    return;
+  }
   const double sum = std::accumulate(rank.begin(), rank.end(), 0.0);
+  if (sum <= 0.0) {
+    const double uniform = 1.0 / static_cast<double>(rank.size());
+    std::fill(rank.begin(), rank.end(), uniform);
+    return;
+  }
   for (double &value : rank) {
     value /= sum;
   }
@@ -180,16 +192,40 @@ std::uint64_t PageRankGraph::GetOutDegree(const std::uint64_t node_id) const { r
 
 std::vector<double> ParallelIterativePageRank(const PageRankGraph &graph, std::size_t max_iterations,
                                               double damping_factor, double stop_epsilon, uint32_t number_of_threads) {
-  number_of_threads = std::min(number_of_threads, std::thread::hardware_concurrency());
+  if (graph.GetNodeCount() == 0) {
+    return {};
+  }
+  const uint32_t hw_threads = std::max(1U, std::thread::hardware_concurrency());
+  number_of_threads = std::max(uint32_t{1}, std::min(number_of_threads, hw_threads));
 
   auto borders = CalculateOptimalBorders(graph, number_of_threads);
 
-  std::vector<double> rank(graph.GetNodeCount(), 1.0 / graph.GetNodeCount());
+  const double node_count_double = static_cast<double>(graph.GetNodeCount());
+  std::vector<double> rank(graph.GetNodeCount(), 1.0 / node_count_double);
   // Because we increment number_of_iterations at the end of while loop.
   bool continue_iterate = max_iterations != 0;
 
+  struct ThreadJoinGuard {
+    std::vector<std::thread> &threads;
+    ~ThreadJoinGuard() {
+      for (auto &t : threads) {
+        if (t.joinable()) {
+          t.join();
+        }
+      }
+    }
+  };
+
   std::size_t number_of_iterations = 0;
   while (continue_iterate) {
+    double dangling_sum = 0.0;
+    for (std::uint64_t node_id = 0; node_id < graph.GetNodeCount(); ++node_id) {
+      if (graph.GetOutDegree(node_id) == 0) {
+        dangling_sum += rank[node_id];
+      }
+    }
+    const double base_rank = ((1.0 - damping_factor) + damping_factor * dangling_sum) / node_count_double;
+
     std::vector<std::promise<std::vector<double>>> page_rank_promise(number_of_threads);
 
     std::vector<std::future<std::vector<double>>> page_rank_future;
@@ -200,24 +236,33 @@ std::vector<double> ParallelIterativePageRank(const PageRankGraph &graph, std::s
 
     std::vector<std::thread> my_threads;
     my_threads.reserve(number_of_threads);
-    for (std::size_t cluster_id = 0; cluster_id < number_of_threads; cluster_id++) {
-      my_threads.emplace_back([&, lo = borders[cluster_id], hi = borders[cluster_id + 1]](
-                                  auto promise) { ThreadPageRankIteration(graph, rank, lo, hi, std::move(promise)); },
-                              std::move(page_rank_promise[cluster_id]));
-    }
+    std::vector<double> rank_next(graph.GetNodeCount(), base_rank);
+    {
+      ThreadJoinGuard join_guard{my_threads};
+      for (std::size_t cluster_id = 0; cluster_id < number_of_threads; cluster_id++) {
+        my_threads.emplace_back([&, lo = borders[cluster_id], hi = borders[cluster_id + 1]](
+                                    auto promise) { ThreadPageRankIteration(graph, rank, lo, hi, std::move(promise)); },
+                                std::move(page_rank_promise[cluster_id]));
+      }
 
-    std::vector<double> rank_next(graph.GetNodeCount(), (1.0 - damping_factor) / graph.GetNodeCount());
-    for (std::size_t cluster_id = 0; cluster_id < number_of_threads; cluster_id++) {
-      std::vector<double> block = page_rank_future[cluster_id].get();
-      AddCurrentBlockToRankNext(graph, damping_factor, block, rank_next);
-    }
-    CompleteRankNext(graph, damping_factor, rank_next);
-
-    for (std::uint64_t i = 0; i < number_of_threads; i++) {
-      if (my_threads[i].joinable()) {
-        my_threads[i].join();
+      std::exception_ptr first_worker_error;
+      for (std::size_t cluster_id = 0; cluster_id < number_of_threads; cluster_id++) {
+        try {
+          std::vector<double> block = page_rank_future[cluster_id].get();
+          if (!first_worker_error) {
+            AddCurrentBlockToRankNext(graph, damping_factor, block, rank_next);
+          }
+        } catch (...) {
+          if (!first_worker_error) {
+            first_worker_error = std::current_exception();
+          }
+        }
+      }
+      if (first_worker_error) {
+        std::rethrow_exception(first_worker_error);
       }
     }
+    CompleteRankNext(graph, damping_factor, rank_next);
     rank.swap(rank_next);
     number_of_iterations++;
     continue_iterate = CheckContinueIterate(rank, rank_next, max_iterations, stop_epsilon, number_of_iterations);

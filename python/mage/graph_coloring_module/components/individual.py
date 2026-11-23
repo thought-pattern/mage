@@ -175,6 +175,8 @@ class Individual:
     ) -> tuple[float, list[int], set[int]]:
         diff = 0
         for neigh, weight in self.graph.weighted_neighbors(node):
+            if neigh == node:
+                continue
             if chromosome[node] == chromosome[neigh]:
                 if color != chromosome[neigh]:
                     diff -= weight

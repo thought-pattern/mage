@@ -33,10 +33,18 @@ use mockall_double::double;
 pub struct ResultRecord {
     ptr: *mut mgp_result_record,
     memgraph: Memgraph,
+    generation: u64,
 }
 
 impl ResultRecord {
     pub fn create(memgraph: &Memgraph) -> Result<ResultRecord> {
+        #[cfg(not(test))]
+        if memgraph.result_ptr().is_null() {
+            return Err(Error::UnableToCreateResultRecord);
+        }
+        let generation = memgraph
+            .next_record_generation()
+            .ok_or(Error::UnableToCreateResultRecord)?;
         unsafe {
             let mgp_ptr = invoke_mgp_func_with_res!(
                 *mut mgp_result_record,
@@ -47,11 +55,15 @@ impl ResultRecord {
             Ok(ResultRecord {
                 ptr: mgp_ptr,
                 memgraph: memgraph.clone(),
+                generation,
             })
         }
     }
 
     pub fn insert_mgp_value(&self, field: &CStr, value: &MgpValue) -> Result<()> {
+        if !self.memgraph.is_active_record_generation(self.generation) {
+            return Err(Error::InvalidResultRecord);
+        }
         unsafe {
             invoke_void_mgp_func_with_res!(
                 Error::UnableToInsertResultValue,
@@ -204,6 +216,9 @@ pub enum Error {
     #[snafu(display("Unable to register read procedure."))]
     UnableToRegisterReadProcedure,
 
+    #[snafu(display("Unable to register write procedure."))]
+    UnableToRegisterWriteProcedure,
+
     #[snafu(display("Unable to add required arguments."))]
     UnableToAddRequiredArguments,
 
@@ -212,6 +227,9 @@ pub enum Error {
 
     #[snafu(display("Unable to add return type."))]
     UnableToAddReturnType,
+
+    #[snafu(display("Unable to add deprecated return type."))]
+    UnableToAddDeprecatedReturnType,
 
     // PATH
     #[snafu(display("Unable to copy path."))]
@@ -237,6 +255,12 @@ pub enum Error {
 
     #[snafu(display("Unable to insert result record."))]
     UnableToInsertResultValue,
+
+    #[snafu(display("Unable to insert into invalidated result record."))]
+    InvalidResultRecord,
+
+    #[snafu(display("Unable to pass error message to the Memgraph engine."))]
+    UnableToSetErrorMessage,
 
     // VALUE
     #[snafu(display("Unable to create new CString."))]
@@ -286,6 +310,9 @@ pub enum Error {
 
     #[snafu(display("Unable to make duration value."))]
     UnableToMakeDurationValue,
+
+    #[snafu(display("Unsupported Memgraph value type."))]
+    UnsupportedValueType,
 
     // VERTEX
     #[snafu(display("Unable to copy vertex."))]

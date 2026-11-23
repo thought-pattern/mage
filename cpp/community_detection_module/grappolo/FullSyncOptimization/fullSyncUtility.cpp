@@ -23,12 +23,11 @@ double buildAndLockLocalMapCounter(long v, mapElement* clusterLocalMap, long* vt
 	std::sort(&vtxInd[adj1],&vtxInd[adj2],byVertexId);
 
 	/*********** Calculate eii ***************/
-	// Lock all neighbors to make sure no move is performed // This Lock is to protect Data: Allow to have error
+	// Lock each distinct neighbor vertex once in sorted tail order
 	for(long j=adj1; j<adj2; j++){
-   // long nn = adj2-adj1;
-   // long fracFree = (nn*freedom/10);
-   // if( rand()%nn >= fracFree)
-  		omp_set_lock(&vlocks[vtxInd[j].tail]);
+		if (j == adj1 || vtxInd[j].tail != vtxInd[j - 1].tail) {
+			omp_set_lock(&vlocks[vtxInd[j].tail]);
+		}
 	}
 	
 
@@ -129,9 +128,11 @@ void maxAndFree(long v, mapElement* clusterLocalMap, long* vtxPtr, edge* vtxInd,
 	long adj1  = vtxPtr[v];
 	long adj2  = vtxPtr[v+1];
 	/*********** Calculate eii ***************/
-	// unLock all neighbors vertex
+	// unLock each distinct neighbor vertex once
 	for(long j=adj1; j<adj2; j++){
-		omp_unset_lock(&vlocks[vtxInd[j].tail]);
+		if (j == adj1 || vtxInd[j].tail != vtxInd[j - 1].tail) {
+			omp_unset_lock(&vlocks[vtxInd[j].tail]);
+		}
 	}
 
 

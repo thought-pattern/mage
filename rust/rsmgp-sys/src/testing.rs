@@ -90,6 +90,11 @@ pub mod alloc {
             $rs_test_func(&memgraph);
         };
 
+        (MemgraphModule, $rs_test_func:expr) => {
+            let memgraph = crate::memgraph::MemgraphModule::new_default();
+            $rs_test_func(&memgraph);
+        };
+
         (List, $rs_test_func:expr) => {
             let memgraph = Memgraph::new_default();
             let list = List::new(std::ptr::null_mut(), &memgraph);

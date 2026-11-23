@@ -102,7 +102,7 @@ fn test_add_read_procedure() {
         .times(12)
         .returning(|_, _, _| mgp_error::MGP_ERROR_NO_ERROR);
 
-    with_dummy!(|memgraph: &Memgraph| {
+    with_dummy!(MemgraphModule, |memgraph: &MemgraphModule| {
         assert!(memgraph
             .add_read_procedure(
                 dummy_c_func,

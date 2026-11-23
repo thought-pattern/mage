@@ -14,6 +14,7 @@
 //! All related to the map (dictionary) datatype.
 
 use std::ffi::{CStr, CString};
+use std::marker::PhantomData;
 
 use crate::memgraph::*;
 use crate::mgp::*;
@@ -39,29 +40,34 @@ impl Drop for Map {
     }
 }
 
-/// [MapItem] has public fields because they are user facing object + they are easier to access.
+/// [MapItem] has public fields because they are easier to access in procedure modules.
 pub struct MapItem {
     pub key: CString,
     pub value: Value,
 }
 
-pub struct MapIterator {
+pub struct MapIterator<'a> {
     ptr: *mut mgp_map_items_iterator,
     is_first: bool,
     memgraph: Memgraph,
+    _marker: PhantomData<&'a Map>,
 }
 
-impl MapIterator {
-    pub(crate) fn new(ptr: *mut mgp_map_items_iterator, memgraph: &Memgraph) -> MapIterator {
+impl<'a> MapIterator<'a> {
+    pub(crate) fn new(
+        ptr: *mut mgp_map_items_iterator,
+        memgraph: &Memgraph,
+    ) -> MapIterator<'a> {
         MapIterator {
             ptr,
             is_first: true,
             memgraph: memgraph.clone(),
+            _marker: PhantomData,
         }
     }
 }
 
-impl Drop for MapIterator {
+impl<'a> Drop for MapIterator<'a> {
     fn drop(&mut self) {
         unsafe {
             if !self.ptr.is_null() {
@@ -71,7 +77,7 @@ impl Drop for MapIterator {
     }
 }
 
-impl Iterator for MapIterator {
+impl<'a> Iterator for MapIterator<'a> {
     type Item = MapItem;
 
     fn next(&mut self) -> Option<MapItem> {
@@ -139,7 +145,7 @@ impl Map {
                 ffi::mgp_map_make_empty,
                 memgraph.memory_ptr()
             )?,
-            &memgraph,
+            memgraph,
         );
         let map_iterator = MapIterator::new(
             invoke_mgp_func_with_res!(
@@ -149,10 +155,10 @@ impl Map {
                 ptr,
                 memgraph.memory_ptr()
             )?,
-            &memgraph,
+            memgraph,
         );
         for item in map_iterator {
-            let mgp_value = item.value.to_mgp_value(&memgraph)?;
+            let mgp_value = item.value.to_mgp_value(memgraph)?;
             invoke_void_mgp_func_with_res!(
                 Error::UnableToCopyMap,
                 ffi::mgp_map_insert,
@@ -164,16 +170,17 @@ impl Map {
         Ok(mgp_map_copy)
     }
 
-    pub fn make_empty(memgraph: &Memgraph) -> Result<Map> {
+    pub fn make_empty<M: MemgraphMemory + ?Sized>(memgraph: &M) -> Result<Map> {
+        let mg = memgraph.sealed_as_memgraph(MemorySeal(()));
         unsafe {
             Ok(Map::new(
                 invoke_mgp_func_with_res!(
                     *mut mgp_map,
                     Error::UnableToCreateEmptyMap,
                     ffi::mgp_map_make_empty,
-                    memgraph.memory_ptr()
+                    mg.memory_ptr()
                 )?,
-                &memgraph,
+                &mg,
             ))
         }
     }
@@ -193,8 +200,8 @@ impl Map {
         }
     }
 
-    pub fn size(&self) -> u64 {
-        unsafe { invoke_mgp_func!(u64, ffi::mgp_map_size, self.ptr).unwrap() }
+    pub fn size(&self) -> usize {
+        unsafe { invoke_mgp_func!(usize, ffi::mgp_map_size, self.ptr).unwrap() }
     }
 
     pub fn at(&self, key: &CStr) -> Result<Value> {
@@ -214,7 +221,7 @@ impl Map {
         }
     }
 
-    pub fn iter(&self) -> Result<MapIterator> {
+    pub fn iter(&self) -> Result<MapIterator<'_>> {
         unsafe {
             let mgp_iterator = invoke_mgp_func_with_res!(
                 *mut mgp_map_items_iterator,

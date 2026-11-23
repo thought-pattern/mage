@@ -57,6 +57,7 @@ class SchemaGenerator(object):
             labels = tuple(sorted(label.name for label in node.labels))
 
             for label in labels:
+                self.all_node_properties_dict.setdefault(label, [])
                 self.update_properties_dict(node, self.all_node_properties_dict, label)
 
             for relationship in node.out_edges:
@@ -96,12 +97,18 @@ class SchemaGenerator(object):
     def get_prompt_ready_schema(self) -> str:
         prompt_ready_schema = "Node properties are the following:\n"
         for label, node_properties in self.all_node_properties_dict.items():
-            properties = sorted(node_properties, key=lambda prop: prop.get(Parameter.PROPERTY.value, ""))
+            properties = sorted(
+                node_properties,
+                key=lambda prop: (prop.get(Parameter.PROPERTY.value, ""), prop.get(Parameter.TYPE.value, "")),
+            )
             prompt_ready_schema += f"Node name: '{label}', Node properties: {properties}\n"
 
         prompt_ready_schema += "\nRelationship properties are the following:\n"
         for rel, relationship_properties in self.all_relationship_properties_dict.items():
-            properties = sorted(relationship_properties, key=lambda prop: prop.get(Parameter.PROPERTY.value, ""))
+            properties = sorted(
+                relationship_properties,
+                key=lambda prop: (prop.get(Parameter.PROPERTY.value, ""), prop.get(Parameter.TYPE.value, "")),
+            )
             prompt_ready_schema += f"Relationship name: '{rel}', Relationship properties: {properties}\n"
 
         prompt_ready_schema += "\nThe relationships are the following:\n"
@@ -125,14 +132,9 @@ class SchemaGenerator(object):
                 Parameter.PROPERTY.value: property_name,
                 Parameter.TYPE.value: type(property_value).__name__,
             }
-            if not all_properties_dict.get(key, []):
-                all_properties_dict[key] = [property_record]
-                continue
-
-            if property_name in [d.get(Parameter.PROPERTY.value, "") for d in all_properties_dict.get(key, [])]:
-                continue
-
-            all_properties_dict.get(key, []).append(property_record)
+            existing = all_properties_dict.setdefault(key, [])
+            if property_record not in existing:
+                existing.append(property_record)
         return False
 
 

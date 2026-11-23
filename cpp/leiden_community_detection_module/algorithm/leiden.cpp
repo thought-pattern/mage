@@ -1,13 +1,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <deque>
 #include <future>
+#include <map>
 #include <memory>
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <deque>
 
 #include "data_structures/graph_view.hpp"
 #include "leiden.hpp"
@@ -359,37 +360,37 @@ std::pair<Partitions, Graph> AggregateGraph(const Partitions &refined_partitions
   auto future = std::async(std::launch::async, CreateIntermediaryCommunities, std::ref(intermediary_communities),
                            std::ref(remapped_communities), current_level);
 
-  std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>>
-      edge_exists;  // keep track of already added edges
+  std::map<std::pair<std::uint64_t, std::uint64_t>, double> combined_edge_weights;
 
   // now we now that max size of the new adjacency list is new_community_id because communities become nodes
   aggregated_graph.adjacency_list.resize(new_community_id);
   aggregated_graph.node_weights.resize(new_community_id, 0.0);
 
-  // create new adjacency list -> if there is an edge between two communities, add it to the new adjacency list
+  // sum weights of all undirected edges crossing between distinct communities
   for (std::uint64_t i = 0; i < graph.adjacency_list.size(); i++) {
     const auto community_id = refined_partitions.GetCommunityForNode(i);
     const auto new_community_id = old_community_to_new_community[community_id];
     for (const auto &[neighbor_id, weight] : graph.adjacency_list[i]) {
+      if (i >= neighbor_id) {
+        continue;
+      }
       const auto neighbor_community_id = refined_partitions.GetCommunityForNode(neighbor_id);
       const auto new_neighbor_community_id = old_community_to_new_community[neighbor_community_id];
 
       if (new_community_id == new_neighbor_community_id)
         continue;  // if the nodes are in the same community, we don't need to add the edge
-      // first check if the edge already exists
-      auto edge_exists_iter = edge_exists.find(new_community_id);
-      if (edge_exists_iter != edge_exists.end() &&
-          edge_exists_iter->second.find(new_neighbor_community_id) != edge_exists_iter->second.end())
-        continue;  // edge already exists
 
-      // add edge to the adjacency list, update node weights and add the edge to the edge_exists
-      edge_exists[new_community_id].insert(new_neighbor_community_id);
-      edge_exists[new_neighbor_community_id].insert(new_community_id);
-      aggregated_graph.AddEdge(new_community_id, new_neighbor_community_id, weight);
-      aggregated_graph.AddEdge(new_neighbor_community_id, new_community_id, weight);
-      aggregated_graph.UpdateNodeWeight(new_community_id, weight);
-      aggregated_graph.UpdateNodeWeight(new_neighbor_community_id, weight);
+      const auto endpoints = std::minmax(new_community_id, new_neighbor_community_id);
+      combined_edge_weights[endpoints] += weight;
     }
+  }
+
+  for (const auto &[endpoints, total_weight] : combined_edge_weights) {
+    const auto [u_comm, v_comm] = endpoints;
+    aggregated_graph.AddEdge(u_comm, v_comm, total_weight);
+    aggregated_graph.AddEdge(v_comm, u_comm, total_weight);
+    aggregated_graph.UpdateNodeWeight(u_comm, total_weight);
+    aggregated_graph.UpdateNodeWeight(v_comm, total_weight);
   }
 
   new_community_id = 0;
@@ -460,7 +461,7 @@ bool AllSingletonCommunities(const Partitions &partitions) {
 ///
 Dendrogram Leiden(const mg_graph::GraphView<> &memgraph_graph, double gamma, double theta, double resolution_parameter,
                   std::uint64_t max_iterations) {
-  if (memgraph_graph.Nodes().empty() || memgraph_graph.Edges().empty()) {
+  if (memgraph_graph.Nodes().empty()) {
     return {};
   }
 
@@ -469,40 +470,46 @@ Dendrogram Leiden(const mg_graph::GraphView<> &memgraph_graph, double gamma, dou
   Dendrogram intermediary_communities;  // level -> community_ids
   intermediary_communities.emplace_back();
   intermediary_communities[0].reserve(memgraph_graph.Nodes().size());
-  std::uint64_t level = 0;
-  double sum_of_weights = 0.0;
-  boost::unordered_map<std::pair<std::uint64_t, std::uint64_t>, bool> edge_exists;
-  edge_exists.reserve(memgraph_graph.Edges().size());
-
-  for (const auto &[id, from, to] : memgraph_graph.Edges()) {
-    const auto edge_weight = memgraph_graph.IsWeighted() ? memgraph_graph.GetWeight(id)
-                                                         : 1.0;  // Make it positive and cast to Double, fixed to 1.0
-    // always add the edge, because the algorithm works on undirected graphs
-
-    if (edge_exists.find(std::make_pair(from, to)) != edge_exists.end() ||
-        edge_exists.find(std::make_pair(to, from)) != edge_exists.end()) {
-      continue;
-    }
-
-    graph.AddEdge(from, to, edge_weight);
-    graph.AddEdge(to, from, edge_weight);
-    graph.UpdateNodeWeight(from, edge_weight);
-    graph.UpdateNodeWeight(to, edge_weight);
-    edge_exists[std::make_pair(to, from)] = true;
-    sum_of_weights += edge_weight;
-  }
-  edge_exists.clear();
-  bool any_isolated_nodes = memgraph_graph.Nodes().size() != graph.Size();
-
-  // initialize partitions and leafs of the dendrogram
-  partitions = CreateSingletonPartition(graph);
-  intermediary_communities[0].reserve(memgraph_graph.Nodes().size());
   for (std::uint64_t i = 0; i < memgraph_graph.Nodes().size(); i++) {
     intermediary_communities[0].push_back(
         std::make_shared<IntermediaryCommunityId>(IntermediaryCommunityId{i, 0, nullptr}));
   }
 
-  gamma /= sum_of_weights;
+  if (memgraph_graph.Edges().empty()) {
+    return intermediary_communities;
+  }
+
+  std::uint64_t level = 0;
+  double sum_of_weights = 0.0;
+  std::map<std::pair<std::uint64_t, std::uint64_t>, double> initial_edge_weights;
+
+  for (const auto &[id, from, to] : memgraph_graph.Edges()) {
+    const auto edge_weight = memgraph_graph.IsWeighted() ? memgraph_graph.GetWeight(id) : 1.0;
+    const auto endpoints = std::minmax(from, to);
+    initial_edge_weights[endpoints] += edge_weight;
+    sum_of_weights += edge_weight;
+  }
+
+  for (const auto &[endpoints, total_weight] : initial_edge_weights) {
+    const auto [u, v] = endpoints;
+    graph.AddEdge(u, v, total_weight);
+    if (u != v) {
+      graph.AddEdge(v, u, total_weight);
+      graph.UpdateNodeWeight(u, total_weight);
+      graph.UpdateNodeWeight(v, total_weight);
+    } else {
+      graph.UpdateNodeWeight(u, total_weight);
+    }
+  }
+  initial_edge_weights.clear();
+  bool any_isolated_nodes = memgraph_graph.Nodes().size() != graph.Size();
+
+  // initialize partitions
+  partitions = CreateSingletonPartition(graph);
+
+  if (sum_of_weights > 0.0) {
+    gamma /= sum_of_weights;
+  }
   bool done = false;
   std::uint64_t number_of_iterations = 0;
   while (!done) {
@@ -557,7 +564,7 @@ std::vector<std::vector<std::uint64_t>> GetCommunities(const mg_graph::GraphView
       }
 
       if (community_ids.empty()) {
-        throw std::runtime_error("No communities detected.");
+        community_ids.push_back(node->community_id);
       }
       node_and_community_hierarchy.emplace_back(std::move(community_ids));
     }

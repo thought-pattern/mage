@@ -13,8 +13,8 @@ constexpr char const *kFieldNode = "node";
 constexpr char const *kFieldRank = "rank";
 
 void InsertKatzRecord(mgp_graph *graph, mgp_result *result, mgp_memory *memory, const double katz_centrality,
-                      const int node_id) {
-  auto *node = mg_utility::GetNodeForInsertion(node_id, graph, memory);
+                      const std::uint64_t node_id) {
+  auto *node = mg_utility::GetNodeForInsertion(static_cast<std::int64_t>(node_id), graph, memory);
   if (!node) return;
 
   auto *record = mgp::result_new_record(result);
@@ -47,19 +47,18 @@ extern "C" int mgp_init_module(mgp_module *module, mgp_memory *memory) {
   try {
     // Static Katz centrality
     {
-      auto default_alpha = mgp::value_make_double(0.2, memory);
-      auto default_epsilon = mgp::value_make_double(1e-2, memory);
+      std::unique_ptr<mgp_value, void (*)(mgp_value *)> default_alpha(mgp::value_make_double(0.2, memory),
+                                                                      mgp::value_destroy);
+      std::unique_ptr<mgp_value, void (*)(mgp_value *)> default_epsilon(mgp::value_make_double(1e-2, memory),
+                                                                        mgp::value_destroy);
 
       auto *proc = mgp::module_add_read_procedure(module, kProcedureGet, GetKatzCentrality);
 
-      mgp::proc_add_opt_arg(proc, kArgumentAlpha, mgp::type_float(), default_alpha);
-      mgp::proc_add_opt_arg(proc, kArgumentEpsilon, mgp::type_float(), default_epsilon);
+      mgp::proc_add_opt_arg(proc, kArgumentAlpha, mgp::type_float(), default_alpha.get());
+      mgp::proc_add_opt_arg(proc, kArgumentEpsilon, mgp::type_float(), default_epsilon.get());
 
       mgp::proc_add_result(proc, kFieldNode, mgp::type_node());
       mgp::proc_add_result(proc, kFieldRank, mgp::type_float());
-
-      mgp::value_destroy(default_alpha);
-      mgp::value_destroy(default_alpha);
     }
   } catch (const std::exception &e) {
     return 1;

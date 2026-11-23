@@ -160,5 +160,10 @@ int vBaseRedistribution(graph* G, int* vtxColor, int ncolors, int type)
 
 	//Sanity check;
 	distanceOneChecked(G,NVer,vtxColor);
+	free(randValues);
+	free(Q);
+	free(Qtmp);
+	free(baseColors);
+	return 0;
 }
 

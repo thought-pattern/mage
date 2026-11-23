@@ -5,8 +5,10 @@
 // this file except in compliance with the License. You may obtain a copy of the License at https://memgraph.com/legal.
 
 #include <algorithm>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #include <mg_generate.hpp>
 #include <mg_graph.hpp>
@@ -32,7 +34,26 @@ constexpr char const *kFieldNode = "node";
 constexpr char const *kFieldBCScore = "betweenness_centrality";
 constexpr char const *kFieldMessage = "message";
 
-auto algorithm = online_bc::OnlineBC();
+std::mutex algorithms_mutex;
+std::unordered_map<std::string, online_bc::OnlineBC> algorithms_by_db;
+
+std::string ResolveDatabaseKey(mgp_graph *graph, mgp_memory *memory) {
+  mgp_value *uuid_val = nullptr;
+  if (mgp_graph_get_database_uuid(graph, memory, &uuid_val) != mgp_error::MGP_ERROR_NO_ERROR || uuid_val == nullptr) {
+    throw std::runtime_error("Failed to determine database UUID for online betweenness centrality.");
+  }
+  std::unique_ptr<mgp_value, void (*)(mgp_value *)> guard(uuid_val, mgp::value_destroy);
+  const auto *str = mgp::value_get_string(uuid_val);
+  return std::string(str != nullptr ? str : "");
+}
+
+std::int64_t NormalizeThreads(std::int64_t requested) {
+  const auto hw = static_cast<std::int64_t>(std::max(1U, std::thread::hardware_concurrency()));
+  if (requested <= 0) {
+    return hw;
+  }
+  return std::min(requested, hw);
+}
 
 ///@brief Tests if given node is connected to the rest of the graph via given edge.
 bool ConnectedVia(std::uint64_t node_id, std::pair<std::uint64_t, std::uint64_t> edge) {
@@ -67,12 +88,15 @@ void Set(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_memo
     }
 
     const auto normalize = mgp::value_get_bool(mgp::list_at(args, 0));
-    auto threads = mgp::value_get_int(mgp::list_at(args, 1));
-
-    if (threads <= 0) threads = std::thread::hardware_concurrency();
+    const auto threads = static_cast<std::uint64_t>(NormalizeThreads(mgp::value_get_int(mgp::list_at(args, 1))));
+    const auto db_key = ResolveDatabaseKey(memgraph_graph, memory);
 
     auto graph = mg_utility::GetGraphView(memgraph_graph, result, memory, mg_graph::GraphType::kUndirectedGraph);
-    const auto node_bc_scores = algorithm.Set(*graph, normalize, threads);
+    std::unordered_map<uint64_t, double> node_bc_scores;
+    {
+      const std::lock_guard<std::mutex> lock(algorithms_mutex);
+      node_bc_scores = algorithms_by_db[db_key].Set(*graph, normalize, threads);
+    }
 
     for (const auto [node_id, bc_score] : node_bc_scores) {
       InsertOnlineBCRecord(memgraph_graph, result, memory, node_id, bc_score);
@@ -91,14 +115,19 @@ void Get(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_memo
       return;
     }
     const auto normalize = mgp::value_get_bool(mgp::list_at(args, 0));
+    const auto db_key = ResolveDatabaseKey(memgraph_graph, memory);
 
     auto graph = mg_utility::GetGraphView(memgraph_graph, result, memory, mg_graph::GraphType::kUndirectedGraph);
 
     std::unordered_map<uint64_t, double> node_bc_scores;
-    if (!algorithm.Initialized())
-      node_bc_scores = algorithm.Set(*graph, normalize);
-    else
-      node_bc_scores = algorithm.Get(*graph, normalize);
+    {
+      const std::lock_guard<std::mutex> lock(algorithms_mutex);
+      auto &algorithm = algorithms_by_db[db_key];
+      if (!algorithm.Initialized())
+        node_bc_scores = algorithm.Set(*graph, normalize);
+      else
+        node_bc_scores = algorithm.Get(*graph, normalize);
+    }
 
     for (const auto [node_id, bc_score] : node_bc_scores) {
       InsertOnlineBCRecord(memgraph_graph, result, memory, node_id, bc_score);
@@ -117,76 +146,93 @@ void Update(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_m
       return;
     }
     const auto normalize = mgp::value_get_bool(mgp::list_at(args, 4));
-    const auto threads = mgp::value_get_int(mgp::list_at(args, 5));
+    const auto threads = static_cast<std::uint64_t>(NormalizeThreads(mgp::value_get_int(mgp::list_at(args, 5))));
+    const auto db_key = ResolveDatabaseKey(memgraph_graph, memory);
 
     auto graph = mg_utility::GetGraphView(memgraph_graph, result, memory, mg_graph::GraphType::kUndirectedGraph);
     std::unordered_map<uint64_t, double> node_bc_scores;
 
-    if (!algorithm.Initialized()) {
-      node_bc_scores = algorithm.Set(*graph, normalize, threads);
-    } else {
-      std::vector<std::uint64_t> graph_nodes_ids;
-      for (const auto [node_id] : graph->Nodes()) {
-        graph_nodes_ids.push_back(graph->GetMemgraphNodeId(node_id));
-      }
-
-      const auto created_nodes = mg_utility::GetNodeIDs(mgp::value_get_list(mgp::list_at(args, 0)));
-      const auto created_edges = mg_utility::GetEdgeEndpointIDs(mgp::value_get_list(mgp::list_at(args, 1)));
-      const auto deleted_nodes = mg_utility::GetNodeIDs(mgp::value_get_list(mgp::list_at(args, 2)));
-      const auto deleted_edges = mg_utility::GetEdgeEndpointIDs(mgp::value_get_list(mgp::list_at(args, 3)));
-
-      // Check if online update can be used
-      if (created_nodes.size() == 0 && deleted_nodes.size() == 0) {  // Edge update
-        // Get edges as before the update
-        std::vector<std::pair<std::uint64_t, std::uint64_t>> prior_edges_ids;
-        for (const auto edge_inner_ids : graph->Edges()) {
-          const std::pair<std::uint64_t, std::uint64_t> edge{graph->GetMemgraphNodeId(edge_inner_ids.from),
-                                                             graph->GetMemgraphNodeId(edge_inner_ids.to)};
-          // Newly created edges aren’t part of the prior graph
-          if (std::find(created_edges.begin(), created_edges.end(), edge) == created_edges.end())
-            prior_edges_ids.push_back(edge);
-        }
-        for (const auto deleted_edge : deleted_edges) {
-          prior_edges_ids.push_back(deleted_edge);
-        }
-
-        auto prior_graph =
-            mg_generate::BuildGraph(graph_nodes_ids, prior_edges_ids, mg_graph::GraphType::kUndirectedGraph);
-
-        node_bc_scores = algorithm.Get(*prior_graph, normalize);
-
-        for (const auto created_edge : created_edges) {
-          prior_edges_ids.push_back(created_edge);
-          graph = mg_generate::BuildGraph(graph_nodes_ids, prior_edges_ids, mg_graph::GraphType::kUndirectedGraph);
-          node_bc_scores = algorithm.EdgeUpdate(*prior_graph, *graph, online_bc::Operation::CREATE_EDGE, created_edge,
-                                                normalize, threads);
-          prior_graph = std::move(graph);
-        }
-        for (const auto deleted_edge : deleted_edges) {
-          prior_edges_ids.erase(std::remove(prior_edges_ids.begin(), prior_edges_ids.end(), deleted_edge),
-                                prior_edges_ids.end());
-          graph = mg_generate::BuildGraph(graph_nodes_ids, prior_edges_ids, mg_graph::GraphType::kUndirectedGraph);
-          node_bc_scores = algorithm.EdgeUpdate(*prior_graph, *graph, online_bc::Operation::DELETE_EDGE, deleted_edge,
-                                                normalize, threads);
-          prior_graph = std::move(graph);
-        }
-      } else if (created_edges.size() == 0 && deleted_edges.size() == 0) {  // Node update
-        for (const auto created_node_id : created_nodes) {
-          algorithm.NodeUpdate(online_bc::Operation::CREATE_NODE, created_node_id, normalize);
-        }
-        for (const auto deleted_node_id : deleted_nodes) {
-          algorithm.NodeUpdate(online_bc::Operation::DELETE_NODE, deleted_node_id, normalize);
-        }
-      } else if (created_nodes.size() == 1 && created_edges.size() == 1 &&
-                 ConnectedVia(created_nodes[0], created_edges[0])) {  // Create-and-attach-node update
-        algorithm.NodeEdgeUpdate(*graph, online_bc::Operation::CREATE_ATTACH_NODE, created_nodes[0], created_edges[0],
-                                 normalize);
-      } else if (deleted_nodes.size() == 1 && deleted_edges.size() == 1 &&
-                 ConnectedVia(deleted_nodes[0], deleted_edges[0])) {  // Detach-and-delete-node update
-        algorithm.NodeEdgeUpdate(*graph, online_bc::Operation::DETACH_DELETE_NODE, deleted_nodes[0], deleted_edges[0],
-                                 normalize);
-      } else {  // Default to offline update
+    {
+      const std::lock_guard<std::mutex> lock(algorithms_mutex);
+      auto &algorithm = algorithms_by_db[db_key];
+      if (!algorithm.Initialized()) {
         node_bc_scores = algorithm.Set(*graph, normalize, threads);
+      } else {
+        std::vector<std::uint64_t> graph_nodes_ids;
+        for (const auto [node_id] : graph->Nodes()) {
+          graph_nodes_ids.push_back(graph->GetMemgraphNodeId(node_id));
+        }
+
+        const auto created_nodes = mg_utility::GetNodeIDs(mgp::value_get_list(mgp::list_at(args, 0)));
+        const auto created_edges = mg_utility::GetEdgeEndpointIDs(mgp::value_get_list(mgp::list_at(args, 1)));
+        const auto deleted_nodes = mg_utility::GetNodeIDs(mgp::value_get_list(mgp::list_at(args, 2)));
+        const auto deleted_edges = mg_utility::GetEdgeEndpointIDs(mgp::value_get_list(mgp::list_at(args, 3)));
+
+        // Check if online update can be used
+        if (created_nodes.size() == 0 && deleted_nodes.size() == 0) {  // Edge update
+          auto same_undirected_edge = [](const std::pair<std::uint64_t, std::uint64_t> &lhs,
+                                         const std::pair<std::uint64_t, std::uint64_t> &rhs) {
+            return std::minmax(lhs.first, lhs.second) == std::minmax(rhs.first, rhs.second);
+          };
+          // Get edges as before the update
+          std::vector<std::pair<std::uint64_t, std::uint64_t>> prior_edges_ids;
+          for (const auto edge_inner_ids : graph->Edges()) {
+            const std::pair<std::uint64_t, std::uint64_t> edge{graph->GetMemgraphNodeId(edge_inner_ids.from),
+                                                               graph->GetMemgraphNodeId(edge_inner_ids.to)};
+            // Newly created edges aren’t part of the prior graph
+            if (std::find_if(created_edges.begin(), created_edges.end(),
+                             [&](const auto &ce) { return same_undirected_edge(ce, edge); }) == created_edges.end())
+              prior_edges_ids.push_back(edge);
+          }
+          for (const auto deleted_edge : deleted_edges) {
+            prior_edges_ids.push_back(deleted_edge);
+          }
+
+          auto prior_graph =
+              mg_generate::BuildGraph(graph_nodes_ids, prior_edges_ids, mg_graph::GraphType::kUndirectedGraph);
+
+          node_bc_scores = algorithm.Get(*prior_graph, normalize);
+
+          for (const auto created_edge : created_edges) {
+            prior_edges_ids.push_back(created_edge);
+            graph = mg_generate::BuildGraph(graph_nodes_ids, prior_edges_ids, mg_graph::GraphType::kUndirectedGraph);
+            node_bc_scores = algorithm.EdgeUpdate(*prior_graph, *graph, online_bc::Operation::CREATE_EDGE, created_edge,
+                                                  normalize, threads);
+            prior_graph = std::move(graph);
+          }
+          for (const auto deleted_edge : deleted_edges) {
+            prior_edges_ids.erase(std::remove_if(prior_edges_ids.begin(), prior_edges_ids.end(),
+                                                 [&](const auto &pe) { return same_undirected_edge(pe, deleted_edge); }),
+                                  prior_edges_ids.end());
+            graph = mg_generate::BuildGraph(graph_nodes_ids, prior_edges_ids, mg_graph::GraphType::kUndirectedGraph);
+            node_bc_scores = algorithm.EdgeUpdate(*prior_graph, *graph, online_bc::Operation::DELETE_EDGE, deleted_edge,
+                                                  normalize, threads);
+            prior_graph = std::move(graph);
+          }
+        } else if (created_edges.size() == 0 && deleted_edges.size() == 0) {  // Node update
+          if (created_nodes.empty() && deleted_nodes.empty()) {
+            node_bc_scores = algorithm.Get(*graph, normalize);
+          } else {
+            for (const auto created_node_id : created_nodes) {
+              node_bc_scores = algorithm.NodeUpdate(online_bc::Operation::CREATE_NODE, created_node_id, normalize);
+            }
+            for (const auto deleted_node_id : deleted_nodes) {
+              node_bc_scores = algorithm.NodeUpdate(online_bc::Operation::DELETE_NODE, deleted_node_id, normalize);
+            }
+          }
+        } else if (created_nodes.size() == 1 && created_edges.size() == 1 && deleted_nodes.empty() &&
+                   deleted_edges.empty() &&
+                   ConnectedVia(created_nodes[0], created_edges[0])) {  // Create-and-attach-node update
+          node_bc_scores = algorithm.NodeEdgeUpdate(*graph, online_bc::Operation::CREATE_ATTACH_NODE, created_nodes[0],
+                                                    created_edges[0], normalize);
+        } else if (deleted_nodes.size() == 1 && deleted_edges.size() == 1 && created_nodes.empty() &&
+                   created_edges.empty() &&
+                   ConnectedVia(deleted_nodes[0], deleted_edges[0])) {  // Detach-and-delete-node update
+          node_bc_scores = algorithm.NodeEdgeUpdate(*graph, online_bc::Operation::DETACH_DELETE_NODE, deleted_nodes[0],
+                                                    deleted_edges[0], normalize);
+        } else {  // Default to offline update
+          node_bc_scores = algorithm.Set(*graph, normalize, threads);
+        }
       }
     }
 
@@ -200,13 +246,18 @@ void Update(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_m
 }
 
 void Reset(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_memory *memory) {
+  (void)args;
   try {
     if (!mgp_is_enterprise_valid()) {
       mgp::result_set_error_msg(result,
                                 "To use betweenness centrality online module you need a valid enterprise license.");
       return;
     }
-    algorithm = online_bc::OnlineBC();
+    const auto db_key = ResolveDatabaseKey(memgraph_graph, memory);
+    {
+      const std::lock_guard<std::mutex> lock(algorithms_mutex);
+      algorithms_by_db.erase(db_key);
+    }
     InsertMessageRecord(result, memory, "The algorithm has been successfully reset!");
   } catch (const std::exception &e) {
     InsertMessageRecord(result, memory, "Reset failed: An exception occurred, please check your module!");
@@ -292,7 +343,10 @@ extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *mem
     }
   }
 
-  algorithm.Reset();
+  {
+    const std::lock_guard<std::mutex> lock(algorithms_mutex);
+    algorithms_by_db.clear();
+  }
 
   return 0;
 }

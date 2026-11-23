@@ -30,12 +30,13 @@ const MICROS_PER_MILLIS: u32 = 1_000;
 
 pub(crate) struct Date {
     ptr: *mut mgp_date,
+    owned: bool,
 }
 
 impl Drop for Date {
     fn drop(&mut self) {
         unsafe {
-            if !self.ptr.is_null() {
+            if self.owned && !self.ptr.is_null() {
                 ffi::mgp_date_destroy(self.ptr);
             }
         }
@@ -50,10 +51,23 @@ impl Date {
             "Unable to create date because the given pointer is null."
         );
 
-        Date { ptr }
+        Date { ptr, owned: true }
     }
 
-    pub fn from_naive_date(from: &NaiveDate, memgraph: &Memgraph) -> Result<Date> {
+    pub(crate) fn from_borrowed(ptr: *mut mgp_date) -> Date {
+        #[cfg(not(test))]
+        assert!(
+            !ptr.is_null(),
+            "Unable to borrow date because the given pointer is null."
+        );
+
+        Date { ptr, owned: false }
+    }
+
+    pub fn from_naive_date<M: MemgraphMemory + ?Sized>(
+        from: &NaiveDate,
+        memgraph: &M,
+    ) -> Result<Date> {
         let year = from.year();
         if year < MINIMUM_YEAR || year > MAXIMUM_YEAR {
             return Err(Error::UnableToCreateDateFromNaiveDate);
@@ -69,7 +83,7 @@ impl Date {
                 Error::UnableToCreateDateFromNaiveDate,
                 ffi::mgp_date_from_parameters,
                 &mut date_params,
-                memgraph.memory_ptr()
+                memgraph.sealed_memory_ptr(MemorySeal(()))
             )?);
             Ok(date)
         }
@@ -134,12 +148,13 @@ fn create_mgp_local_time_parameters(from: &NaiveTime) -> mgp_local_time_paramete
 
 pub(crate) struct LocalTime {
     ptr: *mut mgp_local_time,
+    owned: bool,
 }
 
 impl Drop for LocalTime {
     fn drop(&mut self) {
         unsafe {
-            if !self.ptr.is_null() {
+            if self.owned && !self.ptr.is_null() {
                 ffi::mgp_local_time_destroy(self.ptr);
             }
         }
@@ -155,11 +170,24 @@ impl LocalTime {
             "Unable to create local time because the given pointer is null."
         );
 
-        LocalTime { ptr }
+        LocalTime { ptr, owned: true }
     }
 
-    pub fn from_naive_time(from: &NaiveTime, memgraph: &Memgraph) -> Result<LocalTime> {
-        let mut local_time_params = create_mgp_local_time_parameters(&from);
+    pub(crate) fn from_borrowed(ptr: *mut mgp_local_time) -> LocalTime {
+        #[cfg(not(test))]
+        assert!(
+            !ptr.is_null(),
+            "Unable to borrow local time because the given pointer is null."
+        );
+
+        LocalTime { ptr, owned: false }
+    }
+
+    pub fn from_naive_time<M: MemgraphMemory + ?Sized>(
+        from: &NaiveTime,
+        memgraph: &M,
+    ) -> Result<LocalTime> {
+        let mut local_time_params = create_mgp_local_time_parameters(from);
 
         unsafe {
             let local_time = LocalTime::new(invoke_mgp_func_with_res!(
@@ -167,15 +195,13 @@ impl LocalTime {
                 Error::UnableToCreateLocalTimeFromNaiveTime,
                 ffi::mgp_local_time_from_parameters,
                 &mut local_time_params,
-                memgraph.memory_ptr()
+                memgraph.sealed_memory_ptr(MemorySeal(()))
             )?);
             Ok(local_time)
         }
     }
 
     pub fn to_naive_time(&self) -> NaiveTime {
-        // Ideally this function should use NaiveTime::from_hms_nano, but because the issue with
-        // the LocalTime::minute method it cannot be used.
         let timestamp = self.timestamp();
         let seconds = (timestamp / MICROS_PER_SECOND) as u32;
         let micros = (timestamp % MICROS_PER_SECOND) as u32;
@@ -195,9 +221,6 @@ impl LocalTime {
     }
 
     pub fn minute(&self) -> u32 {
-        // As of Memgraph 2.0.1 there is a bug in the C API of mgp_local_time, which prevents the
-        // usage of mgp_local_time_get_minute. Therefore this function cannot be used until the bug
-        // is fixed.
         unsafe { invoke_mgp_func!(i32, ffi::mgp_local_time_get_minute, self.ptr).unwrap() as u32 }
     }
 
@@ -224,12 +247,13 @@ impl LocalTime {
 
 pub(crate) struct LocalDateTime {
     ptr: *mut mgp_local_date_time,
+    owned: bool,
 }
 
 impl Drop for LocalDateTime {
     fn drop(&mut self) {
         unsafe {
-            if !self.ptr.is_null() {
+            if self.owned && !self.ptr.is_null() {
                 ffi::mgp_local_date_time_destroy(self.ptr);
             }
         }
@@ -244,12 +268,22 @@ impl LocalDateTime {
             "Unable to create local date time because the given pointer is null."
         );
 
-        LocalDateTime { ptr }
+        LocalDateTime { ptr, owned: true }
     }
 
-    pub fn from_naive_date_time(
+    pub(crate) fn from_borrowed(ptr: *mut mgp_local_date_time) -> LocalDateTime {
+        #[cfg(not(test))]
+        assert!(
+            !ptr.is_null(),
+            "Unable to borrow local date time because the given pointer is null."
+        );
+
+        LocalDateTime { ptr, owned: false }
+    }
+
+    pub fn from_naive_date_time<M: MemgraphMemory + ?Sized>(
         from: &NaiveDateTime,
-        memgraph: &Memgraph,
+        memgraph: &M,
     ) -> Result<LocalDateTime> {
         let mut date_params = mgp_date_parameters {
             year: from.year(),
@@ -268,7 +302,7 @@ impl LocalDateTime {
                 Error::UnableToCreateLocalDateTimeFromNaiveDateTime,
                 ffi::mgp_local_date_time_from_parameters,
                 &mut local_date_time_params,
-                memgraph.memory_ptr()
+                memgraph.sealed_memory_ptr(MemorySeal(()))
             )?);
             Ok(local_date_time)
         }
@@ -342,12 +376,13 @@ impl LocalDateTime {
 
 pub(crate) struct Duration {
     ptr: *mut mgp_duration,
+    owned: bool,
 }
 
 impl Drop for Duration {
     fn drop(&mut self) {
         unsafe {
-            if !self.ptr.is_null() {
+            if self.owned && !self.ptr.is_null() {
                 ffi::mgp_duration_destroy(self.ptr);
             }
         }
@@ -362,10 +397,23 @@ impl Duration {
             "Unable to create duration because the given pointer is null."
         );
 
-        Duration { ptr }
+        Duration { ptr, owned: true }
     }
 
-    pub fn from_chrono_duration(from: &chrono::Duration, memgraph: &Memgraph) -> Result<Duration> {
+    pub(crate) fn from_borrowed(ptr: *mut mgp_duration) -> Duration {
+        #[cfg(not(test))]
+        assert!(
+            !ptr.is_null(),
+            "Unable to borrow duration because the given pointer is null."
+        );
+
+        Duration { ptr, owned: false }
+    }
+
+    pub fn from_chrono_duration<M: MemgraphMemory + ?Sized>(
+        from: &chrono::Duration,
+        memgraph: &M,
+    ) -> Result<Duration> {
         unsafe {
             let duration = Duration::new(invoke_mgp_func_with_res!(
                 *mut mgp_duration,
@@ -373,7 +421,7 @@ impl Duration {
                 ffi::mgp_duration_from_microseconds,
                 from.num_microseconds()
                     .ok_or(Error::UnableToCreateDurationFromChronoDuration)?,
-                memgraph.memory_ptr()
+                memgraph.sealed_memory_ptr(MemorySeal(()))
             )?);
             Ok(duration)
         }

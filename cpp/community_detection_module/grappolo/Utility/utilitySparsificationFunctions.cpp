@@ -133,7 +133,6 @@ void SortNeighborListUsingInsertionAndMergeSort(graph *G) {
     edge *verInd  = G->edgeList;       //Vertex Index: destination id of an edge (src -> dest)
     
     time1 = omp_get_wtime();
-    double* simWeights = (double*) malloc (2*NEdge*sizeof(double)); assert(simWeights != 0);
 #pragma omp parallel for
     for (long v = 0; v < NVer; v++) {
         long adj1 = verPtr[v];
@@ -152,9 +151,9 @@ void SortNeighborListUsingInsertionAndMergeSort(graph *G) {
                 verInd[j+1].tail   = x;
                 verInd[j+1].weight = wtX;
             }
-        } else {
+        } else if (adj2 > adj1) {
             //Use merge sort:
-            mergeSort(verInd, adj1, adj2);
+            mergeSort(verInd, adj1, adj2 - 1);
         }//End of else
     }//End of for(v)
     
@@ -200,10 +199,11 @@ double* computeEdgeSimilarityMetrics(graph *G) {
                     }
                 }
             }//End of while(c1,c2)
+            setUnion += (adjV2 - c1) + (adjW2 - c2);
             //Now compute the similarity score:
-            double similarity = 0;
+            double similarity = 0.0;
             if (setUnion > 0) //Avoid division by zero
-                similarity = setIntersect / setUnion;
+                similarity = static_cast<double>(setIntersect) / static_cast<double>(setUnion);
             simWeights[i] = similarity;
             //Find the position for edge (w --> v)
             for (long j=adjW1; j<adjW2; j++) {
@@ -239,7 +239,9 @@ graph* buildSparifiedGraph(graph *Gin, double alpha) {
     double * simWeights = computeEdgeSimilarityMetrics(Gin);
     
     //Step 3: Determine top edges for each vertex:
-    bool* isEdgePresent = (bool*) malloc (2*NEdge*sizeof(bool)); assert(isEdgePresent != 0);
+    long totalEntries = verPtr[NVer];
+    bool* isEdgePresent = (bool*) calloc (totalEntries > 0 ? totalEntries : 1, sizeof(bool));
+    assert(isEdgePresent != 0);
 #pragma omp parallel for
     for (long v = 0; v < NVer; v++) {
         long adj1 = verPtr[v];
@@ -256,41 +258,85 @@ graph* buildSparifiedGraph(graph *Gin, double alpha) {
         long edgesAddedSoFar = 1;            //Added one edge so far
         //Process all the neighbors of v:
         for(long i = adj1+1; i < adj2; i++ ) {
-            //Always maintain the least weighted neighbor for each vertex;
-            //... this neighbor will get bounced if there is no space
             if(edgesAddedSoFar < numTopEdges) {
-                //Add the current edge to the list of top-k edges:
                 isEdgePresent[i] = true;   //Mark this edge as true
                 edgesAddedSoFar++;
-                //Check if this is the current smallest edge:
                 if(simWeights[i] < minWeight) {
                     minWeight = simWeights[i];
-                    minNeighbor = i; //This is the position of the smallest edge added so far
+                    minNeighbor = i;
                 }
             } else {
-                //Replace an existing edge and find the next minimum edge:
                 if(simWeights[i] > minWeight) { //Found a heavier neighbor
-                    isEdgePresent[i] = true;   //Mark this edge as true
-                    isEdgePresent[minNeighbor] = false;   //Mark this edge as false
-                    //Set the new edge as the minimum; need to fix this next:
+                    isEdgePresent[i] = true;
+                    isEdgePresent[minNeighbor] = false;
                     minWeight = simWeights[i];
-                    minNeighbor = i; //This is the position of the smallest edge added so far
-                    //Now find the next minimum to replace:
-                    for(long k = adj1; k < i; k++ ) { //Only look within unprocessed list
+                    minNeighbor = i;
+                    for(long k = adj1; k <= i; k++ ) {
                         if((isEdgePresent[k]) && (simWeights[k] < minWeight)) {
                             minWeight = simWeights[k];
-                            minNeighbor = k; //This is the position of the smallest edge added so far
+                            minNeighbor = k;
                         }
                     }//End of for(k)
                 }//End of if(simWeights[i] > minWeight)
             }//End of else
         }//End of for(i)
     }//End of for(v)
-    
-    //Step 4: Build the new graph:
-    //From each edge count the number of active edges and add them to the data structure
-    //Tricky because of the double storage requirements.
-    
-    
+
+    //Step 4: Symmetrize undirected edge retention and construct Gout:
+    for (long v = 0; v < NVer; v++) {
+        for (long i = verPtr[v]; i < verPtr[v + 1]; i++) {
+            if (!isEdgePresent[i]) continue;
+            long w = verInd[i].tail;
+            if (w == v) continue;
+            for (long j = verPtr[w]; j < verPtr[w + 1]; j++) {
+                if (verInd[j].tail == v) {
+                    isEdgePresent[j] = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    long *vtxPtrOut = (long *) calloc(NVer + 1, sizeof(long));
+    assert(vtxPtrOut != 0);
+    long realEdges = 0;
+    for (long v = 0; v < NVer; v++) {
+        long deg = 0;
+        for (long i = verPtr[v]; i < verPtr[v + 1]; i++) {
+            if (isEdgePresent[i]) {
+                deg++;
+                long w = verInd[i].tail;
+                if (v <= w) {
+                    realEdges++;
+                }
+            }
+        }
+        vtxPtrOut[v + 1] = vtxPtrOut[v] + deg;
+    }
+
+    long outEntries = vtxPtrOut[NVer];
+    edge *vtxIndOut = (edge *) malloc((outEntries > 0 ? outEntries : 1) * sizeof(edge));
+    assert(vtxIndOut != 0);
+    for (long v = 0; v < NVer; v++) {
+        long writePos = vtxPtrOut[v];
+        for (long i = verPtr[v]; i < verPtr[v + 1]; i++) {
+            if (isEdgePresent[i]) {
+                vtxIndOut[writePos++] = verInd[i];
+            }
+        }
+    }
+
+    graph *Gout = (graph *) malloc(sizeof(graph));
+    assert(Gout != 0);
+    Gout->numVertices = NVer;
+    Gout->sVertices = Gin->sVertices;
+    Gout->numEdges = realEdges;
+    Gout->edgeListPtrs = vtxPtrOut;
+    Gout->edgeList = vtxIndOut;
+
+    free(simWeights);
+    free(isEdgePresent);
+    (void)totalTime;
+    return Gout;
 }
 

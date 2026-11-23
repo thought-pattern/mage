@@ -75,7 +75,11 @@ void FindFundamentalCycles(const std::set<std::pair<std::uint64_t, std::uint64_t
 ///@param graph Graph for exploration
 ///@param cycles Elementary final graph cycles
 ///
-void CombineCycles(std::uint32_t mask, const std::vector<std::vector<std::uint64_t>> &fundamental_cycles,
+void CombineCycleSubset(const std::vector<std::size_t> &selected_indices,
+                        const std::vector<std::vector<std::pair<std::uint64_t, std::uint64_t>>> &fundamental_edges,
+                        std::vector<std::vector<mg_graph::Node<>>> *cycles);
+
+void CombineCycles(std::uint64_t mask, const std::vector<std::vector<std::uint64_t>> &fundamental_cycles,
                    const mg_graph::GraphView<> &graph, std::vector<std::vector<mg_graph::Node<>>> *cycles);
 
 ///

@@ -35,6 +35,20 @@ documentation and/or software.
 
 /* system implementation headers */
 #include <cstdio>
+#include <cstring>
+
+namespace {
+inline void secure_zero(void *ptr, std::size_t len) noexcept {
+#if defined(__GLIBC__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+  explicit_bzero(ptr, len);
+#else
+  volatile unsigned char *bytes = static_cast<volatile unsigned char *>(ptr);
+  for (std::size_t idx = 0; idx < len; ++idx) {
+    bytes[idx] = 0;
+  }
+#endif
+}
+}  // namespace
 
 // Constants for MD5Transform routine.
 #define S11 7
@@ -94,9 +108,9 @@ MD5::MD5() { init(); }
 //////////////////////////////////////////////
 
 // nifty shortcut ctor, compute MD5 for string and finalize it right away
-MD5::MD5(const std::string &text) {
+MD5::MD5(std::string_view text) {
   init();
-  update(text.c_str(), text.length());
+  update(text.data(), text.size());
   finalize();
 }
 
@@ -118,8 +132,8 @@ void MD5::init() {
 //////////////////////////////
 
 // decodes input (unsigned char) into output (uint4). Assumes len is a multiple of 4.
-void MD5::decode(uint4 output[], const uint1 input[], size_type len) {
-  for (unsigned int i = 0, j = 0; j < len; i++, j += 4)
+void MD5::decode(uint4 output[], const uint1 input[], uint4 len) {
+  for (uint4 i = 0, j = 0; j < len; i++, j += 4)
     output[i] = ((uint4)input[j]) | (((uint4)input[j + 1]) << 8) | (((uint4)input[j + 2]) << 16) |
                 (((uint4)input[j + 3]) << 24);
 }
@@ -128,8 +142,8 @@ void MD5::decode(uint4 output[], const uint1 input[], size_type len) {
 
 // encodes input (uint4) into output (unsigned char). Assumes len is
 // a multiple of 4.
-void MD5::encode(uint1 output[], const uint4 input[], size_type len) {
-  for (size_type i = 0, j = 0; j < len; i++, j += 4) {
+void MD5::encode(uint1 output[], const uint4 input[], uint4 len) {
+  for (uint4 i = 0, j = 0; j < len; i++, j += 4) {
     output[j] = input[i] & 0xff;
     output[j + 1] = (input[i] >> 8) & 0xff;
     output[j + 2] = (input[i] >> 16) & 0xff;
@@ -222,25 +236,26 @@ void MD5::transform(const uint1 block[blocksize]) {
   state[3] += d;
 
   // Zeroize sensitive information.
-  memset(x, 0, sizeof x);
+  secure_zero(x, sizeof x);
 }
 
 //////////////////////////////
 
 // MD5 block update operation. Continues an MD5 message-digest
 // operation, processing another message block
-void MD5::update(const unsigned char input[], size_type length) {
+void MD5::update_chunk(const uint1 *input, uint4 length) {
   // compute number of bytes mod 64
-  size_type index = count[0] / 8 % blocksize;
+  uint4 index = count[0] / 8 % blocksize;
 
   // Update number of bits
-  if ((count[0] += (length << 3)) < (length << 3)) count[1]++;
+  const uint4 bit_delta = length << 3;
+  if ((count[0] += bit_delta) < bit_delta) count[1]++;
   count[1] += (length >> 29);
 
   // number of bytes we need to fill in buffer
-  size_type firstpart = 64 - index;
+  uint4 firstpart = 64 - index;
 
-  size_type i;
+  uint4 i;
 
   // transform as many times as possible.
   if (length >= firstpart) {
@@ -259,10 +274,23 @@ void MD5::update(const unsigned char input[], size_type length) {
   memcpy(&buffer[index], &input[i], length - i);
 }
 
+void MD5::update(const unsigned char input[], size_type length) {
+  constexpr size_type kMaxChunkBytes = 0x1FFFFFFFU;
+  size_type offset = 0;
+  while (offset < length) {
+    const size_type remaining = length - offset;
+    const uint4 chunk = static_cast<uint4>(remaining < kMaxChunkBytes ? remaining : kMaxChunkBytes);
+    update_chunk(input + offset, chunk);
+    offset += chunk;
+  }
+}
+
 //////////////////////////////
 
 // for convenience provide a verson with signed char
-void MD5::update(const char input[], size_type length) { update((const unsigned char *)input, length); }
+void MD5::update(const char input[], size_type length) {
+  update(reinterpret_cast<const unsigned char *>(input), length);
+}
 
 //////////////////////////////
 
@@ -290,8 +318,8 @@ MD5 &MD5::finalize() {
     encode(digest, state, 16);
 
     // Zeroize sensitive information.
-    memset(buffer, 0, sizeof buffer);
-    memset(count, 0, sizeof count);
+    secure_zero(buffer, sizeof buffer);
+    secure_zero(count, sizeof count);
 
     finalized = true;
   }
@@ -306,7 +334,7 @@ std::string MD5::hexdigest() const {
   if (!finalized) return "";
 
   char buf[33];
-  for (int i = 0; i < 16; i++) sprintf(buf + i * 2, "%02x", digest[i]);
+  for (int i = 0; i < 16; i++) snprintf(buf + i * 2, sizeof buf - i * 2, "%02x", digest[i]);
   buf[32] = 0;
 
   return std::string(buf);
@@ -318,7 +346,7 @@ std::ostream &operator<<(std::ostream &out, MD5 md5) { return out << md5.hexdige
 
 //////////////////////////////
 
-std::string md5(const std::string str) {
+std::string md5(std::string_view str) {
   MD5 md5 = MD5(str);
 
   return md5.hexdigest();
