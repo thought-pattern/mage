@@ -20,7 +20,7 @@ chrono = "0.4.19"
 
 [dev-dependencies]
 mockall = "0.9.1"
-serial_test = "0.5.1"
+serial_test = "4.0.1"
 libc = "0.2.95"
 
 [build-dependencies]
