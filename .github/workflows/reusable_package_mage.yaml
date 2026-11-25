@@ -316,7 +316,7 @@ jobs:
       
       - name: Upload SBOM to GitHub
         if: ${{ inputs.generate_sbom == true }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: "mage-sbom"
           path: "sbom/"
@@ -381,21 +381,21 @@ jobs:
 
       - name: Push query module archive to GitHub
         if: ${{ inputs.push_to_github }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: "${ARTIFACT_NAME}-query-modules"
           path: "mage.tar.gz"
 
       - name: Push DEB package to GitHub
         if: ${{ inputs.push_to_github && env.PACKAGE_DEB == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: "${ARTIFACT_NAME}-deb"
           path: "${DEB_PACKAGE}"
 
       - name: Push docker image to GitHub
         if: ${{ inputs.push_to_github }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: "${IMAGE_TAG}-docker"
           path: "output/${ARTIFACT_NAME}.tar.gz"

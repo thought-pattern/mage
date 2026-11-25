@@ -165,21 +165,21 @@ jobs:
 
       - name: Upload cve-bin-tool Binary Scan Artifact
         if: ${{ inputs.run_cbt }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.image_type }}-${{ inputs.arch }}-cve-bin-tool-memgraph-summary
           path: "${{ env.CVE_DIR }}/cve-bin-tool-memgraph-summary.json"
 
       - name: Upload cve-bin-tool Language Scan Artifact
         if: ${{ inputs.run_cbt  }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.image_type }}-${{ inputs.arch }}-cve-bin-tool-language-summary
           path: "${{ env.CVE_DIR }}/cve-bin-tool-lang-summary.json"
           
       - name: Upload cve-bin-tool APT Package Scan Artifact
         if: ${{ inputs.run_cbt }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.image_type }}-${{ inputs.arch }}-cve-bin-tool-apt-summary
           path: "${{ env.CVE_DIR }}/cve-bin-tool-apt-summary.json"
@@ -213,7 +213,7 @@ jobs:
 
       - name: Upload Combined Report Artifact
         if: ${{ inputs.run_trivy || inputs.run_grype }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.image_type }}-${{ inputs.arch }}-cve-report
           path: |
