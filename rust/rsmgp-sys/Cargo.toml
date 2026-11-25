@@ -19,7 +19,7 @@ mockall_double = "0.2.0"
 chrono = "0.4.19"
 
 [dev-dependencies]
-mockall = "0.9.1"
+mockall = "0.15.0"
 serial_test = "0.5.1"
 libc = "0.2.95"
 
