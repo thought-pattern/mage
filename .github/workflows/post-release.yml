@@ -42,7 +42,7 @@ jobs:
           sed -i "s/ARG MG_VERSION=.*/ARG MG_VERSION=${VERSION}/" Dockerfile.cugraph
       
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           title: "Update Memgraph submodule to ${{ env.VERSION }}"
           body: "Update Memgraph submodule to ${{ env.VERSION }}"
