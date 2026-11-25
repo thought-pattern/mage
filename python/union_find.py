@@ -3,12 +3,14 @@
 from enum import Enum
 from itertools import product
 
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
-from mage.union_find import DisjointSet
+from mage.union_find.disjoint_set import DisjointSet
 
 disjoint_set = DisjointSet(node_ids=[])
 
@@ -22,14 +24,13 @@ class Mode(Enum):
     PAIRWISE = "pairwise"
 
 
-@mgp_read_proc
 def connected(
     ctx: mgp_ProcCtx,
     nodes1: object,
     nodes2: object,
     mode: str = "pairwise",
     update: bool = True,
-) -> list[mgp_Record]:
+) -> list:
     """
     Returns whether two nodes (or each pair in the product of two node lists) belong to the same connected component
     of the graph.
@@ -98,3 +99,7 @@ def connected(
         f'Mode {mode} is invalid, please specify one of the following: "{Mode.PAIRWISE.value}", "' f'{Mode.CARTESIAN.value}".'
     )
     raise ValueError(error_message)
+
+
+connected.__annotations__["return"] = mgp_Record(node1=mgp_Vertex, node2=mgp_Vertex, connected=bool)
+connected = mgp_read_proc(connected)

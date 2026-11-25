@@ -194,6 +194,8 @@ queries:
         MATCH (a:USER {id:33} ), (b:USER {id:30}) CREATE (a)-[r:CONNECTS]->(b);
         MATCH (a:USER {id:33} ), (b:USER {id:31}) CREATE (a)-[r:CONNECTS]->(b);
         MATCH (a:USER {id:33} ), (b:USER {id:32}) CREATE (a)-[r:CONNECTS]->(b);
+    - ""
+    - ""
 
 cleanup: |-
     CALL node_classification.reset() YIELD *;

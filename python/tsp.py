@@ -1,16 +1,14 @@
 """Utilities for tsp."""
 
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
-
-from mage.geography import (
-    create_distance_matrix,
-    solve_1_5_approx,
-    solve_2_approx,
-    solve_greedy,
+from mgp import (
+    List as mgp_List,
+    Nullable as mgp_Nullable,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
 )
+
+from mage.geography.travelling_salesman import create_distance_matrix, solve_1_5_approx, solve_2_approx, solve_greedy
 
 DEFAULT_SOLVING_METHOD = "1.5_approx"
 tsp_solving_methods = {
@@ -20,8 +18,7 @@ tsp_solving_methods = {
 }
 
 
-@mgp_read_proc
-def solve(context: mgp_ProcCtx, points: list[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD) -> mgp_Record:
+def solve(points: list[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD) -> mgp_Record:
     """
     The tsp solver returns 2 fields whose elements at indexes are correlated
 
@@ -41,13 +38,13 @@ def solve(context: mgp_ProcCtx, points: list[mgp_Vertex], method: str = DEFAULT_
     """
 
     if not all(isinstance(x, mgp_Vertex) for x in points):
-        computed_return_value = mgp_Record(sources=[], destinations=[])
+        computed_return_value = mgp_Record(sources=None, destinations=None)
         return computed_return_value
 
     dm = create_distance_matrix([dict(x.properties.items()) for x in points])
 
     if dm is False:
-        computed_return_value = mgp_Record(sources=[], destinations=[])
+        computed_return_value = mgp_Record(sources=None, destinations=None)
         return computed_return_value
 
     if method.lower() not in tsp_solving_methods:
@@ -60,3 +57,10 @@ def solve(context: mgp_ProcCtx, points: list[mgp_Vertex], method: str = DEFAULT_
 
     computed_return_value = mgp_Record(sources=sources, destinations=destinations)
     return computed_return_value
+
+
+solve.__annotations__["return"] = mgp_Record(
+    sources=mgp_Nullable[mgp_List[mgp_Vertex]],
+    destinations=mgp_Nullable[mgp_List[mgp_Vertex]],
+)
+solve = mgp_read_proc(solve)

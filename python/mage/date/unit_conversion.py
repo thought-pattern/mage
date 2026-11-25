@@ -43,4 +43,3 @@ def to_int(duration: datetime_timedelta, unit: str) -> int:
         return computed_return_value
     else:
         raise TypeError(f"The unit {unit} is not correct.")
-    return 0

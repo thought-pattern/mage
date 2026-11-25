@@ -7,6 +7,8 @@ from mage.node2vec.graph import Graph
 
 
 class SecondOrderRandomWalk:
+    """Samples node2vec second-order random walks over a graph."""
+
     def __init__(self, p: float, q: float, num_walks: int, walk_length: int):
         """
         Args:
@@ -82,12 +84,12 @@ class SecondOrderRandomWalk:
 
             previous_node_id = walk[-2]
 
-            next = np_random.choice(
+            next_node_id = np_random.choice(
                 node_neighbors,
                 p=graph.get_edge_transition_probs(edge=(previous_node_id, current_node_id)),
             )
 
-            walk.append(next)
+            walk.append(next_node_id)
         return walk
 
     def set_first_pass_transition_probs(self, graph: Graph) -> bool:
@@ -141,7 +143,8 @@ class SecondOrderRandomWalk:
 
     def set_graph_transition_probs(self, graph: Graph) -> bool:
         """
-        Sets first graph transition probs in graph.
+        Sets second-order transition probs for every oriented edge. The graph's get_edges already yields each
+        oriented edge once (both orientations of an undirected edge), so each transition is calculated once.
 
         Args:
             graph (Graph): Graph for which to set first pass transition probs
@@ -150,12 +153,5 @@ class SecondOrderRandomWalk:
             graph.set_edge_transition_probs(
                 (node_from, node_to),
                 self.calculate_edge_transition_probs(graph, node_from, node_to),
-            )
-            if graph.is_directed:
-                continue
-
-            graph.set_edge_transition_probs(
-                (node_to, node_from),
-                self.calculate_edge_transition_probs(graph, node_to, node_from),
             )
         return False

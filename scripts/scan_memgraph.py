@@ -17,18 +17,23 @@ each scan will produce a temporary JSON file containing results.
 
 from argparse import ArgumentParser as argparse_ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from json import JSONDecodeError as json_JSONDecodeError
-from json import dump as json_dump
-from json import load as json_load
-from os import getcwd as os_getcwd
-from os import getenv as os_getenv
-from os import lstat as os_lstat
-from os import makedirs as os_makedirs
-from os import path as os_path
-from os import walk as os_walk
+from json import (
+    JSONDecodeError as json_JSONDecodeError,
+    dump as json_dump,
+    load as json_load,
+)
+from os import (
+    getcwd as os_getcwd,
+    getenv as os_getenv,
+    lstat as os_lstat,
+    makedirs as os_makedirs,
+    path as os_path,
+    replace as os_replace,
+    walk as os_walk,
+)
 from stat import S_ISLNK as stat_S_ISLNK
-from subprocess import PIPE as subprocess_PIPE
-from subprocess import run as subprocess_run
+from subprocess import PIPE as subprocess_PIPE, run as subprocess_run
+from tempfile import TemporaryDirectory
 from uuid import uuid4 as uuid_uuid4
 
 from tqdm import tqdm
@@ -124,7 +129,8 @@ def run_cve_scan(target: str, output_dir: str) -> dict:
     ]
 
     # Run the command, capturing stdout/stderr
-    completed = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
+    # cve-bin-tool exits non-zero when it reports CVEs, so success is judged by the report file below.
+    completed = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True, check=False)
 
     # Some targets produce no JSON at all; check before opening.
     if not os_path.isfile(output_path):
@@ -139,14 +145,15 @@ def run_cve_scan(target: str, output_dir: str) -> dict:
     return data
 
 
-def scan_directories_with_progress(dirs_to_scan: list[str], output_dir: str = f"{CVE_DIR}/tmp", max_workers: int = 20) -> bool:
+def scan_directories_with_progress(dirs_to_scan: list[str], output_dir: str, max_workers: int = 20) -> None:
     """
     Given a list of directories, scan each one in parallel using cve-bin-tool.
     - Uses '-u never' and '-f json'.
     - Writes each JSON result into 'output_dir'.
     - Shows a tqdm progress bar that advances as each scan completes.
-    - Returns a dict mapping directory → (json_str or None, output_file_path).
-      If a scan fails, json_str will be None, and the exception is printed.
+    - Publishes the aggregated findings to `cve-bin-tool-memgraph-summary.json` only when every
+      requested target completed. Otherwise each failed target's error is printed and RuntimeError
+      reports the failed/requested counts, so an incomplete scan never looks like an empty one.
 
     Inputs
     ======
@@ -157,8 +164,11 @@ def scan_directories_with_progress(dirs_to_scan: list[str], output_dir: str = f"
     max_workers: int
       The maximum number of threads to use. Defaults to 20.
     """
-    # Prepare the results dictionary
+    if not dirs_to_scan:
+        raise RuntimeError("no cve-bin-tool scan targets were found")
+
     results = []
+    failures = {}
 
     if not os_path.isdir(output_dir):
         os_makedirs(output_dir)
@@ -174,19 +184,27 @@ def scan_directories_with_progress(dirs_to_scan: list[str], output_dir: str = f"
             desc="Scanning directories",
             unit="dir",
         ):
-            directory = future_to_dir.get(future, False)
+            directory = future_to_dir.get(future, "")
             try:
                 json_data = future.result()
-                if isinstance(json_data, list):
-                    results.extend(json_data)
-                else:
-                    results.append(json_data)
-            except Exception as exc:
-                print(f"Error scanning {directory!r}: {exc}")
+            except (RuntimeError, OSError) as err:
+                failures[directory] = str(err)
+                print(f"Error scanning {directory!r}: {err}")
+                continue
+            if isinstance(json_data, list):
+                results.extend(json_data)
+            else:
+                results.append(json_data)
 
-    with open(f"{CVE_DIR}/cve-bin-tool-memgraph-summary.json", "w") as f:
+    if failures:
+        failed = ", ".join(sorted(failures))
+        raise RuntimeError(f"cve-bin-tool failed for {len(failures)} of {len(dirs_to_scan)} targets: {failed}")
+
+    summary_path = f"{CVE_DIR}/cve-bin-tool-memgraph-summary.json"
+    staged_path = file_hash(output_dir)
+    with open(staged_path, "w", encoding="utf-8") as f:
         json_dump(results, f, indent=2)
-    return False
+    os_replace(staged_path, summary_path)
 
 
 def place_slowest_first(rootfs: str, directories: list[str]) -> list[str]:
@@ -229,7 +247,7 @@ def place_slowest_first(rootfs: str, directories: list[str]) -> list[str]:
     return outdirs
 
 
-def main(rootfs: str, max_workers: int) -> bool:
+def main(rootfs: str, max_workers: int) -> None:
     """
     Scan for CVEs in memgraph-specific directories/files.
 
@@ -242,8 +260,10 @@ def main(rootfs: str, max_workers: int) -> bool:
     """
     files = find_memgraph_files(f"{rootfs}/usr/lib/memgraph")
     files = place_slowest_first(rootfs, files)
-    scan_directories_with_progress(files, max_workers=max_workers)
-    return False
+    # Each run stages its per-target reports in its own directory under CVE_DIR, on the summary's filesystem, so the
+    # staged summary can replace the published one atomically.
+    with TemporaryDirectory(dir=CVE_DIR, prefix="cve-bin-tool-memgraph-") as staging:
+        scan_directories_with_progress(files, staging, max_workers=max_workers)
 
 
 if __name__ == "__main__":

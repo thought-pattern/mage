@@ -1,18 +1,19 @@
 """Utilities for DotPredictor."""
 
-from dgl import function as fn
-from dgl import graph as dgl_graph
-from torch import Tensor as torch_Tensor
-from torch import dot as torch_dot
-from torch import nn
+from dgl.function.base import TargetCode
+from dgl.function.message import BinaryMessageFunction
+from dgl.heterograph import DGLGraph
+from torch import Tensor as torch_Tensor, dot as torch_dot, nn
 
 from mage.link_prediction.constants import Predictors
 
 
 class DotPredictor(nn.Module):
+    """Scores an edge as the dot product of its endpoint representations."""
+
     def forward(
         self,
-        g: dgl_graph,
+        g: DGLGraph,
         node_embeddings: dict[str, torch_Tensor],
         target_relation: str = "",
     ) -> torch_Tensor:
@@ -28,13 +29,19 @@ class DotPredictor(nn.Module):
             torch.Tensor: A tensor of edge scores.
         """
         with g.local_scope():
-            for node_type in node_embeddings:  # Iterate over all node_types.
-                g.nodes[node_type].data[Predictors.NODE_EMBEDDINGS] = node_embeddings.get(node_type, False)
+            for (
+                node_type,
+                embedding,
+            ) in node_embeddings.items():  # Iterate over all node_types.
+                g.nodes[node_type].data[Predictors.NODE_EMBEDDINGS] = embedding
 
             # Compute a new edge feature named 'score' by a dot-product between the
             # embedding of source node and embedding of destination node.
             g.apply_edges(
-                fn.u_dot_v(
+                BinaryMessageFunction(
+                    "dot",
+                    TargetCode.SRC,
+                    TargetCode.DST,
                     Predictors.NODE_EMBEDDINGS,
                     Predictors.NODE_EMBEDDINGS,
                     Predictors.EDGE_SCORE,
@@ -45,17 +52,18 @@ class DotPredictor(nn.Module):
             if not isinstance(scores, dict):
                 computed_return_value = scores.view(-1)
                 return computed_return_value
-            if isinstance(target_relation, tuple):  # Tuple[str, str, str] identification
-                computed_return_value = scores[target_relation].view(-1)
-                return computed_return_value
-            if isinstance(target_relation, str):  # edge type identification
-                for key, val in scores.items():
-                    if key[1] == target_relation:
-                        computed_return_value = val.view(-1)
-                        return computed_return_value
+            # With several edge types DGL returns the scores keyed by canonical relation. A canonical (source, edge,
+            # destination) target is admitted by exact key, an edge type name by its middle element; a target with no
+            # scores falls through to the error below.
+            for key, val in scores.items():
+                if (isinstance(target_relation, tuple) and key == target_relation) or (
+                    isinstance(target_relation, str) and key[1] == target_relation
+                ):
+                    computed_return_value = val.view(-1)
+                    return computed_return_value
         raise ValueError("DGL did not return scores for the requested edge relation")
 
-    def forward_pred(self, src_embedding: torch_Tensor, dest_embedding: torch_Tensor) -> float:
+    def forward_pred(self, src_embedding: torch_Tensor, dest_embedding: torch_Tensor) -> torch_Tensor:
         """Efficient implementation for predict method of DotPredictor.
 
         Args:
@@ -63,7 +71,8 @@ class DotPredictor(nn.Module):
             dest_embedding (torch.Tensor): Embedding of the destination node.
 
         Returns:
-            float: Edge score.
+            torch.Tensor: Edge score (a scalar tensor). Pair scores stay tensors, as for MLPPredictor, so the caller
+            applies the same probability transform to every predictor.
         """
-        computed_return_value = float(torch_dot(src_embedding, dest_embedding).item())
+        computed_return_value = torch_dot(src_embedding, dest_embedding)
         return computed_return_value

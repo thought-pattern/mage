@@ -1,21 +1,17 @@
 """External parameter normalization for graph-coloring procedures."""
 
+from math import isfinite as math_isfinite
+
 from mage.graph_coloring_module.algorithms.greedy.LDO import LDO
-from mage.graph_coloring_module.algorithms.greedy.random import Random
 from mage.graph_coloring_module.algorithms.greedy.SDO import SDO
+from mage.graph_coloring_module.algorithms.greedy.random import Random
 from mage.graph_coloring_module.algorithms.meta_heuristics.quantum_annealing import QA
 from mage.graph_coloring_module.error_functions.conflict_error import ConflictError
 from mage.graph_coloring_module.exceptions import IncorrectParametersException
-from mage.graph_coloring_module.iteration_callbacks.callback_actions.simple_tunneling import (
-    SimpleTunneling,
-)
-from mage.graph_coloring_module.iteration_callbacks.convergence_callback import (
-    ConvergenceCallback,
-)
+from mage.graph_coloring_module.iteration_callbacks.callback_actions.simple_tunneling import SimpleTunneling
+from mage.graph_coloring_module.iteration_callbacks.convergence_callback import ConvergenceCallback
 from mage.graph_coloring_module.operators.mutations.MIS_mutation import MISMutation
-from mage.graph_coloring_module.operators.mutations.multiple_mutation import (
-    MultipleMutation,
-)
+from mage.graph_coloring_module.operators.mutations.multiple_mutation import MultipleMutation
 from mage.graph_coloring_module.operators.mutations.random_mutation import RandomMutation
 from mage.graph_coloring_module.operators.mutations.simple_mutation import SimpleMutation
 from mage.graph_coloring_module.parameters import Parameter
@@ -157,23 +153,26 @@ def normalize_parameters(parameters: dict) -> dict:
         Parameter.SIMPLE_TUNNELING_MAX_ATTEMPTS,
         Parameter.CONVERGENCE_CALLBACK_TOLERANCE,
     )
+    # Every validated key is set in normalized above, so the typed read defaults below are never used.
     for parameter in positive_integer_parameters:
-        value = normalized.get(parameter, False)
+        value = normalized.get(parameter, 0)
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise IncorrectParametersException(f"{parameter.value} must be a positive integer")
 
+    # Real-valued settings feed energy comparisons and acceptance probabilities, where NaN defeats every comparison
+    # and infinity makes the differences undefined, so each must be finite before any population or process exists.
     positive_number_parameters = (Parameter.QA_TEMPERATURE,)
     for parameter in positive_number_parameters:
-        value = normalized.get(parameter, False)
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
-            raise IncorrectParametersException(f"{parameter.value} must be positive")
+        value = normalized.get(parameter, 0.0)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math_isfinite(value) or value <= 0:
+            raise IncorrectParametersException(f"{parameter.value} must be a finite positive number")
 
     probability_parameters = (
         Parameter.RANDOM_MUTATION_PROBABILITY,
         Parameter.SIMPLE_TUNNELING_PROBABILITY,
     )
     for parameter in probability_parameters:
-        value = normalized.get(parameter, False)
+        value = normalized.get(parameter, 0.0)
         if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 1:
             raise IncorrectParametersException(f"{parameter.value} must be between zero and one")
 
@@ -183,8 +182,8 @@ def normalize_parameters(parameters: dict) -> dict:
         Parameter.SIMPLE_TUNNELING_ERROR_CORRECTION,
     )
     for parameter in numeric_parameters:
-        value = normalized.get(parameter, False)
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise IncorrectParametersException(f"{parameter.value} must be numeric")
+        value = normalized.get(parameter, 0.0)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math_isfinite(value):
+            raise IncorrectParametersException(f"{parameter.value} must be a finite number")
 
     return normalized

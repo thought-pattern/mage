@@ -53,6 +53,13 @@ else
     requirements_file="requirements.txt"
 fi
 
+# The requirements file declares every package, DGL and PyTorch Geometric
+# included. A CPU build offers its wheel cache as an extra pip source.
+if [[ "$CACHE_PRESENT" == "true" && "$CUDA" != true ]]; then
+    echo "Using cached torch packages"
+    export PIP_FIND_LINKS="$WHEEL_CACHE_DIR"
+fi
+
 if [ "$CI" = true ]; then
     # for building the docker image
     python3 -m pip install --no-cache-dir -r "/tmp/${requirements_file}"
@@ -67,25 +74,4 @@ else
     python3 -m pip install --no-cache-dir -r "$(pwd)/cpp/memgraph/src/auth/reference_modules/requirements.txt"
 fi
 
-if [ "$ARCH" = "arm64" ]; then
-    if [ "$CACHE_PRESENT" = "true" ]; then
-        echo "Using cached torch packages"
-        python3 -m pip install --no-index --find-links=$WHEEL_CACHE_DIR torch-sparse torch-cluster torch-spline-conv torch-geometric torch-scatter
-    else
-        python3 -m pip install --no-cache-dir torch-sparse torch-cluster torch-spline-conv torch-geometric torch-scatter -f https://data.pyg.org/whl/torch-2.6.0+cpu.html
-    fi
-    curl -o dgl-2.5.0-cp312-cp312-linux_aarch64.whl https://s3.eu-west-1.amazonaws.com/deps.memgraph.io/wheels/arm64/dgl-2.5.0-cp312-cp312-linux_aarch64.whl
-    python3 -m pip install --no-cache-dir dgl-2.5.0-cp312-cp312-linux_aarch64.whl
-    rm dgl-2.5.0-cp312-cp312-linux_aarch64.whl
-else
-    if [[ "$CUDA" == true ]]; then
-      python3 -m pip install --no-cache-dir torch-sparse torch-cluster torch-spline-conv torch-geometric torch-scatter -f https://data.pyg.org/whl/torch-2.6.0+cu126.html
-    elif [ "$CACHE_PRESENT" = "true" ]; then
-        echo "Using cached torch packages"
-        python3 -m pip install --no-index --find-links=$WHEEL_CACHE_DIR torch-sparse torch-cluster torch-spline-conv torch-geometric torch-scatter
-    else
-        python3 -m pip install --no-cache-dir torch-sparse torch-cluster torch-spline-conv torch-geometric torch-scatter -f https://data.pyg.org/whl/torch-2.6.0+cpu.html
-    fi
-    python3 -m pip install --no-cache-dir dgl==2.5.0 -f https://data.dgl.ai/wheels/torch-2.6/repo.html
-fi
 rm -fr /home/memgraph/.cache/pip

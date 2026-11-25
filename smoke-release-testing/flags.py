@@ -1,14 +1,14 @@
 """Utilities for flags."""
 
-from subprocess import PIPE as subprocess_PIPE
-from subprocess import run as subprocess_run
+from subprocess import PIPE as subprocess_PIPE, run as subprocess_run
 from sys import argv as sys_argv
-from xml.etree import ElementTree as ET
+
+from defusedxml import ElementTree as ET
 
 
 def extract_flags(to_run):
     ret = {}
-    completed = subprocess_run(to_run, stdout=subprocess_PIPE, stderr=subprocess_PIPE)
+    completed = subprocess_run(to_run, stdout=subprocess_PIPE, stderr=subprocess_PIPE, check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"flag extraction failed with status {completed.returncode}: {completed.stderr.decode('utf-8')}")
     data = completed.stdout.decode("utf-8")
@@ -16,7 +16,7 @@ def extract_flags(to_run):
     root = ET.fromstring(data)
     for child in root:
         if child.tag == "usage" and (child.text or "").lower().count("warning"):
-            raise Exception("You should set the usage message!")
+            raise ValueError("You should set the usage message!")
         if child.tag == "flag":
             flag = {}
             for elem in child:
@@ -32,7 +32,7 @@ def extract_flags(to_run):
 memgraph_docker_image = sys_argv[1]
 flags = extract_flags(["docker", "run", "-it", "--rm", memgraph_docker_image, "--help-xml"])
 for flag_name, flag_details in flags.items():
-    print(flag_name, flag_details.get("default", False))
+    print(flag_name, flag_details.get("default", ""))
 # IMPORTANT: There is also an issue with printing default values, because
 # --help is returning build defaults which is missleaning to the user but also
 # here because we can't detect changes in default values.

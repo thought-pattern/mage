@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Validation script for cuGraph MAGE algorithms after RAPIDS 25.x migration.
 Validates algorithm ACCURACY by comparing against NetworkX ground truth.
@@ -10,57 +9,63 @@ This script:
 4. Compares results with tolerance
 5. Validates node identity mapping is correct
 
+Each run owns exactly one container (named MEMGRAPH_CONTAINER plus a run identifier and labelled with
+that identifier), a fresh data directory, and the Bolt port Docker assigns to that container on MEMGRAPH_HOST. It
+never stops, removes, or clears any other container, directory, or database, and releases its own
+container and then its data directory on every exit unless MEMGRAPH_RETAIN asks to keep them.
+
 Usage:
-    # Using default settings (creates temp data dir)
-    python validate_cugraph_algorithms.py
+    # Using default settings (data directory under the system temp directory)
+    MEMGRAPH_HOST=<this host's interface address> python validate_cugraph_algorithms.py
 
     # Using custom settings via environment variables
-    MEMGRAPH_DATA_DIR=/path/to/data MEMGRAPH_IMAGE=my-image:tag python validate_cugraph_algorithms.py
+    MEMGRAPH_HOST=<address> MEMGRAPH_DATA_DIR=/path/to/parent MEMGRAPH_IMAGE=my-image:tag python validate_cugraph_algorithms.py
 
 Environment Variables:
-    MEMGRAPH_URI         - Bolt URI (default: bolt://localhost:7687)
-    MEMGRAPH_DATA_DIR    - Data directory (default: creates temp dir)
+    MEMGRAPH_HOST        - This host's network interface address, as config.yml's memgraph.host names it; the
+                           container's Bolt port is published there (required; never the loopback address)
+    MEMGRAPH_DATA_DIR    - Parent of the run's data directory (default: system temp directory)
     MEMGRAPH_IMAGE       - Docker image name (default: memgraph-mage-cugraph:latest)
-    MEMGRAPH_CONTAINER   - Container name (default: memgraph-cugraph-validation)
+    MEMGRAPH_CONTAINER   - Container name prefix (default: memgraph-cugraph-validation)
+    MEMGRAPH_RETAIN      - "true" keeps the run's container and data directory for inspection
 """
 
-from os import environ as os_environ
-from os import getgid as os_getgid
-from os import getuid as os_getuid
+from os import environ as os_environ, getgid as os_getgid, getuid as os_getuid
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
-from subprocess import CompletedProcess as subprocess_CompletedProcess
-from subprocess import run as subprocess_run
+from subprocess import (
+    CompletedProcess as subprocess_CompletedProcess,
+    run as subprocess_run,
+)
 from sys import exit as sys_exit
 from tempfile import mkdtemp as tempfile_mkdtemp
 from time import sleep as time_sleep
+from uuid import uuid4 as uuid_uuid4
 
 from neo4j import GraphDatabase
-from networkx import DiGraph as nx_DiGraph
-from networkx import NetworkXError as nx_NetworkXError
-from networkx import betweenness_centrality as nx_betweenness_centrality
-from networkx import community as nx_community
-from networkx import hits as nx_hits
-from networkx import katz_centrality as nx_katz_centrality
-from networkx import pagerank as nx_pagerank
+from networkx import (
+    DiGraph as nx_DiGraph,
+    PowerIterationFailedConvergence as nx_PowerIterationFailedConvergence,
+    betweenness_centrality as nx_betweenness_centrality,
+    community as nx_community,
+    hits as nx_hits,
+    katz_centrality as nx_katz_centrality,
+    pagerank as nx_pagerank,
+)
 
 # Configuration via environment variables with sensible defaults
-MEMGRAPH_URI = os_environ.get("MEMGRAPH_URI", "bolt://localhost:7687")
 MEMGRAPH_USER = os_environ.get("MEMGRAPH_USER", "")
 MEMGRAPH_PASSWORD = os_environ.get("MEMGRAPH_PASSWORD", "")
 
 # Docker configuration
 CONTAINER_NAME = os_environ.get("MEMGRAPH_CONTAINER", "memgraph-cugraph-validation")
 IMAGE_NAME = os_environ.get("MEMGRAPH_IMAGE", "memgraph-mage-cugraph:latest")
+# Label whose value is the run identifier; release removes only containers carrying this run's value.
+OWNER_LABEL = "org.memgraph.mage.cugraph-validation.run"
 
-# Data directory - use temp dir if not specified
-default_data_dir = os_environ.get("MEMGRAPH_DATA_DIR", "")
-if default_data_dir:
-    MEMGRAPH_DATA_DIR = Path(default_data_dir)
-    using_temp_dir = False
-else:
-    MEMGRAPH_DATA_DIR = Path(tempfile_mkdtemp(prefix="memgraph_validation_"))
-    using_temp_dir = True
+# Parent directory for each run's own data directory
+DATA_PARENT_DIR = os_environ.get("MEMGRAPH_DATA_DIR", "")
+RETAIN_RESOURCES = os_environ.get("MEMGRAPH_RETAIN", "").lower() in ("1", "true", "yes")
 
 # Paths
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -69,62 +74,46 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 TOLERANCE = 0.05  # 5% relative tolerance
 ABS_TOLERANCE = 1e-6  # Absolute tolerance for near-zero values
 
-# Expected nodes in the test graph
-EXPECTED_NODES = {"A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4", "HUB"}
+# Authored node identities of the test graph (name -> id), shared by the NetworkX graph and the identity check
+EXPECTED_NODE_IDS = {
+    "A1": 1,
+    "A2": 2,
+    "A3": 3,
+    "A4": 4,
+    "B1": 5,
+    "B2": 6,
+    "B3": 7,
+    "B4": 8,
+    "HUB": 9,
+}
+EXPECTED_NODES = set(EXPECTED_NODE_IDS)
 COMMUNITY_A = {"A1", "A2", "A3", "A4"}
 COMMUNITY_B = {"B1", "B2", "B3", "B4"}
-
-
-def build_networkx_graph() -> nx_DiGraph:
-    """Build the same test graph in NetworkX for ground truth comparison."""
-    G = nx_DiGraph()
-
-    # Add nodes with names
-    nodes = [
-        (1, {"name": "A1"}),
-        (2, {"name": "A2"}),
-        (3, {"name": "A3"}),
-        (4, {"name": "A4"}),
-        (5, {"name": "B1"}),
-        (6, {"name": "B2"}),
-        (7, {"name": "B3"}),
-        (8, {"name": "B4"}),
-        (9, {"name": "HUB"}),
-    ]
-    G.add_nodes_from(nodes)
-
-    # Community 1 edges (A1-A4)
-    community1_edges = [
-        (1, 2),
-        (2, 3),
-        (3, 4),
-        (4, 1),  # Ring
-        (1, 3),
-        (2, 4),  # Cross connections
-    ]
-
-    # Community 2 edges (B1-B4)
-    community2_edges = [
-        (5, 6),
-        (6, 7),
-        (7, 8),
-        (8, 5),  # Ring
-        (5, 7),
-        (6, 8),  # Cross connections
-    ]
-
-    # Hub connections
-    hub_edges = [
-        (1, 9),
-        (9, 5),  # A1 -> HUB -> B1
-        (9, 1),
-        (5, 9),  # HUB -> A1, B1 -> HUB
-    ]
-
-    all_edges = [(u, v, {"weight": 1.0}) for u, v in community1_edges + community2_edges + hub_edges]
-    G.add_edges_from(all_edges)
-
-    return G
+# HUB bridges A1 and B1 symmetrically, so an accepted partition may place it with either community or alone.
+TIE_NODE = "HUB"
+# Authored directed edges of the test graph as (source id, target id), each with weight 1.0, in the order the
+# NetworkX reference graph adds them; create_test_graph writes the same edges to Memgraph.
+TEST_GRAPH_EDGES = (
+    # Community A (A1-A4): ring, then cross connections
+    (1, 2),
+    (2, 3),
+    (3, 4),
+    (4, 1),
+    (1, 3),
+    (2, 4),
+    # Community B (B1-B4): ring, then cross connections
+    (5, 6),
+    (6, 7),
+    (7, 8),
+    (8, 5),
+    (5, 7),
+    (6, 8),
+    # HUB bridge: A1 -> HUB -> B1, then HUB -> A1 and B1 -> HUB
+    (1, 9),
+    (9, 5),
+    (9, 1),
+    (5, 9),
+)
 
 
 def get_networkx_ground_truth(G: nx_DiGraph):
@@ -134,24 +123,24 @@ def get_networkx_ground_truth(G: nx_DiGraph):
 
     # PageRank
     pagerank = nx_pagerank(G, alpha=0.85, max_iter=100, tol=1e-5)
-    pagerank_by_name = {id_to_name.get(k, False): v for k, v in pagerank.items()}
+    pagerank_by_name = {id_to_name.get(k, ""): v for k, v in pagerank.items()}
 
     # Betweenness Centrality (normalized, directed)
     betweenness = nx_betweenness_centrality(G, normalized=True)
-    betweenness_by_name = {id_to_name.get(k, False): v for k, v in betweenness.items()}
+    betweenness_by_name = {id_to_name.get(k, ""): v for k, v in betweenness.items()}
 
     # HITS
     hubs, authorities = nx_hits(G, max_iter=100, tol=1e-5, normalized=True)
-    hubs_by_name = {id_to_name.get(k, False): v for k, v in hubs.items()}
-    authorities_by_name = {id_to_name.get(k, False): v for k, v in authorities.items()}
+    hubs_by_name = {id_to_name.get(k, ""): v for k, v in hubs.items()}
+    authorities_by_name = {id_to_name.get(k, ""): v for k, v in authorities.items()}
 
-    # Katz Centrality
+    # Katz Centrality; an empty baseline records that NetworkX did not converge, and test_katz_centrality then
+    # skips the value comparison.
     try:
         katz = nx_katz_centrality(G, alpha=0.1, beta=1.0, max_iter=100, tol=1e-6, normalized=False)
-        katz_by_name = {id_to_name.get(k, False): v for k, v in katz.items()}
-    except nx_NetworkXError:
-        # Katz may not converge for some graphs
-        katz_by_name = ""
+        katz_by_name = {id_to_name.get(k, ""): v for k, v in katz.items()}
+    except nx_PowerIterationFailedConvergence:
+        katz_by_name = {}
 
     # Community detection (Louvain) - use undirected graph
     G_undirected = G.to_undirected()
@@ -159,13 +148,13 @@ def get_networkx_ground_truth(G: nx_DiGraph):
     community_by_name = {}
     for idx, community in enumerate(communities):
         for node in community:
-            community_by_name[id_to_name.get(node, False)] = idx
+            community_by_name[id_to_name.get(node, "")] = idx
 
     # Personalized PageRank from node 1 (A1)
     personalization = dict.fromkeys(G.nodes(), 0.0)
     personalization[1] = 1.0
     ppr = nx_pagerank(G, alpha=0.85, personalization=personalization, max_iter=100, tol=1e-5)
-    ppr_by_name = {id_to_name.get(k, False): v for k, v in ppr.items()}
+    ppr_by_name = {id_to_name.get(k, ""): v for k, v in ppr.items()}
 
     return {
         "pagerank": pagerank_by_name,
@@ -190,56 +179,44 @@ def values_match(expected: float, actual: float, name: str = "") -> tuple[bool, 
 
     if diff <= TOLERANCE:
         return True, ""
-    else:
-        computed_return_value = (
-            False,
-            f"{name}: expected {expected:.6f}, got {actual:.6f} (diff: {diff:.1%})",
-        )
-        return computed_return_value
-    return ()
+    computed_return_value = (
+        False,
+        f"{name}: expected {expected:.6f}, got {actual:.6f} (diff: {diff:.1%})",
+    )
+    return computed_return_value
 
 
-def communities_match(expected: dict[str, int], actual: dict[str, int]) -> tuple[bool, str]:
-    """Check if community assignments group the same nodes together."""
+def core_partition(assignment: dict) -> list[list[str]]:
+    """Group every node except the tie node by community, independent of community IDs."""
+    groups = {}
+    for name in sorted(EXPECTED_NODES - {TIE_NODE}):
+        groups.setdefault(assignment.get(name, ""), []).append(name)
+    computed_return_value = sorted(groups.values())
+    return computed_return_value
 
-    # Build sets of nodes in each community for both
-    def get_community_sets(comm_dict):
-        sets = {}
-        for node, comm_id in comm_dict.items():
-            if comm_id not in sets:
-                sets[comm_id] = set()
-            sets.get(comm_id, set()).add(node)
-        computed_return_value = list(sets.values())
-        return computed_return_value
 
-    expected_sets = get_community_sets(expected)
-    actual_sets = get_community_sets(actual)
+def partition_contract_errors(actual: dict, baseline: dict) -> list[str]:
+    """Require the NetworkX baseline partition, up to relabelling and the declared tie-node placement."""
+    errors = []
+    declared = sorted([sorted(COMMUNITY_A), sorted(COMMUNITY_B)])
+    baseline_groups = core_partition(baseline)
+    actual_groups = core_partition(actual)
+    if baseline_groups != declared:
+        errors.append(f"NetworkX baseline {baseline_groups} does not separate the authored communities {declared}")
+    if actual_groups != baseline_groups:
+        errors.append(f"Partition {actual_groups} differs from the NetworkX baseline {baseline_groups}")
+    return errors
 
-    # Check that each expected community appears in actual (order/IDs may differ)
-    for exp_set in expected_sets:
-        found = False
-        for act_set in actual_sets:
-            if exp_set == act_set:
-                found = True
-                break
-            # Also check if it's a subset (cuGraph might merge communities differently)
-            if exp_set.issubset(act_set) or act_set.issubset(exp_set):
-                found = True
-                break
-        if not found:
-            # Check if nodes are at least grouped together
-            first_node = next(iter(exp_set))
-            first_comm = actual.get(first_node, False)
-            if first_comm is not False:
-                all_same = all(actual.get(n, False) == first_comm for n in exp_set)
-                if all_same:
-                    found = True
 
-        if not found:
-            computed_return_value = False, f"Community {exp_set} not found in actual results"
-            return computed_return_value
-
-    return True, ""
+def require_baseline_scores(ground_truth: dict, algorithm: str) -> dict:
+    """Return one algorithm's per-node NetworkX scores after checking they cover every authored node."""
+    scores = ground_truth.get(algorithm, {})
+    if not isinstance(scores, dict):
+        raise TypeError(f"{algorithm} ground truth must be a dictionary")
+    missing = sorted(EXPECTED_NODES - set(scores))
+    if missing:
+        raise ValueError(f"{algorithm} ground truth lacks nodes {missing}")
+    return scores
 
 
 def run_cmd(cmd: list[str]) -> subprocess_CompletedProcess:
@@ -249,25 +226,22 @@ def run_cmd(cmd: list[str]) -> subprocess_CompletedProcess:
     return computed_return_value
 
 
-def setup_container():
-    """Stop old container and start fresh one with latest image."""
+def acquire_data_dir() -> Path:
+    """Create this run's empty Memgraph data directory."""
+    if DATA_PARENT_DIR:
+        Path(DATA_PARENT_DIR).mkdir(parents=True, exist_ok=True)
+        data_dir = Path(tempfile_mkdtemp(prefix="memgraph_validation_", dir=DATA_PARENT_DIR))
+    else:
+        data_dir = Path(tempfile_mkdtemp(prefix="memgraph_validation_"))
+    print(f"  Run data directory: {data_dir}")
+    return data_dir
+
+
+def setup_container(container_name: str, run_id: str, data_dir: Path) -> str:
+    """Start this run's container on its own data directory and return the Bolt URI Docker assigned it."""
     print("\n" + "=" * 60)
     print("CONTAINER SETUP")
     print("=" * 60)
-
-    print("\n>>> Killing all memgraph containers...")
-    result = run_cmd(["docker", "ps", "-a", "--format", "{{.Names}}"])
-    for container in result.stdout.strip().split("\n"):
-        if container and "memgraph" in container.lower():
-            print(f"  Stopping {container}...")
-            run_cmd(["docker", "rm", "-f", container])
-
-    print(f"\n>>> Clearing entire data directory at {MEMGRAPH_DATA_DIR}...")
-    if MEMGRAPH_DATA_DIR.exists():
-        shutil_rmtree(MEMGRAPH_DATA_DIR)
-        print("  Removed all old data")
-    MEMGRAPH_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    print("  Created fresh directory")
 
     print(f"\n>>> Checking image '{IMAGE_NAME}' exists...")
     result = run_cmd(["docker", "images", "-q", IMAGE_NAME])
@@ -275,31 +249,34 @@ def setup_container():
         print(f"ERROR: Image '{IMAGE_NAME}' not found!")
         print("Build it first with:")
         print(f"  docker build -f Dockerfile.cugraph -t {IMAGE_NAME} .")
-        sys_exit(1)
+        raise RuntimeError(f"validation image {IMAGE_NAME!r} is not available")
     print(f"  Image ID: {result.stdout.strip()}")
 
-    print(f"\n>>> Starting new container '{CONTAINER_NAME}'...")
+    print(f"\n>>> Starting new container '{container_name}'...")
     uid = os_getuid()
     gid = os_getgid()
 
+    # The Bolt port is published on this host's network interface, the address config.yml's memgraph.host names, never
+    # on the loopback address (D-1298); Docker assigns the port, so the run never binds or reaches a peer's endpoint.
+    bolt_host = os_environ.get("MEMGRAPH_HOST", "").strip()
+    if not bolt_host:
+        raise RuntimeError("MEMGRAPH_HOST must name this host's network interface address; it has no default")
     cmd = [
         "docker",
         "run",
         "-d",
         "--name",
-        CONTAINER_NAME,
+        container_name,
+        "--label",
+        f"{OWNER_LABEL}={run_id}",
         "--user",
         f"{uid}:{gid}",
         "--gpus",
         "all",
         "-p",
-        "7687:7687",
-        "-p",
-        "7444:7444",
-        "-p",
-        "3000:3000",
+        f"{bolt_host}::7687",
         "-v",
-        f"{MEMGRAPH_DATA_DIR}:/var/lib/memgraph:z",
+        f"{data_dir}:/var/lib/memgraph:z",
         IMAGE_NAME,
         "--storage-mode=IN_MEMORY_ANALYTICAL",
         "--query-execution-timeout-sec=0",
@@ -308,16 +285,34 @@ def setup_container():
         "--also-log-to-stderr",
     ]
     result = run_cmd(cmd)
-    container_id = result.stdout.strip()[:12]
-    print(f"  Container started: {container_id}")
+    print(f"  Container started: {result.stdout.strip()}")
 
     print("\n>>> Verifying container uses correct image...")
-    result = run_cmd(["docker", "inspect", "--format", "{{.Config.Image}}", CONTAINER_NAME])
+    result = run_cmd(["docker", "inspect", "--format", "{{.Config.Image}}", container_name])
     actual_image = result.stdout.strip()
     print(f"  Container image: {actual_image}")
     if actual_image != IMAGE_NAME:
         print(f"  WARNING: Expected {IMAGE_NAME}, got {actual_image}")
-    return False
+
+    result = run_cmd(["docker", "port", container_name, "7687/tcp"])
+    bindings = result.stdout.split()
+    if not bindings:
+        raise RuntimeError(f"container {container_name!r} has no published Bolt port")
+    bolt_uri = f"bolt://{bindings[0]}"
+    print(f"  Bolt endpoint: {bolt_uri}")
+    return bolt_uri
+
+
+def release_resources(run_id: str, data_dir: Path) -> None:
+    """Remove exactly this run's container, then its data directory, unless they are retained."""
+    if RETAIN_RESOURCES:
+        print(f"\n>>> Retaining containers labelled {OWNER_LABEL}={run_id} and data directory {data_dir}")
+    else:
+        result = run_cmd(["docker", "ps", "-a", "-q", "--filter", f"label={OWNER_LABEL}={run_id}"])
+        for container_id in result.stdout.split():
+            run_cmd(["docker", "rm", "-f", container_id])
+        print(f"\n>>> Removing run data directory: {data_dir}")
+        shutil_rmtree(data_dir)
 
 
 def wait_for_memgraph(driver, max_retries=30, delay=2):
@@ -394,13 +389,13 @@ def create_test_graph(session):
     return computed_return_value
 
 
-def validate_node_identities(records: list, algorithm_name: str) -> tuple[bool, list[str]]:
+def validate_node_identities(records: list) -> tuple[bool, list[str]]:
     """Validate that all expected nodes are returned with correct identities."""
     errors = []
 
     # Check node count
-    if len(records) != 9:
-        errors.append(f"Expected 9 nodes, got {len(records)}")
+    if len(records) != len(EXPECTED_NODE_IDS):
+        errors.append(f"Expected {len(EXPECTED_NODE_IDS)} nodes, got {len(records)}")
 
     # Check all node names are present
     returned_names = {r.get("name", "") for r in records}
@@ -412,6 +407,15 @@ def validate_node_identities(records: list, algorithm_name: str) -> tuple[bool, 
     if extra:
         errors.append(f"Unexpected nodes: {extra}")
 
+    # Check each returned name still carries its authored id
+    mismatched = sorted(
+        f"{r.get('name', '')}={r.get('id', '')}"
+        for r in records
+        if r.get("name", "") in EXPECTED_NODE_IDS and r.get("id", "") != EXPECTED_NODE_IDS.get(r.get("name", ""), 0)
+    )
+    if mismatched:
+        errors.append(f"Node IDs differ from the authored graph: {mismatched}")
+
     computed_return_value = len(errors) == 0, errors
     return computed_return_value
 
@@ -420,19 +424,17 @@ def test_pagerank(session, ground_truth: dict) -> bool:
     """Test PageRank algorithm against NetworkX ground truth."""
     print("\n--- Testing PageRank ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.pagerank.get(100, 0.85, 1e-5)
             YIELD node, pagerank
             RETURN node.id AS id, node.name AS name, pagerank
             ORDER BY pagerank DESC
-        """
-        )
+        """)
 
         records = list(result)
 
         # Validate node identities
-        valid, errors = validate_node_identities(records, "PageRank")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -441,13 +443,13 @@ def test_pagerank(session, ground_truth: dict) -> bool:
         print(f"✓ PageRank: {len(records)} nodes returned")
 
         # Compare against NetworkX ground truth
-        expected = ground_truth.get("pagerank", False)
+        expected = require_baseline_scores(ground_truth, "pagerank")
         all_match = True
 
         for r in records:
             name = r.get("name", "")
             actual = r.get("pagerank", False)
-            exp = expected.get(name, False)
+            exp = expected.get(name, 0.0)
             match, err = values_match(exp, actual, name)
             if not match:
                 print(f"  ✗ {err}")
@@ -457,7 +459,7 @@ def test_pagerank(session, ground_truth: dict) -> bool:
 
         # Verify ranking order matches
         actual_ranking = [r.get("name", "") for r in records]
-        expected_ranking = sorted(expected.keys(), key=lambda x: expected.get(x, False), reverse=True)
+        expected_ranking = sorted(expected, key=lambda x: expected.get(x, 0.0), reverse=True)
 
         # Check top 3 ranking
         if actual_ranking[:3] != expected_ranking[:3]:
@@ -466,8 +468,8 @@ def test_pagerank(session, ground_truth: dict) -> bool:
 
         return all_match
 
-    except Exception as e:
-        print(f"✗ PageRank failed: {e}")
+    except Exception as err:
+        print(f"✗ PageRank failed: {err}")
         return False
 
 
@@ -475,18 +477,16 @@ def test_betweenness_centrality(session, ground_truth: dict) -> bool:
     """Test Betweenness Centrality - HUB must be highest."""
     print("\n--- Testing Betweenness Centrality ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.betweenness_centrality.get(true, true)
             YIELD node, betweenness
             RETURN node.id AS id, node.name AS name, betweenness
             ORDER BY betweenness DESC
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "Betweenness")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -494,13 +494,13 @@ def test_betweenness_centrality(session, ground_truth: dict) -> bool:
 
         print(f"✓ Betweenness Centrality: {len(records)} nodes returned")
 
-        expected = ground_truth.get("betweenness", False)
+        expected = require_baseline_scores(ground_truth, "betweenness")
         all_match = True
 
         for r in records:
             name = r.get("name", "")
             actual = r.get("betweenness", False)
-            exp = expected.get(name, False)
+            exp = expected.get(name, 0.0)
             match, err = values_match(exp, actual, name)
             if not match:
                 print(f"  ✗ {err}")
@@ -530,8 +530,8 @@ def test_betweenness_centrality(session, ground_truth: dict) -> bool:
 
         return all_match
 
-    except Exception as e:
-        print(f"✗ Betweenness Centrality failed: {e}")
+    except Exception as err:
+        print(f"✗ Betweenness Centrality failed: {err}")
         return False
 
 
@@ -539,18 +539,16 @@ def test_hits(session, ground_truth: dict) -> bool:
     """Test HITS algorithm against NetworkX ground truth."""
     print("\n--- Testing HITS ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.hits.get(100, 1e-5, true)
             YIELD node, hub, authority
             RETURN node.id AS id, node.name AS name, hub, authority
             ORDER BY hub DESC
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "HITS")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -558,8 +556,8 @@ def test_hits(session, ground_truth: dict) -> bool:
 
         print(f"✓ HITS: {len(records)} nodes returned")
 
-        expected_hubs = ground_truth.get("hubs", [])
-        expected_auths = ground_truth.get("authorities", [])
+        expected_hubs = require_baseline_scores(ground_truth, "hubs")
+        expected_auths = require_baseline_scores(ground_truth, "authorities")
         all_match = True
 
         for r in records:
@@ -567,7 +565,7 @@ def test_hits(session, ground_truth: dict) -> bool:
 
             # Check hub values
             actual_hub = r.get("hub", False)
-            exp_hub = expected_hubs[name]
+            exp_hub = expected_hubs.get(name, 0.0)
             match, err = values_match(exp_hub, actual_hub, f"{name} hub")
             if not match:
                 print(f"  ✗ {err}")
@@ -575,7 +573,7 @@ def test_hits(session, ground_truth: dict) -> bool:
 
             # Check authority values
             actual_auth = r.get("authority", False)
-            exp_auth = expected_auths[name]
+            exp_auth = expected_auths.get(name, 0.0)
             match, err = values_match(exp_auth, actual_auth, f"{name} authority")
             if not match:
                 print(f"  ✗ {err}")
@@ -586,8 +584,8 @@ def test_hits(session, ground_truth: dict) -> bool:
 
         return all_match
 
-    except Exception as e:
-        print(f"✗ HITS failed: {e}")
+    except Exception as err:
+        print(f"✗ HITS failed: {err}")
         return False
 
 
@@ -595,18 +593,16 @@ def test_louvain(session, ground_truth: dict) -> bool:
     """Test Louvain community detection - A1-A4 and B1-B4 should be grouped."""
     print("\n--- Testing Louvain ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.louvain.get()
             YIELD node, partition
             RETURN node.id AS id, node.name AS name, partition AS community
             ORDER BY partition, id
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "Louvain")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -619,32 +615,17 @@ def test_louvain(session, ground_truth: dict) -> bool:
         for r in records:
             print(f"    {r.get('name', '')}: community {r.get('community', False)}")
 
-        # Check that A1-A4 are in same community
-        a_comms = {actual_communities.get(n, False) for n in COMMUNITY_A}
-        if len(a_comms) != 1:
-            print(f"  ✗ A1-A4 should be in same community but are in: {a_comms}")
+        errors = partition_contract_errors(actual_communities, ground_truth.get("communities", {}))
+        for error in errors:
+            print(f"  ✗ {error}")
+        if errors:
             return False
-        print(f"  ✓ A1-A4 are in same community ({a_comms.pop()})")
-
-        # Check that B1-B4 are in same community
-        b_comms = {actual_communities.get(n, False) for n in COMMUNITY_B}
-        if len(b_comms) != 1:
-            print(f"  ✗ B1-B4 should be in same community but are in: {b_comms}")
-            return False
-        print(f"  ✓ B1-B4 are in same community ({b_comms.pop()})")
-
-        # Check that A and B communities are different
-        a_comm = actual_communities.get("A1", False)
-        b_comm = actual_communities.get("B1", False)
-        if a_comm == b_comm:
-            print(f"  ✗ A and B communities should be different but both are {a_comm}")
-            return False
-        print("  ✓ A and B are in different communities")
+        print("  ✓ A1-A4 and B1-B4 form separate communities matching the NetworkX baseline")
 
         return True
 
-    except Exception as e:
-        print(f"✗ Louvain failed: {e}")
+    except Exception as err:
+        print(f"✗ Louvain failed: {err}")
         return False
 
 
@@ -652,18 +633,16 @@ def test_leiden(session, ground_truth: dict) -> bool:
     """Test Leiden community detection - A1-A4 and B1-B4 should be grouped."""
     print("\n--- Testing Leiden ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.leiden.get()
             YIELD node, partition
             RETURN node.id AS id, node.name AS name, partition AS community
             ORDER BY partition, id
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "Leiden")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -676,24 +655,17 @@ def test_leiden(session, ground_truth: dict) -> bool:
         for r in records:
             print(f"    {r.get('name', '')}: community {r.get('community', False)}")
 
-        # Check that A1-A4 are in same community
-        a_comms = {actual_communities.get(n, False) for n in COMMUNITY_A}
-        if len(a_comms) != 1:
-            print(f"  ✗ A1-A4 should be in same community but are in: {a_comms}")
+        errors = partition_contract_errors(actual_communities, ground_truth.get("communities", {}))
+        for error in errors:
+            print(f"  ✗ {error}")
+        if errors:
             return False
-        print("  ✓ A1-A4 are in same community")
-
-        # Check that B1-B4 are in same community
-        b_comms = {actual_communities.get(n, False) for n in COMMUNITY_B}
-        if len(b_comms) != 1:
-            print(f"  ✗ B1-B4 should be in same community but are in: {b_comms}")
-            return False
-        print("  ✓ B1-B4 are in same community")
+        print("  ✓ A1-A4 and B1-B4 form separate communities matching the NetworkX baseline")
 
         return True
 
-    except Exception as e:
-        print(f"✗ Leiden failed: {e}")
+    except Exception as err:
+        print(f"✗ Leiden failed: {err}")
         return False
 
 
@@ -701,18 +673,16 @@ def test_katz_centrality(session, ground_truth: dict) -> bool:
     """Test Katz Centrality algorithm."""
     print("\n--- Testing Katz Centrality ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             CALL cugraph.katz_centrality.get(0.1, 1.0, 1e-6, 100, false)
             YIELD node, katz
             RETURN node.id AS id, node.name AS name, katz
             ORDER BY katz DESC
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "Katz")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -720,18 +690,21 @@ def test_katz_centrality(session, ground_truth: dict) -> bool:
 
         print(f"✓ Katz Centrality: {len(records)} nodes returned")
 
-        expected = ground_truth.get("katz", False)
-        if expected is False:
+        katz_baseline = ground_truth.get("katz", {})
+        if not isinstance(katz_baseline, dict):
+            raise TypeError("katz ground truth must be a dictionary")
+        if not katz_baseline:
             print("  ⚠ NetworkX Katz did not converge, skipping value comparison")
             for r in records:
                 print(f"    {r.get('name', '')}: {r.get('katz', False):.6f}")
             return True
 
+        expected = require_baseline_scores(ground_truth, "katz")
         all_match = True
         for r in records:
             name = r.get("name", "")
             actual = r.get("katz", False)
-            exp = expected.get(name, False)
+            exp = expected.get(name, 0.0)
             match, err = values_match(exp, actual, name)
             if not match:
                 print(f"  ✗ {err}")
@@ -741,8 +714,8 @@ def test_katz_centrality(session, ground_truth: dict) -> bool:
 
         return all_match
 
-    except Exception as e:
-        print(f"✗ Katz Centrality failed: {e}")
+    except Exception as err:
+        print(f"✗ Katz Centrality failed: {err}")
         return False
 
 
@@ -750,19 +723,17 @@ def test_personalized_pagerank(session, ground_truth: dict) -> bool:
     """Test Personalized PageRank from A1."""
     print("\n--- Testing Personalized PageRank ---")
     try:
-        result = session.run(
-            """
+        result = session.run("""
             MATCH (source:Node {id: 1})
             CALL cugraph.personalized_pagerank.get(source, 100, 0.85, 1e-5)
             YIELD node, pagerank
             RETURN node.id AS id, node.name AS name, pagerank
             ORDER BY pagerank DESC
-        """
-        )
+        """)
 
         records = list(result)
 
-        valid, errors = validate_node_identities(records, "Personalized PageRank")
+        valid, errors = validate_node_identities(records)
         if not valid:
             for err in errors:
                 print(f"  ✗ {err}")
@@ -770,13 +741,13 @@ def test_personalized_pagerank(session, ground_truth: dict) -> bool:
 
         print(f"✓ Personalized PageRank: {len(records)} nodes returned")
 
-        expected = ground_truth.get("personalized_pagerank", False)
+        expected = require_baseline_scores(ground_truth, "personalized_pagerank")
         all_match = True
 
         for r in records:
             name = r.get("name", "")
             actual = r.get("pagerank", False)
-            exp = expected.get(name, False)
+            exp = expected.get(name, 0.0)
             match, err = values_match(exp, actual, name)
             if not match:
                 print(f"  ✗ {err}")
@@ -798,8 +769,8 @@ def test_personalized_pagerank(session, ground_truth: dict) -> bool:
 
         return all_match
 
-    except Exception as e:
-        print(f"✗ Personalized PageRank failed: {e}")
+    except Exception as err:
+        print(f"✗ Personalized PageRank failed: {err}")
         return False
 
 
@@ -809,9 +780,11 @@ def main():
     print("Testing RAPIDS 25.x API with NetworkX Ground Truth")
     print("=" * 60)
 
-    # Build NetworkX graph and compute ground truth
+    # Build the NetworkX reference copy of the test graph and compute ground truth
     print("\n--- Computing NetworkX Ground Truth ---")
-    G = build_networkx_graph()
+    G = nx_DiGraph()
+    G.add_nodes_from((node_id, {"name": name}) for name, node_id in EXPECTED_NODE_IDS.items())
+    G.add_edges_from((source, target, {"weight": 1.0}) for source, target in TEST_GRAPH_EDGES)
     print(f"  NetworkX graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
 
     ground_truth = get_networkx_ground_truth(G)
@@ -819,72 +792,70 @@ def main():
 
     # Show expected values
     print("\n  Expected PageRank (top 3):")
-    pr = ground_truth.get("pagerank", False)
-    if not isinstance(pr, dict):
-        raise TypeError("PageRank ground truth must be a dictionary")
-    for name in sorted(pr.keys(), key=lambda x: pr[x], reverse=True)[:3]:
-        print(f"    {name}: {pr[name]:.6f}")
+    pr = require_baseline_scores(ground_truth, "pagerank")
+    for name, score in sorted(pr.items(), key=lambda item: item[1], reverse=True)[:3]:
+        print(f"    {name}: {score:.6f}")
 
     print("\n  Expected Betweenness (top 3):")
-    bc = ground_truth.get("betweenness", False)
-    if not isinstance(bc, dict):
-        raise TypeError("betweenness ground truth must be a dictionary")
-    for name in sorted(bc.keys(), key=lambda x: bc[x], reverse=True)[:3]:
-        print(f"    {name}: {bc[name]:.6f}")
+    bc = require_baseline_scores(ground_truth, "betweenness")
+    for name, score in sorted(bc.items(), key=lambda item: item[1], reverse=True)[:3]:
+        print(f"    {name}: {score:.6f}")
 
-    # Setup container with fresh image
-    setup_container()
-
-    driver = GraphDatabase.driver(MEMGRAPH_URI, auth=(MEMGRAPH_USER, MEMGRAPH_PASSWORD))
-
+    # Every acquired resource is released in the finally blocks, driver first, then container, then storage.
+    run_id = uuid_uuid4().hex
+    data_dir = acquire_data_dir()
     try:
-        if not wait_for_memgraph(driver):
-            sys_exit(1)
-
-        with driver.session() as session:
-            print("\n--- Setup ---")
-            clear_database(session)
-            if not create_test_graph(session):
-                print("✗ Failed to create test graph")
-                sys_exit(1)
-
-            results = {}
-
-            results["PageRank"] = test_pagerank(session, ground_truth)
-            results["Betweenness Centrality"] = test_betweenness_centrality(session, ground_truth)
-            results["HITS"] = test_hits(session, ground_truth)
-            results["Louvain"] = test_louvain(session, ground_truth)
-            results["Leiden"] = test_leiden(session, ground_truth)
-            results["Katz Centrality"] = test_katz_centrality(session, ground_truth)
-            results["Personalized PageRank"] = test_personalized_pagerank(session, ground_truth)
-
-            print("\n" + "=" * 60)
-            print("TEST SUMMARY")
-            print("=" * 60)
-
-            passed = sum(1 for v in results.values() if v)
-            failed = sum(1 for v in results.values() if not v)
-
-            for name, result in results.items():
-                status = "✓ PASS" if result else "✗ FAIL"
-                print(f"  {status}: {name}")
-
-            print(f"\nTotal: {passed} passed, {failed} failed")
-            print(f"Tolerance: {TOLERANCE:.0%} relative, {ABS_TOLERANCE} absolute")
-
-            if failed > 0:
-                sys_exit(1)
-            else:
-                print("\n✓ All cuGraph algorithms match NetworkX ground truth!")
-                sys_exit(0)
-
+        bolt_uri = setup_container(f"{CONTAINER_NAME}-{run_id}", run_id, data_dir)
+        driver = GraphDatabase.driver(bolt_uri, auth=(MEMGRAPH_USER, MEMGRAPH_PASSWORD))
+        try:
+            passed = run_validation(driver, ground_truth)
+        finally:
+            driver.close()
     finally:
-        # Cleanup temp directory if we created one
-        if using_temp_dir and MEMGRAPH_DATA_DIR.exists():
-            print(f"\n>>> Cleaning up temp data directory: {MEMGRAPH_DATA_DIR}")
-            shutil_rmtree(MEMGRAPH_DATA_DIR, ignore_errors=True)
-        driver.close()
-    return False
+        release_resources(run_id, data_dir)
+    sys_exit(0 if passed else 1)
+
+
+def run_validation(driver, ground_truth: dict) -> bool:
+    """Build the test graph in this run's database and compare every algorithm with the ground truth."""
+    if not wait_for_memgraph(driver):
+        return False
+
+    with driver.session() as session:
+        print("\n--- Setup ---")
+        clear_database(session)
+        if not create_test_graph(session):
+            print("✗ Failed to create test graph")
+            return False
+
+        results = {}
+
+        results["PageRank"] = test_pagerank(session, ground_truth)
+        results["Betweenness Centrality"] = test_betweenness_centrality(session, ground_truth)
+        results["HITS"] = test_hits(session, ground_truth)
+        results["Louvain"] = test_louvain(session, ground_truth)
+        results["Leiden"] = test_leiden(session, ground_truth)
+        results["Katz Centrality"] = test_katz_centrality(session, ground_truth)
+        results["Personalized PageRank"] = test_personalized_pagerank(session, ground_truth)
+
+    print("\n" + "=" * 60)
+    print("TEST SUMMARY")
+    print("=" * 60)
+
+    passed = sum(1 for v in results.values() if v)
+    failed = sum(1 for v in results.values() if not v)
+
+    for name, result in results.items():
+        status = "✓ PASS" if result else "✗ FAIL"
+        print(f"  {status}: {name}")
+
+    print(f"\nTotal: {passed} passed, {failed} failed")
+    print(f"Tolerance: {TOLERANCE:.0%} relative, {ABS_TOLERANCE} absolute")
+
+    all_passed = failed == 0
+    if all_passed:
+        print("\n✓ All cuGraph algorithms match NetworkX ground truth!")
+    return all_passed
 
 
 if __name__ == "__main__":

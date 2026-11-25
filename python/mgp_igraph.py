@@ -1,18 +1,23 @@
 """Utilities for mgp igraph."""
 
-from collections import defaultdict
 from enum import Enum as enum_Enum
 
-from igraph import EdgeSeq as igraph_EdgeSeq
-from igraph import Graph as igraph_Graph
+from igraph import EdgeSeq as igraph_EdgeSeq, Graph as igraph_Graph
 
 
 class MemgraphIgraph(igraph_Graph):
+    """igraph Graph built from the Memgraph procedure context; igraph vertex ids map back to Memgraph vertices."""
+
     def __init__(self, ctx, directed: bool):
         if not hasattr(ctx, "graph"):
             raise TypeError("MemgraphIgraph requires a context with a graph")
+        vertex_count, edge_list, vertex_properties, edge_properties, id_mapping, inverted_id_mapping = graph_structure_from_ctx(ctx)
+        super().__init__(directed=directed, n=vertex_count, edges=edge_list)
+        assign_present_attributes(self.es, edge_properties)
+        assign_present_attributes(self.vs, vertex_properties)
         self.ctx_graph = ctx.graph
-        self.id_mappings, self.reverse_id_mappings = self.create_igraph_from_ctx(ctx=ctx, directed=directed)
+        self.id_mappings = id_mapping
+        self.reverse_id_mappings = inverted_id_mapping
 
     def get_igraph_vertex_id(self, vertex) -> int:
         if not hasattr(vertex, "id"):
@@ -25,11 +30,31 @@ class MemgraphIgraph(igraph_Graph):
             raise KeyError(f"Memgraph vertex {vertex_id} is absent from the igraph mapping")
         return igraph_vertex_id
 
+    def edge_attribute_option(self, option: str, attribute) -> dict:
+        """igraph keyword arguments for an optional edge weight/capacity attribute.
+
+        A disabled attribute (Memgraph null, the procedures' False default or an
+        empty name) is omitted so igraph runs unweighted; igraph would read
+        False as an attribute name. A named attribute must be set on every edge,
+        because igraph handles unset values differently per algorithm (some
+        reject them, others silently substitute a value).
+        """
+        if not attribute or not self.ecount():
+            return {}
+        if attribute not in self.es.attribute_names():
+            raise KeyError(f"no edge provides property {attribute!r}")
+        # igraph reports an attribute value that was never set on an edge as None.
+        missing = sum(1 for value in self.es[attribute] if value is None)
+        if missing:
+            raise ValueError(f"{missing} of {self.ecount()} edges lack property {attribute!r}")
+        options = {option: attribute}
+        return options
+
     def maxflow(self, source, target, capacity: str) -> float:
         flow = super().maxflow(
             self.get_igraph_vertex_id(source),
             self.get_igraph_vertex_id(target),
-            capacity=capacity,
+            **self.edge_attribute_option("capacity", capacity),
         )
         return flow.value
 
@@ -41,18 +66,18 @@ class MemgraphIgraph(igraph_Graph):
         implementation: str,
     ) -> list[tuple[object, float]]:
         pagerank_values = super().pagerank(
-            weights=weights,
             directed=directed,
             damping=damping,
             implementation=implementation,
+            **self.edge_attribute_option("weights", weights),
         )
 
         computed_return_value = [(self.get_vertex_by_id(node_id), rank) for node_id, rank in enumerate(pagerank_values)]
         return computed_return_value
 
     def get_all_simple_paths(self, v, to, cutoff: int) -> list[list[object]]:
-        if cutoff < 0:
-            raise ValueError(f"Path cutoff must be non-negative, received {cutoff}")
+        # The procedure's cutoff is igraph's maxlen: the longest path considered,
+        # where a negative value (the procedure default -1) considers every length.
         paths = [
             self.convert_vertex_ids_to_mgp_vertices(path)
             for path in super().get_all_simple_paths(
@@ -84,8 +109,7 @@ class MemgraphIgraph(igraph_Graph):
             "objective_function": objective_function,
             "beta": beta,
         }
-        if weights:
-            parameters["weights"] = weights
+        parameters.update(self.edge_attribute_option("weights", weights))
         if initial_membership:
             parameters["initial_membership"] = initial_membership
         if node_weights:
@@ -98,7 +122,7 @@ class MemgraphIgraph(igraph_Graph):
         cut = super().mincut(
             source=self.get_igraph_vertex_id(source),
             target=self.get_igraph_vertex_id(target),
-            capacity=capacity,
+            **self.edge_attribute_option("capacity", capacity),
         )
 
         partition_vertices = [self.convert_vertex_ids_to_mgp_vertices(vertex_ids=partition) for partition in cut.partition]
@@ -108,10 +132,7 @@ class MemgraphIgraph(igraph_Graph):
         self,
         weights: str,
     ) -> list[list[object]]:
-        if weights:
-            min_spanning_tree_edges = super().spanning_tree(weights=self.es[weights], return_tree=False)
-        else:
-            min_spanning_tree_edges = super().spanning_tree(return_tree=False)
+        min_spanning_tree_edges = super().spanning_tree(return_tree=False, **self.edge_attribute_option("weights", weights))
 
         computed_return_value = self.get_min_span_tree_vertex_pairs(min_spanning_tree_edges=self.es[min_spanning_tree_edges])
         return computed_return_value
@@ -119,10 +140,11 @@ class MemgraphIgraph(igraph_Graph):
     def shortest_path_length(self, source, target, weights: str) -> float:
         source_id = self.get_igraph_vertex_id(source)
         target_id = self.get_igraph_vertex_id(target)
-        if weights:
-            distances = super().distances(source=source_id, target=target_id, weights=weights)
-        else:
-            distances = super().distances(source=source_id, target=target_id)
+        distances = super().distances(
+            source=source_id,
+            target=target_id,
+            **self.edge_attribute_option("weights", weights),
+        )
         if not distances or not distances[0]:
             raise RuntimeError("igraph returned no shortest-path distance")
         length = distances[0][0]
@@ -131,19 +153,13 @@ class MemgraphIgraph(igraph_Graph):
         return computed_return_value
 
     def all_shortest_path_lengths(self, weights: str) -> list[list[float]]:
-        if weights:
-            computed_return_value = super().distances(weights=weights)
-        else:
-            computed_return_value = super().distances()
+        computed_return_value = super().distances(**self.edge_attribute_option("weights", weights))
         return computed_return_value
 
     def get_shortest_path(self, source, target, weights: str) -> list[object]:
         source_id = self.get_igraph_vertex_id(source)
         target_id = self.get_igraph_vertex_id(target)
-        if weights:
-            paths = super().get_shortest_paths(v=source_id, to=target_id, weights=weights)
-        else:
-            paths = super().get_shortest_paths(v=source_id, to=target_id)
+        paths = super().get_shortest_paths(v=source_id, to=target_id, **self.edge_attribute_option("weights", weights))
         if not paths:
             raise RuntimeError("igraph returned no shortest path result")
         path = paths[0]
@@ -189,50 +205,52 @@ class MemgraphIgraph(igraph_Graph):
 
         return min_span_tree
 
-    def create_igraph_from_ctx(self, ctx, directed: bool = False) -> tuple[dict[int, int], dict[int, int]]:
-        (
-            "Function for creating igraph.Graph from mgp.ProcCtx.\n\n        Args:\n            ctx (mgp.Pro"  # Continue literal.
-            "cCtx): memgraph ProcCtx object\n            directed (bool, optional): Is graph directed. Def"  # Continue literal.
-            "aults to False.\n\n        Returns:\n            Tuple[igraph.Graph, Dict[int, int], Dict[int, "  # Continue literal.
-            "int]]: Returns Igraph.Graph object, vertex id mappings and inverted_id_mapping vertex id map"  # Continue literal.
-            "pings\n"
-        )
 
-        vertex_attrs = defaultdict(list)
-        edge_list = []
-        edge_attrs = defaultdict(list)
-        id_mapping = {vertex.id: i for i, vertex in enumerate(ctx.graph.vertices)}
-        inverted_id_mapping = {i: vertex.id for i, vertex in enumerate(ctx.graph.vertices)}
-        for vertex in ctx.graph.vertices:
-            for name, value in vertex.properties.items():
-                attribute_values = vertex_attrs.get(name, [])
-                attribute_values.append(value)
-                vertex_attrs[name] = attribute_values
-            for edge in vertex.out_edges:
-                for name, value in edge.properties.items():
-                    attribute_values = edge_attrs.get(name, [])
-                    attribute_values.append(value)
-                    edge_attrs[name] = attribute_values
-                source_id = id_mapping.get(edge.from_vertex.id, -1)
-                target_id = id_mapping.get(edge.to_vertex.id, -1)
-                if source_id < 0 or target_id < 0:
-                    raise KeyError("Memgraph edge references a vertex outside the graph context")
-                edge_list.append(
-                    (
-                        source_id,
-                        target_id,
-                    )
-                )
+def graph_structure_from_ctx(ctx) -> tuple[int, list[tuple[int, int]], list[dict], list[dict], dict[int, int], dict[int, int]]:
+    """Reads the igraph structure of the graph in an mgp.ProcCtx.
 
-        super().__init__(
-            directed=directed,
-            n=len(ctx.graph.vertices),
-            edges=edge_list,
-            edge_attrs=edge_attrs,
-            vertex_attrs=vertex_attrs,
-        )
+    Args:
+        ctx (mgp.ProcCtx): memgraph ProcCtx object
 
-        return id_mapping, inverted_id_mapping
+    Returns:
+        The vertex count, the edge list as igraph vertex id pairs, the vertex and edge property maps by position, and
+        the Memgraph-to-igraph vertex id mapping with its inverse.
+    """
+
+    vertices = list(ctx.graph.vertices)
+    edge_list = []
+    vertex_properties = []
+    edge_properties = []
+    id_mapping = {vertex.id: i for i, vertex in enumerate(vertices)}
+    inverted_id_mapping = {i: vertex.id for i, vertex in enumerate(vertices)}
+    for vertex in vertices:
+        vertex_properties.append(dict(vertex.properties.items()))
+        for edge in vertex.out_edges:
+            edge_properties.append(dict(edge.properties.items()))
+            source_id = id_mapping.get(edge.from_vertex.id, -1)
+            target_id = id_mapping.get(edge.to_vertex.id, -1)
+            if source_id < 0 or target_id < 0:
+                raise KeyError("Memgraph edge references a vertex outside the graph context")
+            edge_list.append((source_id, target_id))
+
+    structure = (len(vertices), edge_list, vertex_properties, edge_properties, id_mapping, inverted_id_mapping)
+    return structure
+
+
+def assign_present_attributes(sequence, property_maps: list[dict]) -> None:
+    """Set each property only on the vertices or edges, by position, that carry it.
+
+    igraph leaves every other element of a partially assigned attribute unset, so values
+    never shift onto another element and no concrete false value reads as a 0 weight or capacity.
+    """
+    present = {}
+    for position, properties in enumerate(property_maps):
+        for name, value in properties.items():
+            positions, values = present.setdefault(name, ([], []))
+            positions.append(position)
+            values.append(value)
+    for name, (positions, values) in present.items():
+        sequence.select(positions)[name] = values
 
 
 class PageRankImplementationOptions(enum_Enum):

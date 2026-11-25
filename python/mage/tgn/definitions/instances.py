@@ -2,11 +2,8 @@
 Instances of TGN
 """
 
-from numpy import concatenate as np_concatenate
-from numpy import ndarray as np_ndarray
-from torch import Tensor as torch_Tensor
-from torch import device as torch_device
-from torch import nn
+from numpy import concatenate as np_concatenate, ndarray as np_ndarray
+from torch import Tensor as torch_Tensor, device as torch_device, nn
 
 from mage.tgn.constants import (
     MemoryUpdaterType,
@@ -167,6 +164,8 @@ class TGNSupervised(TGN):
 
 
 class TGNGraphAttentionEmbedding(TGN):
+    """TGN that embeds nodes with graph attention layers."""
+
     def __init__(
         self,
         num_of_layers: int,
@@ -220,6 +219,8 @@ class TGNGraphAttentionEmbedding(TGN):
 
 
 class TGNGraphSumEmbedding(TGN):
+    """TGN that embeds nodes with graph sum layers."""
+
     def __init__(
         self,
         num_of_layers: int,
@@ -275,135 +276,19 @@ class TGNGraphSumEmbedding(TGN):
 
 # Self_supervised x Graph_attention
 class TGNGraphAttentionEdgeSelfSupervised(TGNGraphAttentionEmbedding, TGNEdgesSelfSupervised):
-    def __init__(
-        self,
-        num_of_layers: int,
-        layer_type: TGNLayerType,
-        memory_dimension: int,
-        time_dimension: int,
-        num_edge_features: int,
-        num_node_features: int,
-        message_dimension: int,
-        num_neighbors: int,
-        edge_message_function_type: MessageFunctionType,
-        message_aggregator_type: MessageAggregatorType,
-        memory_updater_type: MemoryUpdaterType,
-        num_attention_heads: int,
-        device: torch_device,
-    ):
-        super().__init__(
-            num_of_layers,
-            layer_type,
-            memory_dimension,
-            time_dimension,
-            num_edge_features,
-            num_node_features,
-            message_dimension,
-            num_neighbors,
-            edge_message_function_type,
-            message_aggregator_type,
-            memory_updater_type,
-            num_attention_heads,
-            device,
-        )
+    """Graph attention TGN trained self-supervised on edge prediction."""
 
 
 # Self_supervised x Graph_sum
 class TGNGraphSumEdgeSelfSupervised(TGNGraphSumEmbedding, TGNEdgesSelfSupervised):
-    def __init__(
-        self,
-        num_of_layers: int,
-        layer_type: TGNLayerType,
-        memory_dimension: int,
-        time_dimension: int,
-        num_edge_features: int,
-        num_node_features: int,
-        message_dimension: int,
-        num_neighbors: int,
-        edge_message_function_type: MessageFunctionType,
-        message_aggregator_type: MessageAggregatorType,
-        memory_updater_type: MemoryUpdaterType,
-        device: torch_device,
-    ):
-        super().__init__(
-            num_of_layers,
-            layer_type,
-            memory_dimension,
-            time_dimension,
-            num_edge_features,
-            num_node_features,
-            message_dimension,
-            num_neighbors,
-            edge_message_function_type,
-            message_aggregator_type,
-            memory_updater_type,
-            device,
-        )
+    """Graph sum TGN trained self-supervised on edge prediction."""
 
 
 # Supervised x Graph_sum
 class TGNGraphSumSupervised(TGNGraphSumEmbedding, TGNSupervised):
-    def __init__(
-        self,
-        num_of_layers: int,
-        layer_type: TGNLayerType,
-        memory_dimension: int,
-        time_dimension: int,
-        num_edge_features: int,
-        num_node_features: int,
-        message_dimension: int,
-        num_neighbors: int,
-        edge_message_function_type: MessageFunctionType,
-        message_aggregator_type: MessageAggregatorType,
-        memory_updater_type: MemoryUpdaterType,
-        device: torch_device,
-    ):
-        super().__init__(
-            num_of_layers,
-            layer_type,
-            memory_dimension,
-            time_dimension,
-            num_edge_features,
-            num_node_features,
-            message_dimension,
-            num_neighbors,
-            edge_message_function_type,
-            message_aggregator_type,
-            memory_updater_type,
-            device,
-        )
+    """Graph sum TGN trained supervised on node labels."""
 
 
 # Supervised x Graph_attention
 class TGNGraphAttentionSupervised(TGNGraphAttentionEmbedding, TGNSupervised):
-    def __init__(
-        self,
-        num_of_layers: int,
-        layer_type: TGNLayerType,
-        memory_dimension: int,
-        time_dimension: int,
-        num_edge_features: int,
-        num_node_features: int,
-        message_dimension: int,
-        num_neighbors: int,
-        edge_message_function_type: MessageFunctionType,
-        message_aggregator_type: MessageAggregatorType,
-        memory_updater_type: MemoryUpdaterType,
-        num_attention_heads: int,
-        device: torch_device,
-    ):
-        super().__init__(
-            num_of_layers,
-            layer_type,
-            memory_dimension,
-            time_dimension,
-            num_edge_features,
-            num_node_features,
-            message_dimension,
-            num_neighbors,
-            edge_message_function_type,
-            message_aggregator_type,
-            memory_updater_type,
-            num_attention_heads,
-            device,
-        )
+    """Graph attention TGN trained supervised on node labels."""

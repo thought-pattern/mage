@@ -34,17 +34,28 @@ void insert_results(const std::vector<std::tuple<mgp::Node, mgp::Node, double>> 
     }
 }
 
+namespace {
+void ReportProcedureError(const mgp::RecordFactory &record_factory, const char *message) noexcept {
+    try {
+        record_factory.SetErrorMessage(message);
+    } catch (...) {
+    }
+}
+}  // namespace
+
 /*
 Calculates Jaccard similarity between given pairs of nodes.
 */
 void JaccardPairwise(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_memory *memory) {
     mgp::MemoryDispatcherGuard guard{memory};
     const auto record_factory = mgp::RecordFactory(result);
-    const auto &arguments = mgp::List(args);
     try {
+        const auto arguments = mgp::List(args);
         insert_results(node_similarity_algs::CalculateSimilarityPairwise(arguments[0].ValueList(), arguments[1].ValueList(), node_similarity_util::Similarity::jaccard), record_factory);
-    } catch (const mgp::ValueException &e) {
-        record_factory.SetErrorMessage(e.what());
+    } catch (const std::exception &e) {
+        ReportProcedureError(record_factory, e.what());
+    } catch (...) {
+        ReportProcedureError(record_factory, "Unknown error in node_similarity.jaccard_pairwise.");
     }
 }
 
@@ -53,12 +64,14 @@ Calculates overlap similarity between given pairs of nodes.
 */
 void OverlapPairwise(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_memory *memory) {
     mgp::MemoryDispatcherGuard guard{memory};
-    const auto &arguments = mgp::List(args);
     const auto record_factory = mgp::RecordFactory(result);
     try {
+        const auto arguments = mgp::List(args);
         insert_results(node_similarity_algs::CalculateSimilarityPairwise(arguments[0].ValueList(), arguments[1].ValueList(), node_similarity_util::Similarity::overlap), record_factory);
-    } catch (const mgp::ValueException &e) {
-        record_factory.SetErrorMessage(e.what());
+    } catch (const std::exception &e) {
+        ReportProcedureError(record_factory, e.what());
+    } catch (...) {
+        ReportProcedureError(record_factory, "Unknown error in node_similarity.overlap_pairwise.");
     }
 }
 
@@ -70,9 +83,13 @@ void Jaccard(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_
     mgp::MemoryDispatcherGuard guard{memory};
     const auto record_factory = mgp::RecordFactory(result);
     try {
+        const auto arguments = mgp::List(args);
+        (void)arguments;
         insert_results(node_similarity_algs::CalculateSimilarityCartesian(mgp::Graph(memgraph_graph), node_similarity_util::Similarity::jaccard), record_factory);
-    } catch (const mgp::ValueException &e) {
-        record_factory.SetErrorMessage(e.what());
+    } catch (const std::exception &e) {
+        ReportProcedureError(record_factory, e.what());
+    } catch (...) {
+        ReportProcedureError(record_factory, "Unknown error in node_similarity.jaccard.");
     }
 }
 
@@ -84,11 +101,14 @@ void Overlap(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_
     mgp::MemoryDispatcherGuard guard{memory};
     const auto record_factory = mgp::RecordFactory(result);
     try {
+        const auto arguments = mgp::List(args);
+        (void)arguments;
         insert_results(node_similarity_algs::CalculateSimilarityCartesian(mgp::Graph(memgraph_graph), node_similarity_util::Similarity::overlap), record_factory);
-    } catch (const mgp::ValueException &e) {
-        record_factory.SetErrorMessage(e.what());
+    } catch (const std::exception &e) {
+        ReportProcedureError(record_factory, e.what());
+    } catch (...) {
+        ReportProcedureError(record_factory, "Unknown error in node_similarity.overlap.");
     }
-
 }
 
 /*
@@ -97,11 +117,13 @@ Calculates cosine similarity between all pairs of nodes.
 void Cosine(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_memory *memory) {
     mgp::MemoryDispatcherGuard guard{memory};
     const auto record_factory = mgp::RecordFactory(result);
-    const auto &arguments = mgp::List(args);
     try {
+        const auto arguments = mgp::List(args);
         insert_results(node_similarity_algs::CalculateSimilarityCartesian(mgp::Graph(memgraph_graph), node_similarity_util::Similarity::cosine, arguments[0].ValueString().data()), record_factory);
-    } catch (const mgp::ValueException &e) {
-        record_factory.SetErrorMessage(e.what());
+    } catch (const std::exception &e) {
+        ReportProcedureError(record_factory, e.what());
+    } catch (...) {
+        ReportProcedureError(record_factory, "Unknown error in node_similarity.cosine.");
     }
 }
 
@@ -111,11 +133,13 @@ Calculates overlap similarity between given pairs of nodes.
 void CosinePairwise(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_memory *memory) {
     mgp::MemoryDispatcherGuard guard{memory};
     const auto record_factory = mgp::RecordFactory(result);
-    const auto &arguments = mgp::List(args);
     try {
+        const auto arguments = mgp::List(args);
         insert_results(node_similarity_algs::CalculateSimilarityPairwise(arguments[1].ValueList(), arguments[2].ValueList(), node_similarity_util::Similarity::cosine, arguments[0].ValueString().data()), record_factory);
-    } catch (const mgp::ValueException &e) {
-        record_factory.SetErrorMessage(e.what());
+    } catch (const std::exception &e) {
+        ReportProcedureError(record_factory, e.what());
+    } catch (...) {
+        ReportProcedureError(record_factory, "Unknown error in node_similarity.cosine_pairwise.");
     }
 }
 
@@ -142,9 +166,11 @@ extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *mem
         mgp::AddProcedure(Cosine, cosineAll, mgp::ProcedureType::Read, {mgp::Parameter(prop_vector, mgp::Type::String)}, 
                 returns, module, memory);
         mgp::AddProcedure(CosinePairwise, cosinePairwise, mgp::ProcedureType::Read, cosine_params_pairwise, returns, module, memory);
-    } catch(const std::exception &e) {
+    } catch (const std::exception &) {
         return 1;
-    } 
+    } catch (...) {
+        return 1;
+    }
     return 0;
 }
 

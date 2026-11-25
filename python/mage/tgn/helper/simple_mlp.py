@@ -4,6 +4,8 @@ from torch import nn
 
 
 class MLP(nn.Module):
+    """Two-layer perceptron with the input, hidden and output widths given in dims."""
+
     def __init__(self, dims: list[int]):
         super().__init__()
         assert len(dims) == 3
@@ -21,6 +23,8 @@ class MLP(nn.Module):
 
 
 class SimpleMLP(nn.Module):
+    """Two-layer perceptron that halves the input width in its hidden layer."""
+
     def __init__(self, dim_input, dim_output):
         super(SimpleMLP, self).__init__()
         self.fc1 = nn.Linear(dim_input, dim_input // 2)

@@ -3,15 +3,17 @@ This class contains implementations of different layers
 """
 
 from numpy import array as np_array
-from torch import Tensor as torch_Tensor
-from torch import cat as torch_cat
-from torch import concat as torch_concat
-from torch import device as torch_device
-from torch import nn
-from torch import rand as torch_rand
-from torch import squeeze as torch_squeeze
-from torch import sum as torch_sum
-from torch import unsqueeze as torch_unsqueeze
+from torch import (
+    Tensor as torch_Tensor,
+    cat as torch_cat,
+    concat as torch_concat,
+    device as torch_device,
+    nn,
+    rand as torch_rand,
+    sum as torch_sum,
+    unsqueeze as torch_unsqueeze,
+    zeros as torch_zeros,
+)
 
 from mage.tgn.helper.simple_mlp import MLP
 
@@ -84,7 +86,6 @@ class TGNLayerGraphSumEmbedding(TGNLayer):
             raise ValueError(f"Graph-sum data must contain seven values, received {len(data)}")
         node_layers: list[list[tuple[int, int]]]
         mappings: list[dict[tuple[int, int], int]]
-        edge_layers: list[list[int]]
         neighbors_arr: list[list[tuple[int, int]]]
         features: torch_Tensor
         edge_features: list[torch_Tensor]
@@ -92,7 +93,7 @@ class TGNLayerGraphSumEmbedding(TGNLayer):
         (
             node_layers,
             mappings,
-            edge_layers,
+            _,
             neighbors_arr,
             features,
             edge_features,
@@ -149,7 +150,8 @@ class TGNLayerGraphSumEmbedding(TGNLayer):
                 if mapped_node < 0:
                     raise KeyError(f"Neighbor {node} is missing from the TGN mapping")
                 mapped_row.append(mapped_node)
-            mapped_rows.append(np_array(mapped_row))
+            # a row lists only sampled neighbors and may be empty; integer dtype keeps an empty row a valid index
+            mapped_rows.append(np_array(mapped_row, dtype=int))
         out = torch_rand(len(nodes), self.embedding_dimension, device=self.device)
 
         # row represents list of indexes of "current neighbors" of edge_features on i-th index
@@ -234,7 +236,6 @@ class TGNLayerGraphAttentionEmbedding(TGNLayer):
             raise ValueError(f"Graph-attention data must contain eight values, received {len(data)}")
         node_layers: list[list[tuple[int, int]]]
         mappings: list[dict[tuple[int, int], int]]
-        edge_layers: list[list[int]]
         neighbors_arr: list[list[tuple[int, int]]]
         features: torch_Tensor
         edge_features: list[torch_Tensor]
@@ -243,13 +244,18 @@ class TGNLayerGraphAttentionEmbedding(TGNLayer):
         (
             node_layers,
             mappings,
-            edge_layers,
+            _,
             neighbors_arr,
             features,
             edge_features,
             time_features,
             time_encoder_zeros,
         ) = data
+
+        if tuple(time_encoder_zeros.shape) != (1, self.time_encoding_dim):
+            raise ValueError(
+                f"Zero-time encoding must have shape (1, {self.time_encoding_dim}); received {tuple(time_encoder_zeros.shape)}"
+            )
 
         out = features
 
@@ -298,8 +304,8 @@ class TGNLayerGraphAttentionEmbedding(TGNLayer):
             query = torch_unsqueeze(query_concat, dim=0)
 
             attn_out, _ = self.multi_head_attentions[k](query=query, key=keys, value=values)
-            # shape = (N, EMBED_DIM + TIME_ENC_DIM)
-            attn_out = torch_squeeze(attn_out)
+            # shape = (N, EMBED_DIM + TIME_ENC_DIM); only the batch axis is removed, so N = 1 keeps its node axis
+            attn_out = attn_out.squeeze(0)
             # shape = (N, EMBED_DIM + TIME_ENC_DIM + EMBED_DIM)
             concat_neigh_out = torch_cat((out[curr_mapped_nodes], attn_out), dim=1)
             # shape = (N, EMBED_DIM)
@@ -325,9 +331,12 @@ class TGNLayerGraphAttentionEmbedding(TGNLayer):
                 if mapped_node < 0:
                     raise KeyError(f"Neighbor {node} is missing from the TGN mapping")
                 mapped_row.append(mapped_node)
-            mapped_rows.append(np_array(mapped_row))
+            # a row lists only sampled neighbors and may be empty; integer dtype keeps an empty row a valid index
+            mapped_rows.append(np_array(mapped_row, dtype=int))
 
-        out = torch_rand(len(nodes), self.num_neighbors * self.key_dim, device=self.device)
+        # Sampled neighbors fill the leading key slots; slots without a sampled neighbor stay zero, so absent samples
+        # contribute nothing to keys and values.
+        out = torch_zeros(len(nodes), self.num_neighbors * self.key_dim, device=self.device)
 
         # row represents list of indexes of "current neighbors" of edge_features on i-th index
         for i, row in enumerate(mapped_rows):
@@ -335,12 +344,10 @@ class TGNLayerGraphAttentionEmbedding(TGNLayer):
             edge_feature_curr = edge_features[i][:]
             time_feature_curr = time_features[i][:]
 
-            # shape = (1, num_neighbors * (embedding_dim + edge_features_dim + time_encoding_dim)
-            # after doing concatenation on columns side, reshape to have 1 row
-            aggregate = torch_concat((features_curr, edge_feature_curr, time_feature_curr), dim=1).reshape(
-                (1, -1)
-            )  # -1 means to find dim by itself from matrix
+            # shape = (len(row) * (embedding_dim + edge_features_dim + time_encoding_dim),)
+            # after doing concatenation on columns side, flatten the sampled neighbors into one row
+            aggregate = torch_concat((features_curr, edge_feature_curr, time_feature_curr), dim=1).reshape(-1)
 
-            out[i, :] = aggregate
+            out[i, : aggregate.shape[0]] = aggregate
 
         return out

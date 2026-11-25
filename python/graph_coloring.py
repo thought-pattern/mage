@@ -1,27 +1,27 @@
 """Utilities for graph coloring."""
 
-from collections import defaultdict
+from mgp import (
+    Edge as mgp_Edge,
+    List as mgp_List,
+    Map as mgp_Map,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
-from mgp import Edge as mgp_Edge
-from mgp import List as mgp_List
-from mgp import Map as mgp_Map
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
-
-from mage.graph_coloring_module import Graph, Parameter
+from mage.graph_coloring_module.graph import Graph
 from mage.graph_coloring_module.parameter_boundary import normalize_parameters
+from mage.graph_coloring_module.parameters import Parameter
 
 DEFAULT_ARGUMENT_DICT = {}
 
 
-@mgp_read_proc
 def color_graph(
     context: mgp_ProcCtx,
     parameters: mgp_Map = DEFAULT_ARGUMENT_DICT,
     edge_property: str = "weight",
-) -> list[mgp_Record]:
+) -> list:
     """
     Example:
     CALL graph_coloring.color_graph() YIELD *;
@@ -29,9 +29,10 @@ def color_graph(
     if parameters is DEFAULT_ARGUMENT_DICT:
         parameters = DEFAULT_ARGUMENT_DICT.copy()
     parameters = normalize_parameters(dict(parameters))
-    graph = convert_to_graph(context, edge_property)
+    nodes, adj_list = graph_adjacency(context, edge_property)
+    graph = Graph(nodes, adj_list)
     algorithm = parameters.get(Parameter.ALGORITHM, False)
-    solution = algorithm.run(graph, parameters)
+    solution = algorithm.run(graph, parameters, abort_check=context.check_must_abort)
     computed_return_value = [
         mgp_Record(node=context.graph.get_vertex_by_id(graph.label(node)), color=color)
         for node, color in enumerate(solution.chromosome)
@@ -39,14 +40,17 @@ def color_graph(
     return computed_return_value
 
 
-@mgp_read_proc
+color_graph.__annotations__["return"] = mgp_Record(node=mgp_Vertex, color=int)
+color_graph = mgp_read_proc(color_graph)
+
+
 def color_subgraph(
     context: mgp_ProcCtx,
     vertices: mgp_List[mgp_Vertex],
     edges: mgp_List[mgp_Edge],
     parameters: mgp_Map = DEFAULT_ARGUMENT_DICT,
     edge_property: str = "weight",
-) -> list[mgp_Record]:
+) -> list:
     """
     Example:
     MATCH (a:Cell)-[e:CLOSE_TO]->(b:Cell)
@@ -58,9 +62,10 @@ def color_subgraph(
     if parameters is DEFAULT_ARGUMENT_DICT:
         parameters = DEFAULT_ARGUMENT_DICT.copy()
     parameters = normalize_parameters(dict(parameters))
-    graph = convert_to_subgraph(context, vertices, edges, edge_property)
+    nodes, adj_list = subgraph_adjacency(context, vertices, edges, edge_property)
+    graph = Graph(nodes, adj_list)
     algorithm = parameters.get(Parameter.ALGORITHM, False)
-    solution = algorithm.run(graph, parameters)
+    solution = algorithm.run(graph, parameters, abort_check=context.check_must_abort)
     computed_return_value = [
         mgp_Record(node=context.graph.get_vertex_by_id(graph.label(node)), color=color)
         for node, color in enumerate(solution.chromosome)
@@ -68,9 +73,14 @@ def color_subgraph(
     return computed_return_value
 
 
-def convert_to_graph(context: mgp_ProcCtx, edge_property: str) -> Graph:
+color_subgraph.__annotations__["return"] = mgp_Record(node=mgp_Vertex, color=int)
+color_subgraph = mgp_read_proc(color_subgraph)
+
+
+def graph_adjacency(context: mgp_ProcCtx, edge_property: str) -> tuple[list, dict]:
+    """Returns the graph's vertex ids and undirected weighted adjacency (edge_property, default weight 1)."""
     nodes = []
-    adj_list = defaultdict(list)
+    adj_list = {}
 
     for v in context.graph.vertices:
         context.check_must_abort()
@@ -80,23 +90,24 @@ def convert_to_graph(context: mgp_ProcCtx, edge_property: str) -> Graph:
         context.check_must_abort()
         for e in v.out_edges:
             weight = e.properties.get(edge_property, 1)
-            adj_list.get(e.from_vertex.id, []).append((e.to_vertex.id, weight))
-            adj_list.get(e.to_vertex.id, []).append((e.from_vertex.id, weight))
+            adj_list.setdefault(e.from_vertex.id, []).append((e.to_vertex.id, weight))
+            adj_list.setdefault(e.to_vertex.id, []).append((e.from_vertex.id, weight))
 
-    computed_return_value = Graph(nodes, adj_list)
-    return computed_return_value
+    adjacency = (nodes, adj_list)
+    return adjacency
 
 
-def convert_to_subgraph(
+def subgraph_adjacency(
     context: mgp_ProcCtx,
     vertices: mgp_List[mgp_Vertex],
     edges: mgp_List[mgp_Edge],
     edge_property: str,
-) -> Graph:
+) -> tuple[list, dict]:
+    """Returns the subgraph's vertex ids (edge endpoints included) and its undirected weighted adjacency."""
     vertices, edges = map(set, [vertices, edges])
 
     nodes = []
-    adj_list = defaultdict(list)
+    adj_list = {}
 
     for v in vertices:
         context.check_must_abort()
@@ -109,8 +120,8 @@ def convert_to_subgraph(
             nodes.append(e.from_vertex.id)
         if e.to_vertex.id not in nodes:
             nodes.append(e.to_vertex.id)
-        adj_list.get(e.from_vertex.id, []).append((e.to_vertex.id, weight))
-        adj_list.get(e.to_vertex.id, []).append((e.from_vertex.id, weight))
+        adj_list.setdefault(e.from_vertex.id, []).append((e.to_vertex.id, weight))
+        adj_list.setdefault(e.to_vertex.id, []).append((e.from_vertex.id, weight))
 
-    computed_return_value = Graph(nodes, adj_list)
-    return computed_return_value
+    adjacency = (nodes, adj_list)
+    return adjacency

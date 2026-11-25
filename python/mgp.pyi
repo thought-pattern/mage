@@ -6,8 +6,7 @@ analysis can validate procedure code without pretending that the host module
 is available to ordinary Python processes.
 """
 
-from typing import Any as Dynamic
-from typing import TypeVar
+from typing import Any as Dynamic, TypeVar
 
 type Any = Dynamic
 type Nullable[T] = Dynamic

@@ -2,12 +2,12 @@
 
 from importlib import import_module
 
-from torch import Tensor as torch_Tensor
-from torch import device as torch_device
-from torch import nn as torch_nn
+from torch import Tensor as torch_Tensor, device as torch_device, nn as torch_nn
 
 
 class GraphSAGE(torch_nn.Module):
+    """GraphSAGE network that computes node representations for link prediction."""
+
     def __init__(
         self,
         in_feats: int,
@@ -41,8 +41,8 @@ class GraphSAGE(torch_nn.Module):
 
         try:
             dgl_nn = import_module("dgl.nn")
-        except ModuleNotFoundError as error:
-            raise ModuleNotFoundError("GraphSAGE requires the DGL package") from error
+        except ModuleNotFoundError as err:
+            raise ModuleNotFoundError("GraphSAGE requires the DGL package") from err
         hetero_graph_conv = getattr(dgl_nn, "HeteroGraphConv", False)
         sage_conv = getattr(dgl_nn, "SAGEConv", False)
         if not callable(hetero_graph_conv) or not callable(sage_conv):
@@ -72,9 +72,7 @@ class GraphSAGE(torch_nn.Module):
             self.layers.append(heterogeneous_layer.to(device))
             in_feats = hidden_features_size[i]
 
-    def forward(
-        self, blocks: list[object], h: dict[str, torch_Tensor]
-    ) -> dict[str, torch_Tensor]:
+    def forward(self, blocks: list[object], h: dict[str, torch_Tensor]) -> dict[str, torch_Tensor]:
         (
             "Performs forward pass on batches.\n\n        Args:\n            blocks (List[dgl.heterograph.DG"  # Continue literal.
             "LBlock]): First block is DGLBlock of all nodes that are needed to compute representations fo"  # Continue literal.
@@ -92,9 +90,7 @@ class GraphSAGE(torch_nn.Module):
 
         return h
 
-    def online_forward(
-        self, graph: object, h: dict[str, torch_Tensor]
-    ) -> dict[str, torch_Tensor]:
+    def online_forward(self, graph: object, h: dict[str, torch_Tensor]) -> dict[str, torch_Tensor]:
         """Performs forward pass on batches.
 
         Args:

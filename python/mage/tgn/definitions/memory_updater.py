@@ -1,8 +1,6 @@
 """Utilities for memory updater."""
 
-from torch import Tensor as torch_Tensor
-from torch import device as torch_device
-from torch import nn
+from torch import Tensor as torch_Tensor, device as torch_device, nn
 
 
 class MemoryUpdater(nn.Module):
@@ -18,6 +16,8 @@ class MemoryUpdater(nn.Module):
 
 
 class MemoryUpdaterGRU(MemoryUpdater):
+    """Updates node memory with a GRU cell."""
+
     def __init__(self, memory_dimension: int, message_dimension: int, device: torch_device):
         super().__init__(memory_dimension, message_dimension, device)
 
@@ -36,6 +36,8 @@ class MemoryUpdaterGRU(MemoryUpdater):
 
 
 class MemoryUpdaterRNN(MemoryUpdater):
+    """Updates node memory with an RNN cell."""
+
     def __init__(self, memory_dimension: int, message_dimension: int, device: torch_device):
         super().__init__(memory_dimension, message_dimension, device)
 

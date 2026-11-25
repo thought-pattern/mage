@@ -3,23 +3,21 @@ This module tests modules from this folder one by one by comparing structure aft
 is executed on Neo4j and Memgraph. Be sure to have Neo4j and Memgraph instance running.
 """
 
-from logging import INFO as logging_INFO
-from logging import basicConfig as logging_basicConfig
-from logging import getLogger as logging_getLogger
+from logging import (
+    INFO as logging_INFO,
+    basicConfig as logging_basicConfig,
+    getLogger as logging_getLogger,
+)
 from os import path as os_path
 from pathlib import Path
 
 from gqlalchemy import Memgraph
-from neo4j import BoltDriver as neo4j_BoltDriver
-from pytest import fixture as pytest_fixture
-from pytest import mark as pytest_mark
-from pytest import param as pytest_param
+from neo4j import BoltDriver as neo4j_BoltDriver, GraphDatabase as neo4j_GraphDatabase
+from pytest import fixture as pytest_fixture, mark as pytest_mark, param as pytest_param
 from query_neo_mem import (
     Graph,
     clean_memgraph_db,
     clean_neo4j_db,
-    create_memgraph_db,
-    create_neo4j_driver,
     execute_query_neo4j,
     mg_execute_cyphers,
     mg_get_graph,
@@ -30,8 +28,7 @@ from query_neo_mem import (
     run_memgraph_query,
     run_neo4j_query,
 )
-from yaml import Loader as yaml_Loader
-from yaml import load as yaml_load
+from yaml import safe_load as yaml_safe_load
 
 logging_basicConfig(format="%(asctime)-15s [%(levelname)s]: %(message)s")
 logger = logging_getLogger("e2e_correctness")
@@ -39,6 +36,8 @@ logger.setLevel(logging_INFO)
 
 
 class TestConstants:
+    """Names and tolerances the e2e correctness tests use to read their test directories."""
+
     ABSOLUTE_TOLERANCE = 1e-3
 
     EXCEPTION = "exception"
@@ -62,7 +61,7 @@ def get_all_tests():
     """
     Fetch all the tests in the testing folders, and prepare them for execution
     """
-    tests = []
+    collected = []
 
     test_path = Path().cwd()
 
@@ -79,20 +78,20 @@ def get_all_tests():
                     if not test_dir.is_dir():
                         continue
 
-                    tests.append(
+                    collected.append(
                         pytest_param(
                             test_dir,
                             id=f"{module_test_dir.stem}-{test_or_group_dir.stem}-{test_dir.stem}",
                         )
                     )
             else:
-                tests.append(
+                collected.append(
                     pytest_param(
                         test_or_group_dir,
                         id=f"{module_test_dir.stem}-{test_or_group_dir.stem}",
                     )
                 )
-    return tests
+    return collected
 
 
 tests = get_all_tests()
@@ -102,41 +101,46 @@ def load_yaml(path: Path) -> dict:
     """
     Load YAML based file in Python dictionary.
     """
-    file_handle = path.open("r")
-    computed_return_value = yaml_load(file_handle, Loader=yaml_Loader)
+    with path.open("r", encoding="utf-8") as file_handle:
+        computed_return_value = yaml_safe_load(file_handle)
     return computed_return_value
 
 
 def graphs_equal(memgraph_graph: Graph, neo4j_graph: Graph) -> bool:
-    assert len(memgraph_graph.vertices) == len(
-        neo4j_graph.vertices
-    ), f"The number of vertices is not equal: \
-        Memgraph contains {memgraph_graph.vertices} and Neo4j contains {neo4j_graph.vertices}"
+    # Each getter sorts its whole graph, so take every canonical snapshot once per comparison.
+    memgraph_vertices, neo4j_vertices = memgraph_graph.vertices, neo4j_graph.vertices
+    memgraph_edges, neo4j_edges = memgraph_graph.edges, neo4j_graph.edges
 
-    assert len(memgraph_graph.edges) == len(
-        neo4j_graph.edges
-    ), f"The number of edges is not equal: \
-        Memgraph contains {memgraph_graph.edges} and Neo4j contains {neo4j_graph.edges}"
+    assert len(memgraph_vertices) == len(neo4j_vertices), f"The number of vertices is not equal: \
+        Memgraph contains {memgraph_vertices} and Neo4j contains {neo4j_vertices}"
 
-    for i, mem_vertex in enumerate(memgraph_graph.vertices):
-        neo_vertex = neo4j_graph.vertices[i]
+    assert len(memgraph_edges) == len(neo4j_edges), f"The number of edges is not equal: \
+        Memgraph contains {memgraph_edges} and Neo4j contains {neo4j_edges}"
+
+    for mem_vertex, neo_vertex in zip(memgraph_vertices, neo4j_vertices, strict=True):
         if mem_vertex != neo_vertex:
-            logger.debug(
-                f"The vertices are different: \
+            logger.debug(f"The vertices are different: \
             Neo4j vertex: {neo_vertex}\
-            Memgraph vertex: {mem_vertex}"
-            )
+            Memgraph vertex: {mem_vertex}")
             return False
-    for i, mem_edge in enumerate(memgraph_graph.edges):
-        neo_edge = neo4j_graph.edges[i]
+    for mem_edge, neo_edge in zip(memgraph_edges, neo4j_edges, strict=True):
         if neo_edge != mem_edge:
-            logger.debug(
-                f"The edges are different: \
+            logger.debug(f"The edges are different: \
                 Neo4j edge: {neo_edge}\
-                Memgraph edge: {mem_edge}"
-            )
+                Memgraph edge: {mem_edge}")
             return False
     return True
+
+
+def validated_queries(test_dict: dict) -> tuple[str, str]:
+    """Return the Memgraph and Neo4j queries a test file must declare, failing when either is missing."""
+    missing = [key for key in (TestConstants.MEMGRAPH_QUERY, TestConstants.NEO4J_QUERY) if key not in test_dict]
+    assert not missing, f"Test file declares no {', '.join(missing)}"
+    queries = (
+        test_dict.get(TestConstants.MEMGRAPH_QUERY, ""),
+        test_dict.get(TestConstants.NEO4J_QUERY, ""),
+    )
+    return queries
 
 
 def run_test(test_dir: Path, memgraph_db: Memgraph, neo4j_driver: neo4j_BoltDriver) -> bool:
@@ -151,13 +155,14 @@ def run_test(test_dir: Path, memgraph_db: Memgraph, neo4j_driver: neo4j_BoltDriv
 
     test_dict = load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
     logger.info(f"Test dict {test_dict}")
+    memgraph_query, neo4j_query = validated_queries(test_dict)
 
-    logger.info(f"Running query against Memgraph: {test_dict[TestConstants.MEMGRAPH_QUERY]}")
-    run_memgraph_query(test_dict[TestConstants.MEMGRAPH_QUERY], memgraph_db)
+    logger.info(f"Running query against Memgraph: {memgraph_query}")
+    run_memgraph_query(memgraph_query, memgraph_db)
     logger.info("Done")
 
-    logger.info(f"Running query against Neo4j: {test_dict[TestConstants.NEO4J_QUERY]}")
-    run_neo4j_query(test_dict[TestConstants.NEO4J_QUERY], neo4j_driver)
+    logger.info(f"Running query against Neo4j: {neo4j_query}")
+    run_neo4j_query(neo4j_query, neo4j_driver)
     logger.info("Done")
 
     mg_graph = mg_get_graph(memgraph_db)
@@ -180,14 +185,15 @@ def run_path_test(test_dir: Path, memgraph_db: Memgraph, neo4j_driver: neo4j_Bol
 
     test_dict = load_yaml(test_dir.joinpath(TestConstants.TEST_FILE))
     logger.info(f"Test dict {test_dict}")
+    memgraph_query, neo4j_query = validated_queries(test_dict)
 
-    logger.info(f"Running query against Memgraph: {test_dict[TestConstants.MEMGRAPH_QUERY]}")
-    memgraph_results = memgraph_db.execute_and_fetch(test_dict[TestConstants.MEMGRAPH_QUERY])
+    logger.info(f"Running query against Memgraph: {memgraph_query}")
+    memgraph_results = memgraph_db.execute_and_fetch(memgraph_query)
     memgraph_paths = parse_mem(memgraph_results)
     logger.info("Done")
 
-    logger.info(f"Running query against Neo4j: {test_dict[TestConstants.NEO4J_QUERY]}")
-    neo4j_results = execute_query_neo4j(neo4j_driver, test_dict[TestConstants.NEO4J_QUERY])
+    logger.info(f"Running query against Neo4j: {neo4j_query}")
+    neo4j_results = execute_query_neo4j(neo4j_driver, neo4j_query)
     neo4j_paths = parse_neo4j(neo4j_results)
     logger.info("Done")
 
@@ -206,38 +212,37 @@ def check_path_option(test_dir):
     return False
 
 
-@pytest_fixture(scope="session")
-def memgraph_port(pytestconfig):
+@pytest_fixture(scope="session", name="memgraph_port")
+def memgraph_port_fixture(pytestconfig):
     computed_return_value = pytestconfig.getoption("--memgraph-port")
     return computed_return_value
 
 
-@pytest_fixture(scope="session", autouse=True)
-def memgraph_db(memgraph_port):
-    memgraph_db = create_memgraph_db(memgraph_port)
+@pytest_fixture(scope="session", autouse=True, name="memgraph_db")
+def memgraph_db_fixture(memgraph_port):
+    # One client serves the whole session; GQLAlchemy opens and reuses its connection on demand.
+    database = Memgraph("localhost", memgraph_port)
     logger.info("Created Memgraph connection")
 
-    yield memgraph_db
+    yield database
 
 
-@pytest_fixture(scope="session")
-def neo4j_port(pytestconfig):
+@pytest_fixture(scope="session", name="neo4j_port")
+def neo4j_port_fixture(pytestconfig):
     computed_return_value = pytestconfig.getoption("--neo4j-port")
     return computed_return_value
 
 
-@pytest_fixture(scope="session")
-def neo4j_container(pytestconfig):
-    computed_return_value = pytestconfig.getoption("--neo4j-container")
-    return computed_return_value
-
-
-@pytest_fixture(scope="session", autouse=True)
-def neo4j_driver(neo4j_port, neo4j_container):
-    neo4j_driver = create_neo4j_driver(neo4j_port, neo4j_container)
+@pytest_fixture(scope="session", autouse=True, name="neo4j_driver")
+def neo4j_driver_fixture(neo4j_port):
+    driver = neo4j_GraphDatabase.driver(f"bolt://localhost:{neo4j_port}", encrypted=False)
     logger.info("Created neo4j driver")
 
-    yield neo4j_driver
+    # The session owns this driver's connection pool, so release it even when teardown is interrupted.
+    try:
+        yield driver
+    finally:
+        driver.close()
 
 
 @pytest_mark.parametrize("test_dir", tests)

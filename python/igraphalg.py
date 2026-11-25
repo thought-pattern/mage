@@ -1,13 +1,14 @@
 """Utilities for igraphalg."""
 
-from collections import defaultdict
-
-from mgp import Nullable as mgp_Nullable
-from mgp import Number as mgp_Number
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    List as mgp_List,
+    Nullable as mgp_Nullable,
+    Number as mgp_Number,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 from mgp_igraph import (
     CommunityDetectionObjectiveFunctionOptions,
     InvalidCommunityDetectionObjectiveFunctionException,
@@ -20,7 +21,6 @@ from mgp_igraph import (
 )
 
 
-@mgp_read_proc
 def maxflow(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
@@ -34,14 +34,17 @@ def maxflow(
     return computed_return_value
 
 
-@mgp_read_proc
+maxflow.__annotations__["return"] = mgp_Record(max_flow=mgp_Number)
+maxflow = mgp_read_proc(maxflow)
+
+
 def pagerank(
     ctx: mgp_ProcCtx,
     damping: mgp_Number = 0.85,
-    weights: mgp_Nullable[str] = False,
+    weights: mgp_Nullable[str] = None,
     directed: bool = True,
     implementation: str = "prpack",
-) -> list[mgp_Record]:
+) -> list:
     if implementation not in [
         PageRankImplementationOptions.PRPACK.value,
         PageRankImplementationOptions.ARPACK.value,
@@ -59,27 +62,33 @@ def pagerank(
     return computed_return_value
 
 
-@mgp_read_proc
+pagerank.__annotations__["return"] = mgp_Record(node=mgp_Vertex, rank=float)
+pagerank = mgp_read_proc(pagerank)
+
+
 def get_all_simple_paths(
     ctx: mgp_ProcCtx,
     v: mgp_Vertex,
     to: mgp_Vertex,
     cutoff: int = -1,
-) -> list[mgp_Record]:
+) -> list:
     graph = MemgraphIgraph(ctx=ctx, directed=True)
 
     computed_return_value = [mgp_Record(path=path) for path in graph.get_all_simple_paths(v=v, to=to, cutoff=cutoff)]
     return computed_return_value
 
 
-@mgp_read_proc
+get_all_simple_paths.__annotations__["return"] = mgp_Record(path=mgp_List[mgp_Vertex])
+get_all_simple_paths = mgp_read_proc(get_all_simple_paths)
+
+
 def mincut(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
     target: mgp_Vertex,
-    capacity: mgp_Nullable[str] = False,
+    capacity: mgp_Nullable[str] = None,
     directed: bool = True,
-) -> list[mgp_Record]:
+) -> list:
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
 
     partition_vertices, _ = graph.mincut(source=source, target=target, capacity=capacity)
@@ -90,17 +99,20 @@ def mincut(
     return computed_return_value
 
 
-@mgp_read_proc
+mincut.__annotations__["return"] = mgp_Record(node=mgp_Vertex, partition_id=int)
+mincut = mgp_read_proc(mincut)
+
+
 def topological_sort(ctx: mgp_ProcCtx, mode: str = "out") -> mgp_Record:
     if mode not in [
         TopologicalSortingModes.IN.value,
         TopologicalSortingModes.OUT.value,
     ]:
         raise InvalidTopologicalSortingModeException('Mode can only be either "out" or "in"')
-    if contains_cycle(ctx):
-        raise TopologicalSortException("Topological sort can't be performed on graph that contains cycle!")
-
     graph = MemgraphIgraph(ctx=ctx, directed=True)
+    # igraph's linear-time DAG check replaces a host-graph recursion that overflowed on long valid chains.
+    if not graph.is_dag():
+        raise TopologicalSortException("Topological sort can't be performed on graph that contains cycle!")
     sorted_nodes = graph.topological_sort(mode=mode)
 
     computed_return_value = mgp_Record(
@@ -109,17 +121,20 @@ def topological_sort(ctx: mgp_ProcCtx, mode: str = "out") -> mgp_Record:
     return computed_return_value
 
 
-@mgp_read_proc
+topological_sort.__annotations__["return"] = mgp_Record(nodes=mgp_List[mgp_Vertex])
+topological_sort = mgp_read_proc(topological_sort)
+
+
 def community_leiden(
     ctx: mgp_ProcCtx,
     objective_function: str = "CPM",
-    weights: mgp_Nullable[str] = False,
+    weights: mgp_Nullable[str] = None,
     resolution_parameter: float = 1.0,
     beta: float = 0.01,
-    initial_membership: mgp_Nullable[mgp_Nullable[list[mgp_Nullable[int]]]] = False,
+    initial_membership: mgp_Nullable[mgp_Nullable[list[mgp_Nullable[int]]]] = None,
     n_iterations: int = 2,
-    node_weights: mgp_Nullable[list[mgp_Nullable[float]]] = False,
-) -> list[mgp_Record]:
+    node_weights: mgp_Nullable[list[mgp_Nullable[float]]] = None,
+) -> list:
     if objective_function not in [
         CommunityDetectionObjectiveFunctionOptions.CPM.value,
         CommunityDetectionObjectiveFunctionOptions.MODULARITY.value,
@@ -148,20 +163,26 @@ def community_leiden(
     return computed_return_value
 
 
-@mgp_read_proc
-def spanning_tree(ctx: mgp_ProcCtx, weights: mgp_Nullable[str] = False, directed: bool = False) -> mgp_Record:
+community_leiden.__annotations__["return"] = mgp_Record(node=mgp_Vertex, community_id=int)
+community_leiden = mgp_read_proc(community_leiden)
+
+
+def spanning_tree(ctx: mgp_ProcCtx, weights: mgp_Nullable[str] = None, directed: bool = False) -> mgp_Record:
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
 
     computed_return_value = mgp_Record(tree=graph.spanning_tree(weights=weights))
     return computed_return_value
 
 
-@mgp_read_proc
+spanning_tree.__annotations__["return"] = mgp_Record(tree=mgp_List[mgp_List[mgp_Vertex]])
+spanning_tree = mgp_read_proc(spanning_tree)
+
+
 def shortest_path_length(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
     target: mgp_Vertex,
-    weights: mgp_Nullable[str] = False,
+    weights: mgp_Nullable[str] = None,
     directed: bool = True,
 ) -> mgp_Record:
     graph = MemgraphIgraph(ctx, directed=directed)
@@ -175,12 +196,15 @@ def shortest_path_length(
     return computed_return_value
 
 
-@mgp_read_proc
+shortest_path_length.__annotations__["return"] = mgp_Record(length=float)
+shortest_path_length = mgp_read_proc(shortest_path_length)
+
+
 def all_shortest_path_lengths(
     ctx: mgp_ProcCtx,
-    weights: mgp_Nullable[str] = False,
+    weights: mgp_Nullable[str] = None,
     directed: bool = False,
-) -> list[mgp_Record]:
+) -> list:
     graph = MemgraphIgraph(ctx, directed=directed)
     lengths = graph.all_shortest_path_lengths(weights=weights)
 
@@ -196,12 +220,15 @@ def all_shortest_path_lengths(
     return computed_return_value
 
 
-@mgp_read_proc
+all_shortest_path_lengths.__annotations__["return"] = mgp_Record(src_node=mgp_Vertex, dest_node=mgp_Vertex, length=float)
+all_shortest_path_lengths = mgp_read_proc(all_shortest_path_lengths)
+
+
 def get_shortest_path(
     ctx: mgp_ProcCtx,
     source: mgp_Vertex,
     target: mgp_Vertex,
-    weights: mgp_Nullable[str] = False,
+    weights: mgp_Nullable[str] = None,
     directed: bool = True,
 ) -> mgp_Record:
     graph = MemgraphIgraph(ctx=ctx, directed=directed)
@@ -210,46 +237,5 @@ def get_shortest_path(
     return computed_return_value
 
 
-def dfs(node: mgp_Vertex, visited: dict[int, bool], stack: dict[int, bool]) -> bool:
-    """Depth-first-search algorithm with modification.
-
-    Args:
-        node (mgp.Vertex): Current node.
-        visited (Dict[int,bool]): Dictionary with all nodes id that we visited.
-        stack (Dict[int,bool]): Dictionary with nodes id that we encountered while traversing a node.
-
-    Returns:
-        bool: True if there is cycle else False.
-    """
-
-    visited[node.id] = True
-    stack[node.id] = True
-
-    for edge in node.out_edges:
-        neighbour = edge.to_vertex
-        if not visited.get(neighbour.id, False):
-            if dfs(neighbour, visited, stack):
-                return True
-        elif stack.get(neighbour.id, False):
-            return True
-
-    stack[node.id] = False
-    return False
-
-
-def contains_cycle(ctx: mgp_ProcCtx) -> bool:
-    """Method for checking if graph contains a cycle.
-
-    Args:
-        ctx (mgp.ProcCtx): Graph
-
-    Returns:
-        bool: True if there is cycle else False
-    """
-
-    visited, stack = defaultdict(bool), defaultdict(bool)
-    for node in ctx.graph.vertices:
-        if not visited.get(node.id, False):
-            if dfs(node, visited, stack):
-                return True
-    return False
+get_shortest_path.__annotations__["return"] = mgp_Record(path=mgp_List[mgp_Vertex])
+get_shortest_path = mgp_read_proc(get_shortest_path)

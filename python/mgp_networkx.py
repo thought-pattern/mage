@@ -2,20 +2,19 @@
 
 from collections import abc as collections_abc
 from sys import stderr as sys_stderr
-from sys import version as sys_version
 
-from mgp import Edge as mgp_Edge
-from mgp import Vertex as mgp_Vertex
+from mgp import Edge as mgp_Edge, Vertex as mgp_Vertex
 
 try:
-    from networkx import DiGraph as nx_DiGraph
-    from networkx import MultiDiGraph as nx_MultiDiGraph
-except ImportError as import_error:
-    sys_stderr.write(f"NOTE: Please install networkx to be able touse graph_analyzer module. Using Python: {sys_version}")
-    raise import_error from import_error
+    from networkx import DiGraph as nx_DiGraph, MultiDiGraph as nx_MultiDiGraph
+except ImportError:
+    sys_stderr.write("NOTE: Please install networkx to be able touse graph_analyzer module.")
+    raise
 
 
 class MemgraphAdjlistOuterDict(collections_abc.Mapping):
+    """NetworkX adjacency mapping from each Memgraph vertex to its neighbor mapping."""
+
     __slots__ = ("internal_ctx", "internal_multi", "internal_succ")
 
     def __init__(self, ctx, succ=True, multi=True):
@@ -45,7 +44,14 @@ class MemgraphAdjlistOuterDict(collections_abc.Mapping):
 
 
 class MemgraphAdjlistInnerDict(collections_abc.Mapping):
-    __slots__ = ("internal_multi", "internal_neighbors", "internal_node", "internal_succ")
+    """NetworkX neighbor mapping of one Memgraph vertex."""
+
+    __slots__ = (
+        "internal_multi",
+        "internal_neighbors",
+        "internal_node",
+        "internal_succ",
+    )
 
     def __init__(self, node, succ=True, multi=True):
         self.internal_node = node
@@ -93,14 +99,21 @@ class MemgraphAdjlistInnerDict(collections_abc.Mapping):
 
         assert len(edge) >= 1
         if len(edge) > 1:
-            raise RuntimeError("Graph contains multiedges but is of non-multigraph type: {}".format(edge))
+            raise RuntimeError(f"Graph contains multiedges but is of non-multigraph type: {edge}")
 
         computed_return_value = edge[0]
         return computed_return_value
 
 
 class MemgraphEdgeKeyDict(collections_abc.Mapping):
-    __slots__ = ("internal_edges", "internal_neighbor", "internal_node", "internal_succ")
+    """NetworkX mapping from edge keys to edge properties between two Memgraph vertices."""
+
+    __slots__ = (
+        "internal_edges",
+        "internal_neighbor",
+        "internal_node",
+        "internal_succ",
+    )
 
     def __init__(self, node, neighbor, succ=True):
         self.internal_node = node
@@ -130,19 +143,35 @@ class MemgraphEdgeKeyDict(collections_abc.Mapping):
     def get_edges(self):
         if not self.internal_edges:
             if self.internal_succ:
-                self.internal_edges = list(filter(lambda e: e.to_vertex == self.internal_neighbor, self.internal_node.out_edges))
+                self.internal_edges = list(
+                    filter(
+                        lambda e: e.to_vertex == self.internal_neighbor,
+                        self.internal_node.out_edges,
+                    )
+                )
             else:
-                self.internal_edges = list(filter(lambda e: e.from_vertex == self.internal_neighbor, self.internal_node.in_edges))
+                self.internal_edges = list(
+                    filter(
+                        lambda e: e.from_vertex == self.internal_neighbor,
+                        self.internal_node.in_edges,
+                    )
+                )
         return self.internal_edges
 
 
 class UnhashableProperties(collections_abc.Mapping):
+    """Read-only mapping over Memgraph properties for NetworkX attribute access."""
+
     __slots__ = ("internal_properties",)
 
     def __init__(self, properties):
         self.internal_properties = properties
 
     def __getitem__(self, key):
+        # Mapping protocol: a missing property raises KeyError, so callers'
+        # explicit defaults such as NetworkX's get("weight", 1) apply.
+        if key not in self.internal_properties:
+            raise KeyError(key)
         computed_return_value = self.internal_properties.get(key, "")
         return computed_return_value
 
@@ -162,6 +191,8 @@ class UnhashableProperties(collections_abc.Mapping):
 
 
 class MemgraphNodeDict(collections_abc.Mapping):
+    """NetworkX node mapping from each Memgraph vertex to its properties."""
+
     __slots__ = ("internal_ctx",)
 
     def __init__(self, ctx):
@@ -198,6 +229,8 @@ class MemgraphNodeDict(collections_abc.Mapping):
 
 
 class MemgraphDiGraphBase:
+    """Read-only NetworkX graph backed by the Memgraph procedure context."""
+
     def __init__(self, incoming_graph_data=False, ctx=False, multi=True, **kwargs):
         # NOTE: We assume that our graph will never be given any initial data
         # because we already pull our data from the Memgraph database. This
@@ -213,10 +246,12 @@ class MemgraphDiGraphBase:
         # modify the graph's internal attributes and don't try to populate it
         # with initial data or modify it.
 
-        self.node_dict_factory = lambda: MemgraphNodeDict(ctx) if ctx else self.internal_error
+        # The *_factory attributes are NetworkX's documented subclass hooks, which its constructor calls to obtain the
+        # graph's mappings; their names and zero-argument calling convention belong to the library.
+        self.node_dict_factory = lambda: (MemgraphNodeDict(ctx) if ctx else self.internal_error)
         self.node_attr_dict_factory = self.internal_error
 
-        self.adjlist_outer_dict_factory = lambda: MemgraphAdjlistOuterDict(ctx, multi=multi) if ctx else self.internal_error
+        self.adjlist_outer_dict_factory = lambda: (MemgraphAdjlistOuterDict(ctx, multi=multi) if ctx else self.internal_error)
         self.adjlist_inner_dict_factory = self.internal_error
         self.edge_key_dict_factory = self.internal_error
         self.edge_attr_dict_factory = self.internal_error
@@ -239,63 +274,57 @@ class MemgraphDiGraphBase:
         ]:
             setattr(self, f, lambda *args, **kwargs: self.internal_error())
 
-        parent_init = getattr(super(), "__init__", False)
-        if not callable(parent_init):
-            raise TypeError("NetworkX graph parent must provide initialization")
-        parent_init(incoming_graph_data=False, **kwargs)
+        # NetworkX converts any incoming data other than its None default, so
+        # the absent data is omitted rather than passed as a false value.
+        super().__init__(**kwargs)
 
         # NOTE: This is a necessary hack because NetworkX assumes that the
         # customizable factory functions will only ever return *empty*
         # dictionaries. In our case, the factory functions return our custom,
-        # already populated, dictionaries. Because self._pred and self._end are
+        # already populated, dictionaries. Because self._pred and self._succ are
         # initialized by the same factory function, they end up storing the
         # same adjacency lists which is not good. We correct that here.
-        self.internal_pred = MemgraphAdjlistOuterDict(ctx, succ=False, multi=multi)
+        # `_pred` is NetworkX's own predecessor attribute name: its algorithms read G._pred directly and the subclass
+        # hooks have no separate predecessor factory, so the name is the library's protocol and is kept as is.
+        self._pred = MemgraphAdjlistOuterDict(ctx, succ=False, multi=multi)
 
     def internal_error(self):
         raise RuntimeError("Modification operations are not supported")
 
 
 class MemgraphMultiDiGraph(MemgraphDiGraphBase, nx_MultiDiGraph):
+    """Read-only multigraph view of the host graph. Undirected algorithms use NetworkX's own undirected view of it,
+    MemgraphMultiDiGraph(ctx=ctx).to_undirected(as_view=True), built at the call site.
+    """
+
     def __init__(self, incoming_graph_data=False, ctx=False, **kwargs):
         super().__init__(incoming_graph_data=incoming_graph_data, ctx=ctx, multi=True, **kwargs)
 
 
-def MemgraphMultiGraph(incoming_graph_data=False, ctx=False, **kwargs):
-    computed_return_value = MemgraphMultiDiGraph(incoming_graph_data=incoming_graph_data, ctx=ctx, **kwargs).to_undirected(
-        as_view=True
-    )
-    return computed_return_value
-
-
 class MemgraphDiGraph(MemgraphDiGraphBase, nx_DiGraph):
+    """Read-only simple-graph view of the host graph. Undirected algorithms use NetworkX's own undirected view of it,
+    MemgraphDiGraph(ctx=ctx).to_undirected(as_view=True), built at the call site."""
+
     def __init__(self, incoming_graph_data=False, ctx=False, **kwargs):
         super().__init__(incoming_graph_data=incoming_graph_data, ctx=ctx, multi=False, **kwargs)
 
 
-def MemgraphGraph(incoming_graph_data=False, ctx=False, **kwargs):
-    computed_return_value = MemgraphDiGraph(incoming_graph_data=incoming_graph_data, ctx=ctx, **kwargs).to_undirected(as_view=True)
-    return computed_return_value
-
-
 class PropertiesDictionary(collections_abc.Mapping):
-    __slots__ = ("_ctx", "_len", "_prop")
+    """Mapping from each Memgraph vertex that has the property to its value."""
+
+    __slots__ = ("internal_ctx", "internal_len", "internal_prop")
 
     def __init__(self, ctx, prop):
         self.internal_ctx = ctx
         self.internal_prop = prop
-        self.internal_len = False
+        # Cached property-bearing vertex count; zero means not yet counted (recounting an empty result is harmless).
+        self.internal_len = 0
 
     def __getitem__(self, vertex):
         if vertex not in self:
-            raise KeyError
-        try:
-            computed_return_value = vertex.properties.get(self.internal_prop, "")
-            return computed_return_value
-        except KeyError as caught_error_287:
-            raise KeyError(
-                ("{} doesn\t have the required " + "property '{}'").format(vertex, self.internal_prop)
-            ) from caught_error_287
+            raise KeyError(f"{vertex} doesn't have the required property '{self.internal_prop}'")
+        computed_return_value = vertex.properties.get(self.internal_prop, "")
+        return computed_return_value
 
     def __iter__(self):
         for v in self.internal_ctx.graph.vertices:

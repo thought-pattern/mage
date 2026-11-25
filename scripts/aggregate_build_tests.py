@@ -6,6 +6,9 @@ from os import getenv as os_getenv
 from subprocess import run as subprocess_run
 from urllib.parse import quote
 
+# Each accepted image type addresses the daily-build index table of the same name.
+IMAGE_TYPES = ("memgraph", "mage")
+
 
 def list_build_files(date: int, image_type: str = "mage") -> list[str]:
     """
@@ -33,6 +36,7 @@ def list_build_files(date: int, image_type: str = "mage") -> list[str]:
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     if p.returncode != 0:
         raise RuntimeError(f"unable to list {image_type} build files for {date}: {p.stderr.strip()}")
@@ -102,10 +106,10 @@ def parse_file_os_arch(file, image_type):
     return os, arch
 
 
-def build_package_json(files: list[str], return_url: bool = True, image_type: str = "mage") -> dict:
+def group_packages_by_os_arch(files: list[str], return_url: bool = True, image_type: str = "mage") -> dict:
     """
-    Extracts the OS and CPU architecture and builds the dict/json used by the
-    daily-builds workflow
+    Classifies each package key by OS and CPU architecture and groups the
+    package locations into the nested mapping used by the daily-builds workflow
 
     Inputs
     ======
@@ -136,10 +140,9 @@ def build_package_json(files: list[str], return_url: bool = True, image_type: st
 
         os, arch = parse_file_os_arch(file, image_type)
 
-        if os not in out:
-            out[os] = {}
-
-        out.get(os, {})[arch] = url
+        os_packages = out.get(os, {})
+        os_packages[arch] = url
+        out[os] = os_packages
 
     return out
 
@@ -171,7 +174,7 @@ def list_daily_release_packages(date: int, return_url: bool = True, image_type: 
 
     files = list_build_files(date, image_type)
 
-    packages = build_package_json(files, return_url, image_type)
+    packages = group_packages_by_os_arch(files, return_url, image_type)
 
     return packages
 
@@ -197,13 +200,16 @@ def main(image_type: str) -> bool:
     }
     """
 
+    if image_type not in IMAGE_TYPES:
+        raise ValueError(f"Unsupported image_type: {image_type}")
+
     date_value = os_getenv("CURRENT_BUILD_DATE")
     if not isinstance(date_value, str) or not date_value:
         raise RuntimeError("CURRENT_BUILD_DATE must be set")
     try:
         date = int(date_value)
-    except ValueError as caught_error:
-        raise RuntimeError("CURRENT_BUILD_DATE must be an integer in YYYYMMDD form") from caught_error
+    except ValueError as err:
+        raise RuntimeError("CURRENT_BUILD_DATE must be an integer in YYYYMMDD form") from err
 
     # TODO: add individual test results and URL to each one
     tests = os_getenv("TEST_RESULT")
@@ -217,7 +223,7 @@ def main(image_type: str) -> bool:
     payload = {
         "event_type": "trigger_update_index",
         "client_payload": {
-            "table": "mage",
+            "table": image_type,
             "limit": 42,
             "build_data": {"date": date, "tests": tests, "packages": packages},
         },
@@ -229,7 +235,7 @@ def main(image_type: str) -> bool:
 
 if __name__ == "__main__":
     parser = argparse_ArgumentParser()
-    parser.add_argument("image_type", type=str, choices=["memgraph", "mage"], default="mage")
+    parser.add_argument("image_type", type=str, choices=IMAGE_TYPES, default="mage")
     args = parser.parse_args()
 
     main(args.image_type)

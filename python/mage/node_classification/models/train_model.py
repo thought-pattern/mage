@@ -2,7 +2,7 @@
 
 from importlib import import_module
 
-from torch import Tensor as torch_Tensor
+from torch import Tensor as torch_Tensor, set_grad_enabled as torch_set_grad_enabled
 
 
 def train_epoch(
@@ -27,7 +27,7 @@ def train_epoch(
             sample in each iteration and for each node type.
 
     Returns:
-        torch.tensor: loss calculated when training step is performed
+        tuple[float, float]: training and validation loss, each the mean over the epoch's seed nodes
     """
 
     if batch_size < 1:
@@ -38,8 +38,8 @@ def train_epoch(
         raise ValueError("num_samples must be a non-empty dict")
     try:
         loader_module = import_module("torch_geometric.loader")
-    except ModuleNotFoundError as error:
-        raise ModuleNotFoundError("Node-classification training requires torch-geometric") from error
+    except ModuleNotFoundError as err:
+        raise ModuleNotFoundError("Node-classification training requires torch-geometric") from err
     loader_type = getattr(loader_module, "HGTLoader", False)
     if not callable(loader_type):
         raise ImportError("torch_geometric.loader does not provide HGTLoader")
@@ -72,10 +72,10 @@ def train_epoch(
             gradient (bool): True for train, False for validation
 
         Returns:
-            float: returns loss calculated during training or validation
+            float: mean loss per seed node over the loader's batches
         """
-        ret = 0.0
-        batch_count = 0
+        loss_sum = 0.0
+        seed_total = 0
 
         # Set the model to train or eval mode depending on the flag gradient.
         if gradient:
@@ -84,29 +84,39 @@ def train_epoch(
             model.eval()
 
         for batch in loader:
-            batch_count += 1
+            # The loader places this batch's seed nodes of the observed type first. The rows after them are sampled
+            # neighbours that only give message-passing context, and their labels may belong to the other split, so
+            # labels and loss are restricted to the seed prefix.
+            observed_batch = batch[observed_attribute]
+            seed_count = int(getattr(observed_batch, "batch_size", 0))
+            if seed_count < 1:
+                raise ValueError(f"Loader batch for {observed_attribute} carries no seed nodes")
+
             if gradient:
                 opt.zero_grad()  # Clear gradients.
 
-            model_output = model(batch.x_dict, batch.edge_index_dict)
-            if not isinstance(model_output, dict):
-                raise TypeError(f"Node-classification model returned {type(model_output)}, expected dict")
-            out = model_output.get(observed_attribute, False)
-            if not isinstance(out, torch_Tensor):
-                raise KeyError(f"Model output does not contain tensor data for {observed_attribute}")
-            loss = criterion(
-                out, batch[observed_attribute].y
-            )  # Compute the loss solely based on the training nodes.
-            if not isinstance(loss, torch_Tensor):
-                raise TypeError(f"Training criterion returned {type(loss)}, expected torch.Tensor")
+            # Validation must not record an autograd graph; training needs one for the backward pass.
+            with torch_set_grad_enabled(gradient):
+                model_output = model(batch.x_dict, batch.edge_index_dict)
+                if not isinstance(model_output, dict):
+                    raise TypeError(f"Node-classification model returned {type(model_output)}, expected dict")
+                out = model_output.get(observed_attribute, False)
+                if not isinstance(out, torch_Tensor):
+                    raise KeyError(f"Model output does not contain tensor data for {observed_attribute}")
+                loss = criterion(out[:seed_count], observed_batch.y[:seed_count])
+                if not isinstance(loss, torch_Tensor):
+                    raise TypeError(f"Training criterion returned {type(loss)}, expected torch.Tensor")
 
             if gradient:
                 loss.backward()  # Derive gradients.
                 opt.step()  # Update parameters based on gradients.
 
-            ret += loss.item()
+            # The criterion averages over its seed rows; weighting by the seed count makes the epoch value the mean
+            # over seed nodes even when the last batch is smaller.
+            loss_sum += loss.item() * seed_count
+            seed_total += seed_count
 
-        computed_return_value = ret / batch_count if batch_count else 0.0
+        computed_return_value = loss_sum / seed_total if seed_total else 0.0
         return computed_return_value
 
     ret = training_loop(train_loader, True)

@@ -1,67 +1,67 @@
 """Utilities for graph analyzer."""
 
-from collections import OrderedDict
+from heapq import nlargest
 from inspect import cleandoc
 from itertools import chain, repeat
+from operator import itemgetter
 from sys import stderr as sys_stderr
-from sys import version as sys_version
 
-from mgp import Edge as mgp_Edge
-from mgp import List as mgp_List
-from mgp import Nullable as mgp_Nullable
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    Edge as mgp_Edge,
+    List as mgp_List,
+    Nullable as mgp_Nullable,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
 # Imported last because it also depends on networkx.
 from mgp_networkx import MemgraphMultiDiGraph
 
 try:
-    from networkx import Graph as nx_Graph
-    from networkx import MultiDiGraph as nx_MultiDiGraph
-    from networkx import algorithms as nx_algorithms
-    from networkx import articulation_points as nx_articulation_points
-    from networkx import bridges as nx_bridges
-    from networkx import is_biconnected as nx_is_biconnected
-    from networkx import is_strongly_connected as nx_is_strongly_connected
-    from networkx import is_weakly_connected as nx_is_weakly_connected
-    from networkx import number_of_edges as nx_number_of_edges
-    from networkx import number_of_nodes as nx_number_of_nodes
-    from networkx import subgraph_view as nx_subgraph_view
-except ImportError as import_error:
-    sys_stderr.write(
-        "\nNOTE: Please install networkx to be able to use graph_analyzer module. Using Python:\n" + sys_version + "\n"
+    from networkx import (
+        Graph as nx_Graph,
+        MultiDiGraph as nx_MultiDiGraph,
+        algorithms as nx_algorithms,
+        articulation_points as nx_articulation_points,
+        bridges as nx_bridges,
+        is_biconnected as nx_is_biconnected,
+        is_strongly_connected as nx_is_strongly_connected,
+        is_weakly_connected as nx_is_weakly_connected,
+        number_of_edges as nx_number_of_edges,
+        number_of_nodes as nx_number_of_nodes,
+        subgraph_view as nx_subgraph_view,
     )
-    raise import_error from import_error
+except ImportError:
+    sys_stderr.write("\nNOTE: Please install networkx to be able to use graph_analyzer module.\n")
+    raise
 
 
 MAX_LIST_SIZE = 10
 
 
-@mgp_read_proc
-def help() -> list[mgp_Record]:
+# Memgraph registers a procedure under its function name, and graph_analyzer.help() is the public Cypher procedure.
+def help() -> list:  # pylint: disable=redefined-builtin
     """Shows manual page for graph_analyzer."""
+    documented = [(f"Procedure '{func.__name__}'", func.__doc__) for func in (help, analyze, analyze_subgraph)]
+    documented.extend((f"Analysis '{name}'", analysis.__doc__) for name, analysis in ANALYSES.items())
+
+    # Each documented item's title names its first manual line; its remaining lines carry an empty name.
     records = []
-
-    def make_records(name: str, doc: object):
+    for title, doc in documented:
         doc_text = doc if isinstance(doc, str) else ""
-        computed_return_value = (
-            mgp_Record(name=n, value=v) for n, v in zip(chain([name], repeat("")), cleandoc(doc_text).splitlines(), strict=False)
-        )
-        return computed_return_value
-
-    for func in (help, analyze, analyze_subgraph):
-        records.extend(make_records("Procedure '{}'".format(func.__name__), func.__doc__))
-
-    for m, v in get_analysis_mapping().items():
-        records.extend(make_records("Analysis '{}'".format(m), v.__doc__))
+        lines = cleandoc(doc_text).splitlines()
+        records.extend(mgp_Record(name=name, value=line) for name, line in zip(chain([title], repeat("")), lines, strict=False))
 
     return records
 
 
-@mgp_read_proc
-def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = False) -> list[mgp_Record]:
+help.__annotations__["return"] = mgp_Record(name=str, value=str)
+help = mgp_read_proc(help)
+
+
+def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = None) -> list:
     """
     Shows graph information.
 
@@ -82,13 +82,16 @@ def analyze(context: mgp_ProcCtx, analyses: mgp_Nullable[list[str]] = False) -> 
     return computed_return_value
 
 
-@mgp_read_proc
+analyze.__annotations__["return"] = mgp_Record(name=str, value=str)
+analyze = mgp_read_proc(analyze)
+
+
 def analyze_subgraph(
     context: mgp_ProcCtx,
     vertices: mgp_List[mgp_Vertex],
     edges: mgp_List[mgp_Edge],
-    analyses: mgp_Nullable[list[str]] = False,
-) -> list[mgp_Record]:
+    analyses: mgp_Nullable[list[str]] = None,
+) -> list:
     """
     Shows subgraph information.
 
@@ -123,46 +126,17 @@ def analyze_subgraph(
     return computed_return_value
 
 
-def get_analysis_mapping() -> OrderedDict[str, object]:
-    computed_return_value: OrderedDict[str, object] = OrderedDict(
-        [
-            ("nodes", internal_number_of_nodes),
-            ("edges", internal_number_of_edges),
-            ("bridges", internal_bridges),
-            ("articulation_points", internal_articulation_points),
-            ("avg_degree", internal_avg_degree),
-            ("sorted_nodes_degree", internal_sorted_nodes_degree),
-            ("self_loops", internal_self_loops),
-            ("is_bipartite", internal_is_bipartite),
-            ("is_planar", internal_is_planar),
-            ("is_biconnected: ", internal_is_biconnected),
-            ("is_weakly_connected", internal_is_weakly_connected),
-            ("number_of_weakly_components", weakly_components),
-            ("is_strongly_connected", internal_is_strongly_connected),
-            ("strongly_components", internal_strongly_components),
-            ("is_dag", internal_is_dag),
-            ("is_eulerian", internal_is_eulerian),
-            ("is_forest", internal_is_forest),
-            ("is_tree", internal_is_tree),
-        ]
-    )
-    return computed_return_value
-
-
-def get_analysis_func(name: str) -> object:
-    name_to_proc = get_analysis_mapping()
-    computed_return_value = name_to_proc.get(name.lower(), False)
-    return computed_return_value
-
-
-def get_analysis_funcs() -> list[object]:
-    computed_return_value = list(get_analysis_mapping().values())
-    return computed_return_value
+analyze_subgraph.__annotations__["return"] = mgp_Record(name=str, value=str)
+analyze_subgraph = mgp_read_proc(analyze_subgraph)
 
 
 def analyze_graph(context: mgp_ProcCtx, g: nx_MultiDiGraph, analyses: object) -> list[tuple[str, str]]:
     requested_analyses = analyses if isinstance(analyses, list) else []
-    functions = get_analysis_funcs() if not requested_analyses else [get_analysis_func(name) for name in requested_analyses]
+    # An unsupported name reads as False, which the loop below refuses with the requested spelling.
+    if requested_analyses:
+        functions = [ANALYSES.get(name.lower(), False) for name in requested_analyses]
+    else:
+        functions = list(ANALYSES.values())
 
     records = []
     for index, f in enumerate(functions):
@@ -196,17 +170,17 @@ def internal_number_of_edges(g: nx_MultiDiGraph) -> tuple[str, int]:
 
 
 def internal_avg_degree(g: nx_MultiDiGraph) -> tuple[str, float]:
-    """Returns average degree."""
+    """Returns the mean total (in + out) degree, the convention sorted_nodes_degree reports per node."""
     _, number_of_nodes = internal_number_of_nodes(g)
-    _, number_of_edges = internal_number_of_edges(g)
-    avg_degree = 0 if number_of_nodes == 0 else number_of_edges / number_of_nodes
+    total_degree = sum(degree for _, degree in g.degree())
+    avg_degree = 0 if number_of_nodes == 0 else total_degree / number_of_nodes
     return "Average degree", avg_degree
 
 
-def internal_sorted_nodes_degree(g: nx_MultiDiGraph) -> tuple[str, list[tuple[object, object]]]:
-    """Returns list of sorted nodes degree. [(node_id, degree), ...]"""
-    nodes_degree = [(n, g.degree(n)) for n in g.nodes()]
-    nodes_degree.sort(key=lambda x: x[1], reverse=True)
+def internal_sorted_nodes_degree(g: nx_MultiDiGraph) -> tuple[str, list]:
+    """Returns the MAX_LIST_SIZE highest total-degree nodes, descending. [(node_id, degree), ...]"""
+    # nlargest equals a stable descending sort truncated to the shown prefix, so ties keep node order.
+    nodes_degree = nlargest(MAX_LIST_SIZE, g.degree(), key=itemgetter(1))
     return "Sorted nodes degree", nodes_degree
 
 
@@ -306,3 +280,26 @@ def internal_strongly_components(g: nx_MultiDiGraph):
     """Returns number of strongly connected components."""
     comps = nx_algorithms.components.number_strongly_connected_components(g)
     return "Number of strongly connected components", comps
+
+
+# The supported analyses by public name, in the order help lists them and analyze runs them by default.
+ANALYSES = {
+    "nodes": internal_number_of_nodes,
+    "edges": internal_number_of_edges,
+    "bridges": internal_bridges,
+    "articulation_points": internal_articulation_points,
+    "avg_degree": internal_avg_degree,
+    "sorted_nodes_degree": internal_sorted_nodes_degree,
+    "self_loops": internal_self_loops,
+    "is_bipartite": internal_is_bipartite,
+    "is_planar": internal_is_planar,
+    "is_biconnected": internal_is_biconnected,
+    "is_weakly_connected": internal_is_weakly_connected,
+    "number_of_weakly_components": weakly_components,
+    "is_strongly_connected": internal_is_strongly_connected,
+    "strongly_components": internal_strongly_components,
+    "is_dag": internal_is_dag,
+    "is_eulerian": internal_is_eulerian,
+    "is_forest": internal_is_forest,
+    "is_tree": internal_is_tree,
+}

@@ -1,5 +1,4 @@
-query: >
+- query: >
         CALL node_classification.train() YIELD * RETURN *;
-        
-exception: "Graph is empty. "
+  exception: "Graph is empty. "
 

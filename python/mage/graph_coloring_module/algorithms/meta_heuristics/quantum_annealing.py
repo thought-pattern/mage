@@ -2,14 +2,13 @@
 
 from logging import getLogger as logging_getLogger
 from math import exp as math_exp
-from math import fabs as math_fabs
 from random import random as random_random
 
 from mage.graph_coloring_module.algorithms.meta_heuristics.parallel_algorithm import (
     ParallelAlgorithm,
 )
-from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.components.chain_chunk import ChainChunk
+from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.components.population import Population
 from mage.graph_coloring_module.graph import Graph
 from mage.graph_coloring_module.parameters import Parameter
@@ -67,7 +66,13 @@ class QA(ParallelAlgorithm):
             ):
                 best_solutions[pid] = best_individual
 
-            if math_fabs(error.individual_err(graph, best_individual, parameters)) < 1e-5:
+            solved = [
+                individual
+                for individual in population.individuals
+                if self.is_solution(individual, error.individual_err(graph, individual, parameters))
+            ]
+            if solved:
+                best_solutions[pid] = solved[0]
                 with running_flag.get_lock():
                     running_flag.value = 0
                 return False
@@ -87,9 +92,9 @@ class QA(ParallelAlgorithm):
                 callback.update(graph, population, parameters)
 
             if iteration % logging_delay == 0:
-                logger.info("Id: {} Iteration: {} Error: {}".format(pid, iteration, population.min_error(error.individual_err)))
+                logger.info("Id: %s Iteration: %s Error: %s", pid, iteration, population.min_error(error.individual_err))
 
-        logger.info("Id: {} Iteration: {} Error: {}".format(pid, iteration, population.min_error(error.individual_err)))
+        logger.info("Id: %s Iteration: %s Error: %s", pid, iteration, population.min_error(error.individual_err))
 
         for callback in iteration_callbacks:
             callback.end(graph, population, parameters)

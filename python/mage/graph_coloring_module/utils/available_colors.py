@@ -17,9 +17,9 @@ def available_colors(graph: Graph, no_of_colors: int, chromosome: list[int], nod
         if color != -1:
             used[color] = True
 
-    available_colors = []
+    colors = []
     for color in range(no_of_colors):
         if not used[color]:
-            available_colors.append(color)
+            colors.append(color)
 
-    return available_colors
+    return colors

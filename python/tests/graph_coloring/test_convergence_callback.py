@@ -1,42 +1,29 @@
 """Tests for test convergence callback."""
 
-from pytest import fixture as pytest_fixture
+from mage.graph_coloring_module.components.chain_population import ChainPopulation
+from mage.graph_coloring_module.components.individual import Individual
+from mage.graph_coloring_module.error_functions.conflict_error import ConflictError
+from mage.graph_coloring_module.graph import Graph
+from mage.graph_coloring_module.iteration_callbacks.convergence_callback import ConvergenceCallback
+from mage.graph_coloring_module.parameters import Parameter
 
-from mage.graph_coloring_module import (
-    ChainPopulation,
-    ConflictError,
-    ConvergenceCallback,
-    Graph,
-    Individual,
-    Parameter,
-)
-
-
-@pytest_fixture
-def graph():
-    computed_return_value = Graph(
-        [0, 1, 2, 3, 4],
-        {
-            0: [(1, 2), (2, 3)],
-            1: [(0, 2), (2, 2), (4, 5)],
-            2: [(0, 3), (1, 2), (3, 3)],
-            3: [(2, 3)],
-            4: [(1, 5)],
-        },
-    )
-    return computed_return_value
+# Five test nodes; the adjacency maps a node to its (neighbor, weight) pairs. Graph copies what it reads.
+GRAPH_NODES = [0, 1, 2, 3, 4]
+GRAPH_ADJACENCY = {
+    0: [(1, 2), (2, 3)],
+    1: [(0, 2), (2, 2), (4, 5)],
+    2: [(0, 3), (1, 2), (3, 3)],
+    3: [(2, 3)],
+    4: [(1, 5)],
+}
 
 
-@pytest_fixture
-def chain_population(graph):
+def test_convergence_callback():
+    graph = Graph(GRAPH_NODES, GRAPH_ADJACENCY)
     indv_1 = Individual(no_of_colors=3, graph=graph, chromosome=[1, 1, 0, 2, 0], conflict_nodes={0, 1})
     indv_2 = Individual(no_of_colors=3, graph=graph, chromosome=[1, 2, 0, 0, 1])
     indv_3 = Individual(no_of_colors=3, graph=graph, chromosome=[2, 1, 0, 2, 1], conflict_nodes={1, 4})
-    population = ChainPopulation(graph, [indv_1, indv_2, indv_3])
-    return population
-
-
-def test_convergence_callback(graph, chain_population):
+    chain_population = ChainPopulation(graph, [indv_1, indv_2, indv_3])
     conv_callback = ConvergenceCallback()
     params = {
         Parameter.ERROR: ConflictError(),

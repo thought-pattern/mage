@@ -1,35 +1,24 @@
 """Utilities for vrp."""
 
-from mgp import Nullable as mgp_Nullable
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import Vertices as mgp_Vertices
-from mgp import read_proc as mgp_read_proc
+from mgp import (
+    Nullable as mgp_Nullable,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 from numpy import ndarray as np_ndarray
 
-from mage.constraint_programming import VRPConstraintProgrammingSolver
-from mage.geography import (
-    LATITUDE,
-    LONGITUDE,
-    create_distance_matrix,
-)
-
-internal_distance_matrix: object = False
-internal_depot_index = -1
-
-MAX_DISTANCE_MATRIX_SIZE = 100
+from mage.constraint_programming.vrp_cp_solver import VRPConstraintProgrammingSolver
+from mage.geography.distance_calculator import LATITUDE, LONGITUDE
+from mage.geography.travelling_salesman import create_distance_matrix
 
 
-def get_distance_matrix(vertices):
+def get_distance_matrix(vertices: list[mgp_Vertex]) -> np_ndarray:
     """
-    Assigns distance matrix global object or returns if its already there.
+    Computes the distance matrix for exactly this request's ordered vertex list. Matrix rows and columns are
+    positions in `vertices`, so the matrix is never reused across calls whose vertices or coordinates may differ.
     """
-    global internal_distance_matrix
-
-    if isinstance(internal_distance_matrix, np_ndarray):
-        return internal_distance_matrix
-
     vertex_positions: list[dict[str, float]] = []
     for vertex in vertices:
         vertex_positions.append(
@@ -39,50 +28,33 @@ def get_distance_matrix(vertices):
             }
         )
 
-    computed_matrix = create_distance_matrix(vertex_positions)
-    if not isinstance(computed_matrix, np_ndarray):
+    distance_matrix = create_distance_matrix(vertex_positions)
+    if not isinstance(distance_matrix, np_ndarray):
         raise ValueError("Unable to calculate a numeric distance matrix")
-    internal_distance_matrix = computed_matrix
-
-    return internal_distance_matrix
+    return distance_matrix
 
 
-def get_depot_index(vertices: mgp_Vertices, depot_node: mgp_Vertex):
+def get_depot_index(vertices: list[mgp_Vertex], depot_node: mgp_Vertex) -> int:
     """
-    Assigns depot index global variable or returns if its already there.
+    Returns the position of this request's depot in this request's ordered vertex list.
     """
-    global internal_depot_index
-
-    if internal_depot_index >= 0:
-        return internal_depot_index
-
+    depot_index = -1
     for i, vertex in enumerate(vertices):
         if vertex == depot_node:
-            internal_depot_index = i
+            depot_index = i
             break
 
-    if internal_depot_index < 0:
+    if depot_index < 0:
         raise DepotUnspecifiedException("No depot location specified!")
 
-    return internal_depot_index
+    return depot_index
 
 
-def cleanup():
-    global internal_distance_matrix, internal_depot_index
-
-    distance_matrix = internal_distance_matrix
-    if isinstance(distance_matrix, np_ndarray) and len(distance_matrix) >= MAX_DISTANCE_MATRIX_SIZE:
-        internal_distance_matrix = False
-        internal_depot_index = -1
-    return False
-
-
-@mgp_read_proc
 def route(
     context: mgp_ProcCtx,
     depot_node: mgp_Vertex,
-    number_of_vehicles: mgp_Nullable[int] = False,
-) -> list[mgp_Record]:
+    number_of_vehicles: mgp_Nullable[int] = None,
+) -> list:
     """
     The VRP routing returns 2 fields.
         * `from_vertex` represents the starting nodes out of all selected routes (edges) in the complete graph
@@ -93,13 +65,14 @@ def route(
         * `depot_label` represents the name of the label which contains the depot node
     """
 
+    # Cypher null (the only default Memgraph admits for a nullable argument) means one vehicle.
     if number_of_vehicles is None:
-        number_of_vehicles = False
-    if number_of_vehicles is False:
         number_of_vehicles = 1
     if number_of_vehicles <= 0:
-        raise Exception("Number of vehicles must be greater than 0.")
+        raise ValueError("Number of vehicles must be greater than 0.")
 
+    # The ordered vertex list, its distance matrix and the depot position are bound together for this call only;
+    # result indexes are mapped back through the same list.
     vertices = [v for v in context.graph.vertices]
     distance_matrix = get_distance_matrix(vertices)
     depot_index = get_depot_index(vertices, depot_node)
@@ -107,14 +80,20 @@ def route(
     solver = VRPConstraintProgrammingSolver(number_of_vehicles, distance_matrix, depot_index)
     solver.solve()
 
-    result = solver.get_result()
-
-    cleanup()
-
-    computed_return_value = [
-        mgp_Record(from_vertex=vertices[x.from_vertex], to_vertex=vertices[x.to_vertex]) for x in result.vrp_paths
-    ]
+    computed_return_value = []
+    for path in solver.get_result():
+        from_index = path.get("from_vertex", -1)
+        to_index = path.get("to_vertex", -1)
+        # Path endpoints are positions in this call's vertex list; a missing or out-of-range endpoint is refused rather
+        # than wrapped around to another vertex.
+        if not 0 <= from_index < len(vertices) or not 0 <= to_index < len(vertices):
+            raise ValueError(f"route path endpoints outside the vertex list: {path!r}")
+        computed_return_value.append(mgp_Record(from_vertex=vertices[from_index], to_vertex=vertices[to_index]))
     return computed_return_value
+
+
+route.__annotations__["return"] = mgp_Record(from_vertex=mgp_Vertex, to_vertex=mgp_Vertex)
+route = mgp_read_proc(route)
 
 
 class DepotUnspecifiedException(Exception):

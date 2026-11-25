@@ -1,15 +1,13 @@
 """Utilities for set cover."""
 
-from abc import ABC as abc_ABC
-from abc import abstractmethod as abc_abstractmethod
-from collections import defaultdict
+from mgp import (
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+)
 
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
-
-from mage.constraint_programming import (
+from mage.constraint_programming.solver import (
     GekkoMatchingProblem,
     GekkoMPSolver,
     GreedyMatchingProblem,
@@ -17,12 +15,11 @@ from mage.constraint_programming import (
 )
 
 
-@mgp_read_proc
 def cp_solve(
     context: mgp_ProcCtx,
     element_vertexes: list[mgp_Vertex],
     set_vertexes: list[mgp_Vertex],
-) -> list[mgp_Record]:
+) -> list:
     """
     This set cover solver method returns 1 filed
 
@@ -42,8 +39,8 @@ def cp_solve(
         all the elements.
     """
 
-    creator = GekkoMatchingProblemCreator()
-    mp = creator.create_matching_problem(element_vertexes, set_vertexes)
+    element_values, set_values = paired_membership_ids(element_vertexes, set_vertexes)
+    mp = GekkoMatchingProblem(set(set_values), sets_by_element(element_values, set_values))
 
     solver = GekkoMPSolver()
     result = solver.solve(matching_problem=mp)
@@ -54,16 +51,19 @@ def cp_solve(
     return computed_return_value
 
 
-@mgp_read_proc
+cp_solve.__annotations__["return"] = mgp_Record(containing_set=mgp_Vertex)
+cp_solve = mgp_read_proc(cp_solve)
+
+
 def greedy(
     context: mgp_ProcCtx,
     element_vertexes: list[mgp_Vertex],
     set_vertexes: list[mgp_Vertex],
-) -> list[mgp_Record]:
+) -> list:
     """
     This set cover solver method returns 1 filed
 
-      * `containing_set` is a minimal set of sets in which all the element have been contained
+      * `containing_set` is one set of a cover in which all the elements have been contained
 
     The input arguments consist of
 
@@ -75,12 +75,17 @@ def greedy(
     The procedure can be invoked in openCypher using the following calls, e.g.:
       CALL set_cover.greedy([(:Point), (:Point)], [(:Set), (:Set)]) YIELD containing_set;
 
-    The method uses a greedy method as a solving tool for obtaining a minimal set of sets that contain
-        all the elements.
+    The method repeatedly picks the set covering the most still-uncovered elements. The cover is within the greedy
+        H(n) <= ln(n) + 1 factor of the minimum (n = largest set size) but is not guaranteed minimal; use cp_solve
+        for an exact minimum.
     """
 
-    creator = GreedyMatchingProblemCreator()
-    mp = creator.create_matching_problem(element_vertexes, set_vertexes)
+    element_values, set_values = paired_membership_ids(element_vertexes, set_vertexes)
+    mp = GreedyMatchingProblem(
+        set(element_values),
+        set(set_values),
+        elements_by_set(element_values, set_values),
+    )
 
     solver = GreedyMPSolver()
     result = solver.solve(matching_problem=mp)
@@ -91,70 +96,41 @@ def greedy(
     return computed_return_value
 
 
-class MatchingProblemCreator(abc_ABC):
+greedy.__annotations__["return"] = mgp_Record(containing_set=mgp_Vertex)
+greedy = mgp_read_proc(greedy)
+
+
+def paired_membership_ids(element_vertexes: list[mgp_Vertex], set_vertexes: list[mgp_Vertex]) -> tuple[list[int], list[int]]:
     """
-    Creator abstract class of matching problems
+    Admits the paired element/set membership lists. Each index pairs one element with one containing set, so the
+    lists must have equal length; every declared element is then represented by at least one membership.
     """
-
-    @abc_abstractmethod
-    def create_matching_problem(self, element_vertexes, set_vertexes):
-        """
-        Creates a matching problem
-        :param element_vertexes: Element vertexes pair component list
-        :param set_vertexes: Set vertexes pair component list
-        :return: matching problem
-        """
-
-        ...
+    if len(element_vertexes) != len(set_vertexes):
+        raise ValueError(
+            f"element_vertexes and set_vertexes must be paired: received {len(element_vertexes)} elements "
+            f"and {len(set_vertexes)} sets"
+        )
+    element_values = [x.id for x in element_vertexes]
+    set_values = [x.id for x in set_vertexes]
+    computed_return_value = (element_values, set_values)
+    return computed_return_value
 
 
-class GreedyMatchingProblemCreator(MatchingProblemCreator):
-    """
-    Creator class for set cover to be solved with greedy method
-    """
-
-    def create_matching_problem(self, element_vertexes: list[mgp_Vertex], set_vertexes: list[mgp_Vertex]):
-        """
-        Creates a matching problem to be solved with greedy method
-        :param element_vertexes: Element vertexes pair component list
-        :param set_vertexes: Set vertexes pair component list
-        :return: matching problem
-        """
-
-        element_values = [x.id for x in element_vertexes]
-        set_values = [x.id for x in set_vertexes]
-        all_elements = set(element_values)
-        all_sets = set(set_values)
-
-        elements_by_sets = defaultdict(set)
-
-        for element, contained_set in zip(element_values, set_values, strict=False):
-            elements_by_sets.get(contained_set, set()).add(element)
-
-        computed_return_value = GreedyMatchingProblem(all_elements, all_sets, elements_by_sets)
-        return computed_return_value
+def elements_by_set(element_values: list[int], set_values: list[int]) -> dict[int, set[int]]:
+    """Groups the paired memberships by containing set: each set id maps to the element ids it contains."""
+    grouped: dict[int, set[int]] = {}
+    for element, contained_set in zip(element_values, set_values, strict=True):
+        set_elements = grouped.get(contained_set, set())
+        set_elements.add(element)
+        grouped[contained_set] = set_elements
+    return grouped
 
 
-class GekkoMatchingProblemCreator(MatchingProblemCreator):
-    """
-    Creator class for set cover to be solved with gekko constraint programming
-    """
-
-    def create_matching_problem(self, element_vertexes: list[mgp_Vertex], set_vertexes: list[mgp_Vertex]):
-        """
-        Creates a matching problem to be solved with gekko constraint programming method
-        :param element_vertexes: Element vertexes pair component list
-        :param set_vertexes: Set vertexes pair component list
-        :return: matching problem
-        """
-
-        element_values = [x.id for x in element_vertexes]
-        set_values = [x.id for x in set_vertexes]
-        set_values_distinct = set(set_values)
-        sets_by_elements = defaultdict(set)
-
-        for element, contained_set in zip(element_values, set_values, strict=False):
-            sets_by_elements.get(element, set()).add(contained_set)
-
-        computed_return_value = GekkoMatchingProblem(set_values_distinct, sets_by_elements)
-        return computed_return_value
+def sets_by_element(element_values: list[int], set_values: list[int]) -> dict[int, set[int]]:
+    """Groups the paired memberships by element: each element id maps to the set ids that contain it."""
+    grouped: dict[int, set[int]] = {}
+    for element, contained_set in zip(element_values, set_values, strict=True):
+        element_sets = grouped.get(element, set())
+        element_sets.add(contained_set)
+        grouped[element] = element_sets
+    return grouped

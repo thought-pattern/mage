@@ -1,9 +1,6 @@
 """Utilities for message aggregator."""
 
-from torch import Tensor as torch_Tensor
-from torch import cat as torch_cat
-from torch import mean as torch_mean
-from torch import nn
+from torch import Tensor as torch_Tensor, cat as torch_cat, mean as torch_mean, nn
 
 
 class MessageAggregator(nn.Module):
@@ -25,9 +22,6 @@ class MeanMessageAggregator(MessageAggregator):
     as mean of features received
     """
 
-    def __init__(self):
-        super().__init__()
-
     def forward(self, data: list[torch_Tensor]) -> torch_Tensor:
         if not data:
             raise ValueError("MeanMessageAggregator requires at least one message")
@@ -46,9 +40,6 @@ class LastMessageAggregator(MessageAggregator):
     Last message aggregator
     From messages received as List of torch.Tensor, it returns last message
     """
-
-    def __init__(self):
-        super().__init__()
 
     def forward(self, data: list[torch_Tensor]) -> torch_Tensor:
         if not data:

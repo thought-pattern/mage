@@ -8,8 +8,7 @@ from mage.graph_coloring_module.iteration_callbacks.iteration_callback import (
 
 
 class MatplotlibCallback(IterationCallback):
-    def __init__(self):
-        super().__init__()
+    """Iteration callback reserved for plotting; it records nothing."""
 
     def update(self, graph: Graph, population: Population, parameters: dict):
         return False

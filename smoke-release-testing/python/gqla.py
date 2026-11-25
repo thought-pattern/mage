@@ -9,7 +9,7 @@ memgraph_port = int(sys_argv[1])
 memgraph = Memgraph(host="127.0.0.1", port=memgraph_port)
 
 query = "MATCH (n) DETACH DELETE n;"
-memgraph.execute_and_fetch(query)
+memgraph.execute(query)
 
 query = "CREATE (n) RETURN n;"
 results = memgraph.execute_and_fetch(query)

@@ -5,12 +5,14 @@ represents number of clusters you want to get, and "embedding" represents node p
 embedding of node is stored
 """
 
-from mgp import Number as mgp_Number
-from mgp import ProcCtx as mgp_ProcCtx
-from mgp import Record as mgp_Record
-from mgp import Vertex as mgp_Vertex
-from mgp import read_proc as mgp_read_proc
-from mgp import write_proc as mgp_write_proc
+from mgp import (
+    Number as mgp_Number,
+    ProcCtx as mgp_ProcCtx,
+    Record as mgp_Record,
+    Vertex as mgp_Vertex,
+    read_proc as mgp_read_proc,
+    write_proc as mgp_write_proc,
+)
 from sklearn.cluster import KMeans
 
 
@@ -51,7 +53,6 @@ def extract_nodes_embeddings(ctx: mgp_ProcCtx, embedding_property: str) -> tuple
     return nodes, embeddings
 
 
-@mgp_read_proc
 def get_clusters(
     ctx: mgp_ProcCtx,
     n_clusters: mgp_Number,
@@ -62,7 +63,7 @@ def get_clusters(
     tol: mgp_Number = 1e-4,
     algorithm: str = "lloyd",
     random_state: int = 1998,
-) -> list[mgp_Record]:
+) -> list:
     nodes, embeddings = extract_nodes_embeddings(ctx, embedding_property)
 
     nodes_labels_list = get_created_clusters(
@@ -80,7 +81,10 @@ def get_clusters(
     return computed_return_value
 
 
-@mgp_write_proc
+get_clusters.__annotations__["return"] = mgp_Record(node=mgp_Vertex, cluster_id=mgp_Number)
+get_clusters = mgp_read_proc(get_clusters)
+
+
 def set_clusters(
     ctx: mgp_ProcCtx,
     n_clusters: mgp_Number,
@@ -92,7 +96,7 @@ def set_clusters(
     tol: mgp_Number = 1e-4,
     algorithm: str = "lloyd",
     random_state=1998,
-) -> list[mgp_Record]:
+) -> list:
     nodes, embeddings = extract_nodes_embeddings(ctx, embedding_property)
 
     nodes_labels_list = get_created_clusters(
@@ -112,3 +116,7 @@ def set_clusters(
 
     computed_return_value = [mgp_Record(node=node, cluster_id=int(label)) for node, label in nodes_labels_list]
     return computed_return_value
+
+
+set_clusters.__annotations__["return"] = mgp_Record(node=mgp_Vertex, cluster_id=mgp_Number)
+set_clusters = mgp_write_proc(set_clusters)

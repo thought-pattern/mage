@@ -1,13 +1,11 @@
 """Utilities for daily build vars."""
 
 from argparse import ArgumentParser as argparse_ArgumentParser
-from json import JSONDecodeError as json_JSONDecodeError
-from json import load as json_load
-from json import loads as json_loads
+from json import JSONDecodeError as json_JSONDecodeError, loads as json_loads
 from os import path as os_path
-from re import compile as re_compile
 from subprocess import run as subprocess_run
-from urllib import request as urllib_request
+
+from build_identity import extract_commit_hash, get_mage_version
 
 
 def get_latest_build() -> int:
@@ -21,6 +19,7 @@ def get_latest_build() -> int:
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     if p.returncode != 0:
         raise RuntimeError(f"unable to list Memgraph daily builds: {p.stderr.strip()}")
@@ -38,23 +37,6 @@ def get_latest_build() -> int:
     return computed_return_value
 
 
-def extract_commit_hash(filename):
-    """
-    Attempts to extract a commit hash from the given filename.
-    The regex looks for a delimiter, then 8 to 12 hexadecimal characters,
-    followed by another delimiter.
-    """
-    # This regex looks for one of the delimiters (. _ + ~ -)
-    # then captures a group of 8-12 hex digits,
-    # and ensures it is followed by a delimiter like - or _ or .
-    pattern = re_compile(r"[._+~-](?P<hash>[0-9a-f]{8,12})(?=[-_\.])")
-    match = pattern.search(filename)
-    if match:
-        computed_return_value = match.group("hash")
-        return computed_return_value
-    return False
-
-
 def get_memgraph_version(date):
     p = subprocess_run(
         [
@@ -66,6 +48,7 @@ def get_memgraph_version(date):
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     if p.returncode != 0:
         raise RuntimeError(f"unable to list Memgraph build {date:08d}: {p.stderr.strip()}")
@@ -80,9 +63,9 @@ def get_memgraph_version(date):
     # always be the same to reveal the daily build version
     basename = os_path.basename(file)
     version = basename[9:-12]
-    hash = extract_commit_hash(file)
+    commit_hash = extract_commit_hash(file)
 
-    return version, hash
+    return version, commit_hash
 
 
 def daily_build_vars(payload):
@@ -96,47 +79,6 @@ def daily_build_vars(payload):
     mage_version = get_mage_version()
 
     return mage_version, memgraph_version, memgraph_commit, date
-
-
-def get_commit():
-    p = subprocess_run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
-    if p.returncode != 0:
-        raise RuntimeError(f"unable to resolve MAGE commit: {p.stderr.strip()}")
-
-    computed_return_value = p.stdout.strip()
-    return computed_return_value
-
-
-def get_pr():
-    p = subprocess_run(["git", "log", "--pretty=%B"], capture_output=True, text=True)
-    if p.returncode != 0:
-        raise RuntimeError(f"unable to inspect MAGE history: {p.stderr.strip()}")
-    pattern = re_compile(r"\(#(?P<pr>\d+)\)")
-    match = pattern.search(p.stdout)
-    computed_return_value = match.group("pr") if match else ""
-    return computed_return_value
-
-
-def get_tag():
-    with urllib_request.urlopen("https://api.github.com/repos/memgraph/mage/tags") as response:
-        # Read the JSON data from GitHub
-        tags = json_load(response)
-
-    # Find the first tag whose name does not contain 'rc'
-    try:
-        latest = next(tag.get("name", "")[1:] for tag in tags if "rc" not in tag.get("name", ""))
-    except StopIteration as err:
-        raise RuntimeError("GitHub returned no stable MAGE tag") from err
-    return latest
-
-
-def get_mage_version():
-    commit = get_commit()
-    pr = get_pr()
-    tag = get_tag()
-
-    mage_version = f"{tag}_pr{pr}_{commit}"
-    return mage_version
 
 
 def main() -> bool:

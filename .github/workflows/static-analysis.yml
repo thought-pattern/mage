@@ -1,0 +1,145 @@
+name: Static Analysis
+
+on:
+  pull_request:
+    paths:
+      - "python/**/*.py"
+      - "python/**/*.pyi"
+      - "scripts/**/*.py"
+      - "smoke-release-testing/**/*.py"
+      - "e2e/**/*.py"
+      - "e2e_correctness/**/*.py"
+      - "pyproject.toml"
+      - "python/pytest.ini"
+      - "python/requirements*.txt"
+      - "python/tests/requirements.txt"
+      - "scripts/requirements-cve-scan.txt"
+      - "smoke-release-testing/requirements.txt"
+      - ".github/workflows/static-analysis.yml"
+  push:
+    branches: [develop, main]
+    paths:
+      - "python/**/*.py"
+      - "python/**/*.pyi"
+      - "scripts/**/*.py"
+      - "smoke-release-testing/**/*.py"
+      - "e2e/**/*.py"
+      - "e2e_correctness/**/*.py"
+      - "pyproject.toml"
+      - "python/pytest.ini"
+      - "python/requirements*.txt"
+      - "python/tests/requirements.txt"
+      - "scripts/requirements-cve-scan.txt"
+      - "smoke-release-testing/requirements.txt"
+      - ".github/workflows/static-analysis.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-analysis-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-security:
+    name: Lint and Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install analysis tools
+        run: python -m pip install --upgrade bandit isort ruff vulture
+
+      - name: Import-order check
+        run: isort --check-only python scripts smoke-release-testing e2e e2e_correctness
+
+      - name: Run Ruff
+        run: ruff check python scripts smoke-release-testing e2e e2e_correctness
+
+      - name: Bytecode compilation check
+        run: python -m compileall -q python scripts smoke-release-testing e2e e2e_correctness
+
+      - name: Security scan
+        run: python -m bandit --configfile pyproject.toml -q -ii -lll -r python scripts smoke-release-testing
+
+      - name: Dead-code scan
+        run: python -m vulture
+
+  typecheck-and-tests:
+    name: Pyright and Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: python/requirements.txt
+
+      - name: Install runtime dependencies
+        run: python -m pip install --requirement python/requirements.txt
+
+      - name: Verify runtime dependency compatibility
+        run: python -m pip check
+
+      - name: Install type-checking and unit-test dependencies
+        run: python -m pip install PyYAML==6.0.2 pyright pytest==9.0.3 rich
+
+      - name: Verify combined dependency compatibility
+        run: python -m pip check
+
+      - name: Run Pyright
+        run: |
+          python - <<'EOF'
+          import json
+          import re
+          import subprocess
+          import sys
+
+          # Native C/GPU/CVE-scan packages installed in separate container or scan environments.
+          EXTERNAL_ENV_PACKAGES = {"cudf", "cugraph", "cuml", "cupy", "cve_bin_tool", "semver"}
+          MISSING_IMPORT_RE = re.compile(r'Import "([^".]+)(?:\.[^"]*)?" could not be resolved')
+
+          proc = subprocess.run([sys.executable, "-m", "pyright", "--outputjson"], capture_output=True, text=True)
+          if proc.returncode not in (0, 1):
+              raise SystemExit(proc.stderr or proc.stdout or f"pyright exited with {proc.returncode}")
+          report = json.loads(proc.stdout)
+          analyzed = report.get("summary", {}).get("filesAnalyzed", 0)
+          if analyzed <= 0:
+              raise SystemExit("Pyright analyzed no files")
+
+          blocking = []
+          for item in report.get("generalDiagnostics", []):
+              rule = item.get("rule", "")
+              msg = item.get("message", "")
+              if rule in {"reportMissingImports", "reportMissingModuleSource"}:
+                  match = MISSING_IMPORT_RE.search(msg)
+                  if match and match.group(1) in EXTERNAL_ENV_PACKAGES:
+                      continue
+              if item.get("severity") in {"error", "warning"}:
+                  loc = item.get("range", {}).get("start", {})
+                  blocking.append(
+                      f"{item.get('file')}:{loc.get('line', 0) + 1}:{loc.get('character', 0) + 1}: "
+                      f"{item.get('severity')} [{rule}] {msg}"
+                  )
+
+          if blocking:
+              print("\n".join(blocking))
+              raise SystemExit(1)
+          print(f"Pyright checked {analyzed} files: 0 blocking diagnostics.")
+          EOF
+
+      - name: Run Python unit tests
+        env:
+          PYTHONPATH: .:python
+        run: python -m pytest python/tests

@@ -47,7 +47,5 @@ class ChainPopulation(CorrelationPopulation):
     def set_correlations(self) -> bool:
         for i in range(self.size):
             j = i + 1 if i + 1 < self.size else 0
-            c = self.calculate_correlation(self.individuals[i], self.individuals[j])
-            self.internal_correlation.append(c)
-            self.internal_cumulative_correlation += c
+            self.set_link(i, self.individuals[i], self.individuals[j])
         return False

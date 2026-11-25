@@ -20,10 +20,8 @@ containing all CVEs for those installed packages.
 
 from argparse import ArgumentParser as argparse_ArgumentParser
 from json import loads as json_loads
-from os import getcwd as os_getcwd
-from os import getenv as os_getenv
-from subprocess import PIPE as subprocess_PIPE
-from subprocess import run as subprocess_run
+from os import getcwd as os_getcwd, getenv as os_getenv
+from subprocess import PIPE as subprocess_PIPE, run as subprocess_run
 
 from cve_bin_tool.cvedb import CVEDB
 
@@ -58,6 +56,7 @@ def get_apt_packages(container: str = "memgraph") -> list[dict]:
         stdout=subprocess_PIPE,
         stderr=subprocess_PIPE,
         text=True,  # so that stdout/stderr come back as Python strings
+        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"docker package query failed with exit code {result.returncode}: {result.stderr}")
@@ -140,7 +139,7 @@ def save_apt_package_csv(packages):
         list of installed packages
     """
 
-    with open(f"{CVE_DIR}/apt-packages.csv", "w") as f:
+    with open(f"{CVE_DIR}/apt-packages.csv", "w", encoding="utf-8") as f:
         f.write("vendor,product,version\n")
         for package in packages:
             f.write(f"{','.join(package)}\n")
@@ -163,7 +162,15 @@ def run_scan() -> bool:
         "-i",
         f"{CVE_DIR}/apt-packages.csv",
     ]
-    result = subprocess_run(cmd, stdout=subprocess_PIPE, stderr=subprocess_PIPE, text=True)
+    result = subprocess_run(
+        # The command is an argument list run without a shell; CVE_DIR is the scan directory the CI job exports.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+        cmd,
+        stdout=subprocess_PIPE,
+        stderr=subprocess_PIPE,
+        text=True,
+        check=False,
+    )
     if result.returncode != 0:
         raise RuntimeError(f"cve-bin-tool failed with exit code {result.returncode}: {result.stderr}")
     return False
