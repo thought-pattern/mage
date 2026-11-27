@@ -1,8 +1,8 @@
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import multiprocessing as mp
 import os
 import sys
 import threading
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from typing import List
 
 import huggingface_hub  # noqa: F401
@@ -40,8 +40,8 @@ def _get_or_load_model(model_name: str, device: str = "cpu"):
         # Double-check after acquiring lock
         if key in _model_cache:
             return _model_cache[key]
-        import transformers  # noqa: F401
         from sentence_transformers import SentenceTransformer
+        import transformers  # noqa: F401
 
         model = SentenceTransformer(model_name, device=device)
         _model_cache[key] = model

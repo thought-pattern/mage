@@ -15,8 +15,8 @@ def encode_chunk(visible_gpu, model_id: str, texts: list[str], batch_size: int):
     os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-    import torch
     from sentence_transformers import SentenceTransformer
+    import torch
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = SentenceTransformer(model_id, device=device)

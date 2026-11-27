@@ -5,12 +5,12 @@ from importlib import import_module
 from torch import (
     Tensor as torch_Tensor,
     arange as torch_arange,
+    bool as torch_bool,
     cat as torch_cat,
     ones as torch_ones,
     randperm as torch_randperm,
     set_grad_enabled as torch_set_grad_enabled,
     zeros_like as torch_zeros_like,
-    bool as torch_bool,
 )
 from torch_geometric.data import HeteroData
 
