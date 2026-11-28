@@ -35,8 +35,7 @@ class GATJK(torch_nn.Module):
         target_width = widths[-1] * heads
         if jk_type in ("max", "lstm"):
             self.jk_projections = torch_nn.ModuleList(
-                torch_nn.Identity() if width * heads == target_width else Linear(width * heads, target_width)
-                for width in widths
+                torch_nn.Identity() if width * heads == target_width else Linear(width * heads, target_width) for width in widths
             )
         else:
             self.jk_projections = torch_nn.ModuleList(torch_nn.Identity() for _ in widths)

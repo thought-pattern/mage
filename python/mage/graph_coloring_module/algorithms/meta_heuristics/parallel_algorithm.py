@@ -11,7 +11,7 @@ from multiprocessing.connection import wait as mp_connection_wait
 from pickle import PicklingError
 
 from mage.graph_coloring_module.algorithms.algorithm import Algorithm, no_host_abort
-from mage.graph_coloring_module.components.chain_chunk import ChainChunk, split_chain_chunks
+from mage.graph_coloring_module.components.chain_chunk import split_chain_chunks
 from mage.graph_coloring_module.components.individual import Individual
 from mage.graph_coloring_module.components.population import Population
 from mage.graph_coloring_module.exceptions import PopulationCreationException

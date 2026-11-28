@@ -15,7 +15,9 @@ from torch import (
 from torch_geometric.data import HeteroData
 
 
-def build_seed_first_batches(data: HeteroData, observed_attribute: str, mask_tensor: torch_Tensor, batch_size: int, shuffle: bool) -> list:
+def build_seed_first_batches(
+    data: HeteroData, observed_attribute: str, mask_tensor: torch_Tensor, batch_size: int, shuffle: bool
+) -> list:
     """Fallback pure-PyTorch HeteroData mini-batcher placing each batch's seed nodes at rows 0..seed_count-1."""
     seed_indices = mask_tensor.nonzero(as_tuple=False).view(-1)
     total_seeds = int(seed_indices.numel())
@@ -55,7 +57,11 @@ def build_seed_first_batches(data: HeteroData, observed_attribute: str, mask_ten
             ei = data[etype].edge_index
             src_idx = inv_perm[ei[0]] if src_type == observed_attribute else ei[0]
             dst_idx = inv_perm[ei[1]] if dst_type == observed_attribute else ei[1]
-            batch[etype].edge_index = ei.new_stack([src_idx, dst_idx]) if hasattr(ei, "new_stack") else torch_cat([src_idx.unsqueeze(0), dst_idx.unsqueeze(0)], dim=0)
+            batch[etype].edge_index = (
+                ei.new_stack([src_idx, dst_idx])
+                if hasattr(ei, "new_stack")
+                else torch_cat([src_idx.unsqueeze(0), dst_idx.unsqueeze(0)], dim=0)
+            )
 
         batches.append(batch)
 
