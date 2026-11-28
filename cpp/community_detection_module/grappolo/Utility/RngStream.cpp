@@ -291,7 +291,7 @@ double RngStream::U01d ()
 // The default seed of the package; will be the seed of the first
 // declared RngStream, unless SetPackageSeed is called.
 //
-double RngStream::nextSeed[6] =
+thread_local double RngStream::nextSeed[6] =
 {
    12345.0, 12345.0, 12345.0, 12345.0, 12345.0, 12345.0
 };

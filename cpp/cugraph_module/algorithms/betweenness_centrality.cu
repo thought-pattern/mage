@@ -135,9 +135,14 @@ void BetweennessCentralityProc(mgp_list *args, mgp_graph *graph, mgp_result *res
 }  // namespace
 
 extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *memory) {
-  mgp_value *default_normalized;
-  mgp_value *default_directed;
-  mgp_value *default_k;
+  mgp_value *default_normalized = nullptr;
+  mgp_value *default_directed = nullptr;
+  mgp_value *default_k = nullptr;
+  auto cleanup = [&]() {
+    if (default_normalized) mgp_value_destroy(default_normalized);
+    if (default_directed) mgp_value_destroy(default_directed);
+    if (default_k) mgp_value_destroy(default_k);
+  };
   try {
     auto *betweenness_proc =
         mgp::module_add_read_procedure(module, kProcedureBetweennessCentrality, BetweennessCentralityProc);
@@ -153,15 +158,11 @@ extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *mem
     mgp::proc_add_result(betweenness_proc, kResultFieldNode, mgp::type_node());
     mgp::proc_add_result(betweenness_proc, kResultFieldBetweennessCentrality, mgp::type_float());
   } catch (const std::exception &e) {
-    mgp_value_destroy(default_normalized);
-    mgp_value_destroy(default_directed);
-    mgp_value_destroy(default_k);
+    cleanup();
     return 1;
   }
 
-  mgp_value_destroy(default_normalized);
-  mgp_value_destroy(default_directed);
-  mgp_value_destroy(default_k);
+  cleanup();
   return 0;
 }
 

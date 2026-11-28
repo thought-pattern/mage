@@ -74,7 +74,7 @@ if (MAGE_CUGRAPH_ENABLE)
                         "-DCMAKE_BUILD_TYPE=${MAGE_CUGRAPH_BUILD_TYPE}"
                         "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
                         "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-                        "-DCMAKE_CUDA_ARCHITECTURES='${MAGE_CUDA_ARCHITECTURES}'"
+                        "-DCMAKE_CUDA_ARCHITECTURES=${MAGE_CUDA_ARCHITECTURES}"
                         "-DBUILD_STATIC_FAISS=ON"
                         "-DBUILD_TESTS=OFF"
                         "-DBUILD_CUGRAPH_MG_TESTS=OFF"
@@ -88,7 +88,9 @@ if (MAGE_CUGRAPH_ENABLE)
     IMPORTED_LOCATION "${MAGE_CUGRAPH_LIBRARY_PATH}"
   )
   include_directories("${MAGE_CUGRAPH_INCLUDE_DIR}")
-  add_dependencies(mage_cugraph cugraph-proj)
+  if (TARGET cugraph-proj)
+    add_dependencies(mage_cugraph cugraph-proj)
+  endif()
 endif()
 
 macro(add_cugraph_subdirectory subdirectory_name)

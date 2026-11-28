@@ -25,6 +25,20 @@ void RemoveDuplicates(std::vector<T> &vector) {
 }
 
 namespace online_bc {
+namespace {
+
+std::multiset<std::pair<std::uint64_t, std::uint64_t>> SnapshotCanonicalEdges(const mg_graph::GraphView<> &graph) {
+  std::multiset<std::pair<std::uint64_t, std::uint64_t>> edges;
+  for (const auto &edge : graph.Edges()) {
+    const auto u = graph.GetMemgraphNodeId(edge.from);
+    const auto v = graph.GetMemgraphNodeId(edge.to);
+    edges.insert(std::minmax(u, v));
+  }
+  return edges;
+}
+
+}  // namespace
+
 std::unordered_set<std::uint64_t> NeighborsMemgraphIDs(const mg_graph::GraphView<> &graph,
                                                        const std::uint64_t node_id) {
   std::unordered_set<std::uint64_t> neighbors_memgraph_ids;
@@ -41,12 +55,15 @@ bool OnlineBC::Inconsistent(const mg_graph::GraphView<> &graph) const {
     if (!this->node_bc_scores.count(graph.GetMemgraphNodeId(node_inner_id))) return true;
   }
 
+  if (SnapshotCanonicalEdges(graph) != this->cached_edges) return true;
+
   return false;
 }
 
 std::unordered_map<std::uint64_t, double> OnlineBC::NormalizeBC(
     const std::unordered_map<std::uint64_t, double> &node_bc_scores, const std::uint64_t graph_order) const {
-  const double normalization_factor = 2.0 / ((graph_order - 1) * (graph_order - 2));
+  const double normalization_factor =
+      (graph_order > 2) ? (2.0 / static_cast<double>((graph_order - 1) * (graph_order - 2))) : 0.0;
   std::unordered_map<std::uint64_t, double> normalized_bc_scores;
   for (const auto [node_id, bc_score] : node_bc_scores) {
     normalized_bc_scores[node_id] = bc_score * normalization_factor;
@@ -57,14 +74,19 @@ std::unordered_map<std::uint64_t, double> OnlineBC::NormalizeBC(
 
 void OnlineBC::CallBrandesAlgorithm(const mg_graph::GraphView<> &graph, const std::uint64_t threads) {
   this->node_bc_scores.clear();
+  const int effective_threads = static_cast<int>(std::max<std::uint64_t>(1, threads));
 
-  const auto bc_scores = betweenness_centrality_alg::BetweennessCentrality(graph, false, false, threads);
+  const auto bc_scores = betweenness_centrality_alg::BetweennessCentrality(graph, false, false, effective_threads);
   for (std::uint64_t node_id = 0; node_id < graph.Nodes().size(); ++node_id) {
     this->node_bc_scores[graph.GetMemgraphNodeId(node_id)] = bc_scores[node_id];
   }
+  this->cached_edges = SnapshotCanonicalEdges(graph);
 }
 
 bool OnlineBC::Connected(const mg_graph::GraphView<> &graph) {
+  if (graph.Nodes().empty()) {
+    return true;
+  }
   const auto start_node_id = graph.Nodes().front().id;
   std::unordered_set<std::uint64_t> visited({start_node_id});
 
@@ -98,13 +120,16 @@ std::tuple<std::unordered_set<std::uint64_t>, std::unordered_set<std::uint64_t>>
 
   for (std::size_t i = 0; i < edges_by_bcc.size(); i++) {
     if (std::any_of(edges_by_bcc[i].begin(), edges_by_bcc[i].end(), [updated_edge_inner](auto &edge) {
-          return edge.from == updated_edge_inner.first && edge.to == updated_edge_inner.second;  // if edge in BCC
+          return (edge.from == updated_edge_inner.first && edge.to == updated_edge_inner.second) ||
+                 (edge.from == updated_edge_inner.second && edge.to == updated_edge_inner.first);
         })) {
       for (const auto node : nodes_by_bcc[i]) {
         affected_bcc_nodes.insert(graph.GetMemgraphNodeId(node));
       }
-      for (const auto node : articulation_points_by_bcc) {
-        if (affected_bcc_nodes.count(node)) affected_bcc_articulation_points.insert(node);
+      for (const auto ap_inner_id : articulation_points_by_bcc) {
+        if (nodes_by_bcc[i].count(ap_inner_id)) {
+          affected_bcc_articulation_points.insert(graph.GetMemgraphNodeId(ap_inner_id));
+        }
       }
     }
   }
@@ -115,7 +140,7 @@ std::tuple<std::unordered_set<std::uint64_t>, std::unordered_set<std::uint64_t>>
 std::unordered_map<std::uint64_t, std::uint64_t> OnlineBC::SSSPLengths(
     const mg_graph::GraphView<> &graph, const std::uint64_t start_id,
     const std::unordered_set<std::uint64_t> &affected_bcc_nodes) const {
-  std::unordered_map<std::uint64_t, std::uint64_t> distances;
+  std::unordered_map<std::uint64_t, std::uint64_t> distances({{start_id, 0}});
 
   std::queue<std::uint64_t> queue({start_id});
   while (!queue.empty()) {
@@ -168,7 +193,7 @@ BFSResult OnlineBC::BFS(const mg_graph::GraphView<> &graph, const std::uint64_t 
                         const bool compensate_for_deleted_node, const bool affected_bcc_only,
                         const std::unordered_set<std::uint64_t> &affected_bcc_nodes) const {
   std::unordered_map<std::uint64_t, std::uint64_t> n_shortest_paths({{start_id, 1}});
-  std::unordered_map<std::uint64_t, std::uint64_t> distances;
+  std::unordered_map<std::uint64_t, std::uint64_t> distances({{start_id, 0}});
   std::unordered_map<std::uint64_t, std::set<std::uint64_t>> predecessors;
   std::vector<std::uint64_t> bfs_order({start_id});
 
@@ -447,6 +472,10 @@ std::unordered_map<std::uint64_t, double> OnlineBC::EdgeUpdate(
     } else {
       if (!Connected(prior_graph)) return Set(current_graph, normalize, threads);
     }
+  } else if (operation == Operation::DELETE_EDGE) {
+    if (!Connected(prior_graph) || !Connected(current_graph)) {
+      return Set(current_graph, normalize, threads);
+    }
   }
 
   const mg_graph::GraphView<> &graph_without_updated_edge =
@@ -454,14 +483,13 @@ std::unordered_map<std::uint64_t, double> OnlineBC::EdgeUpdate(
   const mg_graph::GraphView<> &graph_with_updated_edge =
       (operation == Operation::CREATE_EDGE) ? current_graph : prior_graph;
 
-  std::unordered_set<std::uint64_t> articulation_points_by_bcc;
-  std::vector<std::unordered_set<std::uint64_t>> nodes_by_bcc;
-  std::vector<std::vector<mg_graph::Edge<>>> edges_by_bcc;
-  edges_by_bcc =
-      bcc_algorithm::GetBiconnectedComponents(graph_with_updated_edge, articulation_points_by_bcc, nodes_by_bcc);
-
   const auto [affected_bcc_nodes, affected_bcc_articulation_points] =
       IsolateAffectedBCC(graph_with_updated_edge, updated_edge);
+
+  const auto distances_without = SSSPLengths(graph_without_updated_edge, updated_edge.first, affected_bcc_nodes);
+  if (!distances_without.count(updated_edge.second)) {
+    return Set(current_graph, normalize, threads);
+  }
 
   const auto distances_first = SSSPLengths(graph_with_updated_edge, updated_edge.first, affected_bcc_nodes);
   const auto distances_second = SSSPLengths(graph_with_updated_edge, updated_edge.second, affected_bcc_nodes);
@@ -470,16 +498,13 @@ std::unordered_map<std::uint64_t, double> OnlineBC::EdgeUpdate(
       PeripheralSubgraphOrders(prior_graph, affected_bcc_articulation_points, affected_bcc_nodes);
 
   // OpenMP might throw errors when iterating over STL containers
-  auto array_size = affected_bcc_nodes.size();
-  std::uint64_t affected_bcc_nodes_array[array_size];
-  std::uint64_t i = 0;
-  for (const auto node_id : affected_bcc_nodes) {
-    affected_bcc_nodes_array[i] = node_id;
-    i++;
-  }
+  std::vector<std::uint64_t> affected_bcc_nodes_array(affected_bcc_nodes.begin(), affected_bcc_nodes.end());
+  auto array_size = affected_bcc_nodes_array.size();
 
+  const int prev_omp_threads = omp_get_max_threads();
+  const int effective_threads = static_cast<int>(std::max<std::uint64_t>(1, threads));
   omp_set_dynamic(0);
-  omp_set_num_threads(threads);
+  omp_set_num_threads(effective_threads);
 #pragma omp parallel for
   for (std::uint64_t i = 0; i < array_size; i++) {
     auto node_id = affected_bcc_nodes_array[i];
@@ -488,6 +513,9 @@ std::unordered_map<std::uint64_t, double> OnlineBC::EdgeUpdate(
                         affected_bcc_articulation_points, updated_edge, peripheral_subgraph_orders);
     }
   }
+  omp_set_num_threads(std::max(1, prev_omp_threads));
+
+  this->cached_edges = SnapshotCanonicalEdges(current_graph);
 
   if (normalize) return NormalizeBC(this->node_bc_scores, current_graph.Nodes().size());
 
@@ -534,6 +562,8 @@ std::unordered_map<std::uint64_t, double> OnlineBC::NodeEdgeUpdate(
     this->node_bc_scores.erase(updated_id);
   }
 
+  this->cached_edges = SnapshotCanonicalEdges(current_graph);
+
   if (normalize) return NormalizeBC(this->node_bc_scores, current_graph.Nodes().size());
 
   return this->node_bc_scores;
@@ -554,6 +584,7 @@ std::unordered_map<std::uint64_t, double> OnlineBC::NodeUpdate(const Operation o
 
 void OnlineBC::Reset() {
   this->node_bc_scores.clear();
+  this->cached_edges.clear();
   this->initialized = false;
 }
 

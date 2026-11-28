@@ -173,6 +173,11 @@ class TGN(nn.Module):
         self.raw_message_store.init_message_store()
         return False
 
+    def init_features(self):
+        self.node_features = {}
+        self.edge_features = {}
+        return False
+
     def forward(
         self,
         data: tuple[

@@ -18,28 +18,33 @@ void bcc_utility::BccDFS(std::uint64_t node_id, std::uint64_t parent_id, bcc_uti
                          std::stack<mg_graph::Edge<>> *edge_stack,
                          std::vector<std::vector<mg_graph::Edge<>>> *bcc_edges,
                          std::vector<std::unordered_set<std::uint64_t>> *bcc_nodes, const mg_graph::GraphView<> &graph,
-                         std::unordered_set<std::uint64_t> &articulation_points) {
-  auto root = node_id == parent_id;
+                         std::unordered_set<std::uint64_t> &articulation_points,
+                         std::optional<std::uint64_t> parent_edge_id) {
+  auto root = !parent_edge_id.has_value() && node_id == parent_id;
 
   state->Update(node_id);
 
   std::uint64_t root_count = 0;  // needed to handle the special case for root node.
 
   for (const auto &neigh : graph.Neighbours(node_id)) {
+    if (parent_edge_id.has_value() && neigh.edge_id == *parent_edge_id) {
+      continue;
+    }
     auto next_id = neigh.node_id;
 
     const auto &edge = graph.GetEdge(neigh.edge_id);
     if (state->visited[next_id]) {
-      if (next_id != parent_id) {
-        state->low_link[node_id] = std::min(state->low_link[node_id], state->discovery[next_id]);
-        if (state->discovery[next_id] < state->discovery[node_id]) edge_stack->push(edge);
+      state->low_link[node_id] = std::min(state->low_link[node_id], state->discovery[next_id]);
+      if (state->discovery[next_id] <= state->discovery[node_id] && state->pushed_edges.insert(edge.id).second) {
+        edge_stack->push(edge);
       }
       continue;
     }
 
     ++root_count;
+    state->pushed_edges.insert(edge.id);
     edge_stack->push(edge);
-    BccDFS(next_id, node_id, state, edge_stack, bcc_edges, bcc_nodes, graph, articulation_points);
+    BccDFS(next_id, node_id, state, edge_stack, bcc_edges, bcc_nodes, graph, articulation_points, neigh.edge_id);
     state->low_link[node_id] = std::min(state->low_link[node_id], state->low_link[next_id]);
 
     // Articulation point check

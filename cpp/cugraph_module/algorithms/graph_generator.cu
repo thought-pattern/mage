@@ -33,8 +33,16 @@ constexpr char const *kResultFieldTarget = "target";
 
 void RmatProc(mgp_list *args, mgp_graph *graph, mgp_result *result, mgp_memory *memory) {
   try {
-    auto scale = static_cast<std::size_t>(mgp::value_get_int(mgp::list_at(args, 0)));
-    auto num_edges = static_cast<std::size_t>(mgp::value_get_int(mgp::list_at(args, 1)));
+    const auto raw_scale = mgp::value_get_int(mgp::list_at(args, 0));
+    const auto raw_num_edges = mgp::value_get_int(mgp::list_at(args, 1));
+    if (raw_scale < 0 || raw_scale >= 62) {
+      throw std::invalid_argument("RMAT scale must be between 0 and 61.");
+    }
+    if (raw_num_edges < 0) {
+      throw std::invalid_argument("RMAT num_edges must be non-negative.");
+    }
+    auto scale = static_cast<std::size_t>(raw_scale);
+    auto num_edges = static_cast<std::size_t>(raw_num_edges);
     auto a = mgp::value_get_double(mgp::list_at(args, 2));
     auto b = mgp::value_get_double(mgp::list_at(args, 3));
     auto c = mgp::value_get_double(mgp::list_at(args, 4));
@@ -68,13 +76,22 @@ void RmatProc(mgp_list *args, mgp_graph *graph, mgp_result *result, mgp_memory *
 }  // namespace
 
 extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *memory) {
-  mgp_value *default_scale;
-  mgp_value *default_num_edges;
-  mgp_value *default_a;
-  mgp_value *default_b;
-  mgp_value *default_c;
-  mgp_value *default_seed;
-  mgp_value *default_clip_and_flip;
+  mgp_value *default_scale = nullptr;
+  mgp_value *default_num_edges = nullptr;
+  mgp_value *default_a = nullptr;
+  mgp_value *default_b = nullptr;
+  mgp_value *default_c = nullptr;
+  mgp_value *default_seed = nullptr;
+  mgp_value *default_clip_and_flip = nullptr;
+  auto cleanup = [&]() {
+    if (default_scale) mgp_value_destroy(default_scale);
+    if (default_num_edges) mgp_value_destroy(default_num_edges);
+    if (default_a) mgp_value_destroy(default_a);
+    if (default_b) mgp_value_destroy(default_b);
+    if (default_c) mgp_value_destroy(default_c);
+    if (default_seed) mgp_value_destroy(default_seed);
+    if (default_clip_and_flip) mgp_value_destroy(default_clip_and_flip);
+  };
   try {
     auto *rmat_proc = mgp::module_add_read_procedure(module, kProcedureRmat, RmatProc);
 
@@ -97,23 +114,11 @@ extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *mem
     mgp::proc_add_result(rmat_proc, kResultFieldSource, mgp::type_int());
     mgp::proc_add_result(rmat_proc, kResultFieldTarget, mgp::type_int());
   } catch (const std::exception &e) {
-    mgp_value_destroy(default_scale);
-    mgp_value_destroy(default_num_edges);
-    mgp_value_destroy(default_a);
-    mgp_value_destroy(default_b);
-    mgp_value_destroy(default_c);
-    mgp_value_destroy(default_seed);
-    mgp_value_destroy(default_clip_and_flip);
+    cleanup();
     return 1;
   }
 
-  mgp_value_destroy(default_scale);
-  mgp_value_destroy(default_num_edges);
-  mgp_value_destroy(default_a);
-  mgp_value_destroy(default_b);
-  mgp_value_destroy(default_c);
-  mgp_value_destroy(default_seed);
-  mgp_value_destroy(default_clip_and_flip);
+  cleanup();
   return 0;
 }
 

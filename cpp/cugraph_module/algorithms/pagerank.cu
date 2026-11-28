@@ -100,9 +100,14 @@ void PagerankProc(mgp_list *args, mgp_graph *graph, mgp_result *result, mgp_memo
 }  // namespace
 
 extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *memory) {
-  mgp_value *default_max_iterations;
-  mgp_value *default_damping_factor;
-  mgp_value *default_stop_epsilon;
+  mgp_value *default_max_iterations = nullptr;
+  mgp_value *default_damping_factor = nullptr;
+  mgp_value *default_stop_epsilon = nullptr;
+  auto cleanup = [&]() {
+    if (default_max_iterations) mgp_value_destroy(default_max_iterations);
+    if (default_damping_factor) mgp_value_destroy(default_damping_factor);
+    if (default_stop_epsilon) mgp_value_destroy(default_stop_epsilon);
+  };
   try {
     auto *pagerank_proc = mgp::module_add_read_procedure(module, kProcedurePagerank, PagerankProc);
 
@@ -117,15 +122,11 @@ extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *mem
     mgp::proc_add_result(pagerank_proc, kResultFieldNode, mgp::type_node());
     mgp::proc_add_result(pagerank_proc, kResultFieldPageRank, mgp::type_float());
   } catch (const std::exception &e) {
-    mgp_value_destroy(default_max_iterations);
-    mgp_value_destroy(default_damping_factor);
-    mgp_value_destroy(default_stop_epsilon);
+    cleanup();
     return 1;
   }
 
-  mgp_value_destroy(default_max_iterations);
-  mgp_value_destroy(default_damping_factor);
-  mgp_value_destroy(default_stop_epsilon);
+  cleanup();
   return 0;
 }
 

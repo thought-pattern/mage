@@ -48,8 +48,6 @@ class Graph:
                     raise TypeError(f"edge weight for {label!r} -> {neighbor[0]!r} must be numeric")
                 if not math_isfinite(weight):
                     raise ValueError(f"edge weight for {label!r} -> {neighbor[0]!r} must be finite")
-                if neighbor_index == node_index:
-                    continue
                 self.internal_neighbors.append(neighbor_index)
                 self.weights.append(float(weight))
             self.neighbors_positions.append(len(self.internal_neighbors))

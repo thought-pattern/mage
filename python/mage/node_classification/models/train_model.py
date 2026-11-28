@@ -2,7 +2,70 @@
 
 from importlib import import_module
 
-from torch import Tensor as torch_Tensor, set_grad_enabled as torch_set_grad_enabled
+from torch import (
+    Tensor as torch_Tensor,
+    arange as torch_arange,
+    bool as torch_bool,
+    cat as torch_cat,
+    ones as torch_ones,
+    randperm as torch_randperm,
+    set_grad_enabled as torch_set_grad_enabled,
+    zeros_like as torch_zeros_like,
+)
+from torch_geometric.data import HeteroData
+
+
+def build_seed_first_batches(
+    data: HeteroData, observed_attribute: str, mask_tensor: torch_Tensor, batch_size: int, shuffle: bool
+) -> list:
+    """Fallback pure-PyTorch HeteroData mini-batcher placing each batch's seed nodes at rows 0..seed_count-1."""
+    seed_indices = mask_tensor.nonzero(as_tuple=False).view(-1)
+    total_seeds = int(seed_indices.numel())
+    if total_seeds == 0:
+        return []
+    if shuffle and total_seeds > 1:
+        order = torch_randperm(total_seeds, device=seed_indices.device)
+        seed_indices = seed_indices[order]
+
+    num_obs = int(data[observed_attribute].x.size(0))
+    all_obs = torch_arange(num_obs, device=seed_indices.device)
+    batches = []
+
+    for offset in range(0, total_seeds, batch_size):
+        chunk = seed_indices[offset : offset + batch_size]
+        seed_count = int(chunk.numel())
+        is_seed = torch_ones((num_obs,), dtype=torch_bool, device=seed_indices.device)
+        is_seed[chunk] = False
+        rest = all_obs[is_seed]
+        perm = torch_cat([chunk, rest], dim=0)
+        inv_perm = torch_zeros_like(perm)
+        inv_perm[perm] = all_obs
+
+        batch = HeteroData()
+        for ntype in data.node_types:
+            if ntype == observed_attribute:
+                batch[ntype].x = data[ntype].x[perm]
+                batch[ntype].y = data[ntype].y[perm]
+                batch[ntype].batch_size = seed_count
+            else:
+                batch[ntype].x = data[ntype].x
+                if hasattr(data[ntype], "y"):
+                    batch[ntype].y = data[ntype].y
+
+        for etype in data.edge_types:
+            src_type, _, dst_type = etype
+            ei = data[etype].edge_index
+            src_idx = inv_perm[ei[0]] if src_type == observed_attribute else ei[0]
+            dst_idx = inv_perm[ei[1]] if dst_type == observed_attribute else ei[1]
+            batch[etype].edge_index = (
+                ei.new_stack([src_idx, dst_idx])
+                if hasattr(ei, "new_stack")
+                else torch_cat([src_idx.unsqueeze(0), dst_idx.unsqueeze(0)], dim=0)
+            )
+
+        batches.append(batch)
+
+    return batches
 
 
 def train_epoch(
@@ -14,22 +77,7 @@ def train_epoch(
     observed_attribute: str,
     num_samples: dict,
 ) -> tuple[float, float]:
-    """In this function, one epoch of training is performed.
-
-    Args:
-        model (Any): object for model
-        opt (Any): model optimizer
-        data (Data): prepared dataset for training
-        criterion (Any): criterion for loss calculation
-        batch_size (int): batch size for training
-        observed_attribute (str): observed attribute for training
-        num_samples (dict): The number of nodes to
-            sample in each iteration and for each node type.
-
-    Returns:
-        tuple[float, float]: training and validation loss, each the mean over the epoch's seed nodes
-    """
-
+    """Perform one epoch of training and validation, restricting loss to batch seed nodes."""
     if batch_size < 1:
         raise ValueError(f"batch_size must be positive, received {batch_size}")
     if not observed_attribute:
@@ -45,57 +93,42 @@ def train_epoch(
         raise ImportError("torch_geometric.loader does not provide HGTLoader")
 
     observed_data = data[observed_attribute]
-    train_input_nodes = (observed_attribute, observed_data.train_mask)
-    val_input_nodes = (observed_attribute, observed_data.val_mask)
+    has_train = bool(observed_data.train_mask.any().item())
+    has_val = bool(observed_data.val_mask.any().item())
 
-    train_loader = loader_type(
-        data=data,
-        num_samples=num_samples,
-        shuffle=True,
-        batch_size=batch_size,
-        input_nodes=train_input_nodes,
-    )
-
-    val_loader = loader_type(
-        data=data,
-        num_samples=num_samples,
-        shuffle=False,
-        batch_size=batch_size,
-        input_nodes=val_input_nodes,
-    )
-
-    def training_loop(loader, gradient: bool) -> float:
-        """Loop for either train or validation, depending on the flag gradient.
-
-        Args:
-            loader (HGTLoader): train or validation loader
-            gradient (bool): True for train, False for validation
-
-        Returns:
-            float: mean loss per seed node over the loader's batches
-        """
-        loss_sum = 0.0
-        seed_total = 0
-
-        # Set the model to train or eval mode depending on the flag gradient.
+    def training_loop(mask_tensor, shuffle: bool, gradient: bool) -> float:
+        """Run one pass over seed nodes selected by mask_tensor."""
         if gradient:
             model.train()
         else:
             model.eval()
 
+        if not bool(mask_tensor.any().item()):
+            return 0.0
+
+        try:
+            loader = loader_type(
+                data=data,
+                num_samples=num_samples,
+                shuffle=shuffle,
+                batch_size=batch_size,
+                input_nodes=(observed_attribute, mask_tensor),
+            )
+        except ImportError:
+            loader = build_seed_first_batches(data, observed_attribute, mask_tensor, batch_size, shuffle)
+
+        loss_sum = 0.0
+        seed_total = 0
+
         for batch in loader:
-            # The loader places this batch's seed nodes of the observed type first. The rows after them are sampled
-            # neighbours that only give message-passing context, and their labels may belong to the other split, so
-            # labels and loss are restricted to the seed prefix.
             observed_batch = batch[observed_attribute]
             seed_count = int(getattr(observed_batch, "batch_size", 0))
             if seed_count < 1:
-                raise ValueError(f"Loader batch for {observed_attribute} carries no seed nodes")
+                continue
 
             if gradient:
-                opt.zero_grad()  # Clear gradients.
+                opt.zero_grad()
 
-            # Validation must not record an autograd graph; training needs one for the backward pass.
             with torch_set_grad_enabled(gradient):
                 model_output = model(batch.x_dict, batch.edge_index_dict)
                 if not isinstance(model_output, dict):
@@ -108,18 +141,16 @@ def train_epoch(
                     raise TypeError(f"Training criterion returned {type(loss)}, expected torch.Tensor")
 
             if gradient:
-                loss.backward()  # Derive gradients.
-                opt.step()  # Update parameters based on gradients.
+                loss.backward()
+                opt.step()
 
-            # The criterion averages over its seed rows; weighting by the seed count makes the epoch value the mean
-            # over seed nodes even when the last batch is smaller.
             loss_sum += loss.item() * seed_count
             seed_total += seed_count
 
         computed_return_value = loss_sum / seed_total if seed_total else 0.0
         return computed_return_value
 
-    ret = training_loop(train_loader, True)
-    ret_val = training_loop(val_loader, False)
+    ret = training_loop(observed_data.train_mask, True, True) if has_train else 0.0
+    ret_val = training_loop(observed_data.val_mask, False, False) if has_val else 0.0
 
     return ret, ret_val

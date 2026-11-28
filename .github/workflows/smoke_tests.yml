@@ -57,7 +57,7 @@ jobs:
     if: ${{ needs.smoke-release-tests-setup.outputs.run_all == 'false' }}
     uses: ./.github/workflows/reusable_smoke_tests.yml
     with:
-      arch: "${{ inputs.arch }}"
+      arch: "${{ inputs.arch == 'arm64' && 'arm64' || 'amd64' }}"
       next_version: "${{ inputs.next_version }}"
       last_version: "${{ inputs.last_version }}"
       malloc: ${{ inputs.malloc }}

@@ -40,25 +40,52 @@ jobs:
     steps:
       - name: Determine version, rc_number, overwrite_tag
         id: set-outputs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_RC_NUMBER: ${{ github.event.inputs.rc_number }}
+          INPUT_OVERWRITE_TAG: ${{ github.event.inputs.overwrite_tag }}
+          PAYLOAD_VERSION: ${{ github.event.client_payload.version }}
+          PAYLOAD_SHORT_VERSION: ${{ github.event.client_payload.short_version }}
+          PAYLOAD_RC_NUMBER: ${{ github.event.client_payload.rc_number }}
+          PAYLOAD_OVERWRITE_TAG: ${{ github.event.client_payload.overwrite_tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            version="${{ github.event.inputs.version }}"  
-            short_version=$(echo "${{ inputs.version }}" | sed -E 's/^([0-9]+\.[0-9]+)\.0$/\1/')
-            rc_number="${{ github.event.inputs.rc_number }}"
-            overwrite_tag="${{ github.event.inputs.overwrite_tag }}"
-          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            version="${{ github.event.client_payload.version }}"
-            short_version="${{ github.event.client_payload.short_version }}"
-            rc_number="${{ github.event.client_payload.rc_number }}"
-            overwrite_tag="${{ github.event.client_payload.overwrite_tag }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
+            short_version=$(printf '%s\n' "$INPUT_VERSION" | sed -E 's/^([0-9]+\.[0-9]+)\.0$/\1/')
+            rc_number="$INPUT_RC_NUMBER"
+            overwrite_tag="${INPUT_OVERWRITE_TAG:-false}"
+          elif [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            version="$PAYLOAD_VERSION"
+            short_version="${PAYLOAD_SHORT_VERSION:-$(printf '%s\n' "$PAYLOAD_VERSION" | sed -E 's/^([0-9]+\.[0-9]+)\.0$/\1/')}"
+            rc_number="$PAYLOAD_RC_NUMBER"
+            overwrite_tag="${PAYLOAD_OVERWRITE_TAG:-false}"
           else
-            echo "❌ Unsupported event: $GITHUB_EVENT_NAME" >&2
+            echo "❌ Unsupported event: $EVENT_NAME" >&2
             exit 1
           fi
-          echo "version=$version"      >> $GITHUB_OUTPUT
-          echo "short_version=$short_version" >> $GITHUB_OUTPUT
-          echo "rc_number=$rc_number"  >> $GITHUB_OUTPUT
-          echo "overwrite_tag=$overwrite_tag" >> $GITHUB_OUTPUT
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid version: $version" >&2
+            exit 1
+          fi
+          if ! [[ "$short_version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "❌ Invalid short_version: $short_version" >&2
+            exit 1
+          fi
+          if ! [[ "$rc_number" =~ ^rc[0-9]+$ ]]; then
+            echo "❌ Invalid rc_number: $rc_number" >&2
+            exit 1
+          fi
+          if ! [[ "$overwrite_tag" =~ ^(true|false)$ ]]; then
+            echo "❌ Invalid overwrite_tag: $overwrite_tag" >&2
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "short_version=$short_version"
+            echo "rc_number=$rc_number"
+            echo "overwrite_tag=$overwrite_tag"
+          } >> "$GITHUB_OUTPUT"
 
   PrepareReleaseBranch:
     name: Prepare Release Branch
@@ -119,19 +146,24 @@ jobs:
           echo "tag_name=$tag_name" >> $GITHUB_OUTPUT
 
       - name: Update Memgraph submodule
+        env:
+          TAG_NAME: ${{ steps.check_tag.outputs.tag_name }}
         run: |
           cd cpp/memgraph
           git fetch origin
-          git checkout "${{ steps.check_tag.outputs.tag_name }}"
+          git checkout "$TAG_NAME"
           cd ../..
           git add .
-          git commit -m "Update Memgraph submodule to tag ${{ steps.check_tag.outputs.tag_name }} [skip tests]" || true
+          git commit -m "Update Memgraph submodule to tag $TAG_NAME [skip tests]" || true
 
       - name: Create and push tag
+        env:
+          BRANCH_NAME: ${{ steps.check_branch.outputs.branch_name }}
+          TAG_NAME: ${{ steps.check_tag.outputs.tag_name }}
         run: |
-          git push --set-upstream origin "${{ steps.check_branch.outputs.branch_name }}"
-          git tag "${{ steps.check_tag.outputs.tag_name }}"
-          git push origin "${{ steps.check_tag.outputs.tag_name }}"
+          git push --set-upstream origin "$BRANCH_NAME"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
 
 
   CreateReleaseArtifacts:
@@ -144,5 +176,7 @@ jobs:
       memgraph_version: "${{ needs.ParseInputs.outputs.version }}-${{ needs.ParseInputs.outputs.rc_number }}"
       run_smoke_tests: true
       ref: "${{ needs.PrepareReleaseBranch.outputs.tag_name }}"
+      memgraph_ref: "${{ needs.PrepareReleaseBranch.outputs.tag_name }}"
+      memgraph_ref_update: false
       run_tests: true
     secrets: inherit

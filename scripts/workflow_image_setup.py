@@ -40,10 +40,15 @@ def get_daily_url(date: str, arch: str, malloc: bool) -> str:
     Given a date of the format yyyymmdd, find and return the URL of the
     appropriate image.
     """
+    if arch == "amd64":
+        arch_name = "x86_64"
+    elif arch == "arm64":
+        arch_name = "arm64"
+    else:
+        raise ValueError(f"Unsupported architecture {arch!r}; expected 'amd64' or 'arm64'.")
 
     packages = list_daily_release_packages(int(date), return_url=True)
 
-    arch_name = "x86_64" if arch == "amd64" else "arm64"
     key = f"Docker ({arch_name})"
     key_image = f"{arch_name}-malloc" if malloc else arch_name
     arch_packages = packages.get(key, {})

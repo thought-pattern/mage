@@ -1,5 +1,6 @@
 """Utilities for link prediction."""
 
+from copy import deepcopy
 from heapq import heappop, heappush
 from itertools import chain as itertools_chain
 from json import loads as js_loads
@@ -78,7 +79,7 @@ DEFAULT_CONTEXT_SAVE_DIR = os_path_join(gettempdir(), "")
 # only after an update is admitted. in_feats 0 infers the input width from the node features at training; an empty
 # target_relation is inferred when the graph has exactly one edge type; aggregator is used only by graph_sage and
 # attn_num_heads only by graph_attn; metrics are evaluated on the validation set every epoch.
-link_prediction_parameters = {
+INITIAL_LINK_PREDICTION_PARAMETERS = {
     "in_feats": 0,
     "hidden_features_size": [128, 128],
     "layer_type": Models.GRAPH_ATTN,
@@ -115,6 +116,7 @@ link_prediction_parameters = {
     "add_reverse_edges": False,  # only allowed in some cases
     "add_self_loops": False,  # for automatically adding self-loop
 }
+link_prediction_parameters = deepcopy(INITIAL_LINK_PREDICTION_PARAMETERS)
 # Names set_model_parameters accepts.
 SETTABLE_PARAMETERS = set(link_prediction_parameters)
 training_results: list[dict[str, float]] = (
@@ -246,11 +248,8 @@ def train(
         "cution.\n\n    Returns:\n        mgp.Record: It returns performance metrics obtained during the"  # Continue literal.
         " training on the training and validation dataset.\n"
     )
-    # Get global context
+    # Get global context; prior trained artifacts remain active until the new training run succeeds.
     global training_results, validation_results, predictor, model, graph, reindex, trained_manifest
-
-    # Reset parameters of the old training
-    reset_train_predict_parameters()
 
     parameters = link_prediction_parameters
     node_features_property = parameters.get("node_features_property", "")
@@ -263,7 +262,7 @@ def train(
 
     # Get some data
     # Dealing with heterogeneous graphs
-    graph, reindex, type_triplets = get_dgl_graph_data(ctx, graph_contract)
+    candidate_graph, candidate_reindex, type_triplets = get_dgl_graph_data(ctx, graph_contract)
 
     # An omitted target relation ("") is inferred only when the graph has exactly one edge type.
     target_relation = parameters.get("target_relation", "")
@@ -273,7 +272,7 @@ def train(
         target_relation = type_triplets[0]
 
     # An omitted input width (0) is the converted feature width; an explicit one must match it.
-    feature_width = node_feature_width(graph, node_features_property)
+    feature_width = node_feature_width(candidate_graph, node_features_property)
     configured_in_feats = parameters.get("in_feats", 0)
     in_feats = configured_in_feats if configured_in_feats else feature_width
     if in_feats != feature_width:
@@ -282,7 +281,7 @@ def train(
     # Split the data
     split_ratio = parameters.get("split_ratio", 0.0)
     train_eid_dict, val_eid_dict = preprocess(
-        graph=graph,
+        graph=candidate_graph,
         split_ratio=split_ratio,
         target_relation=target_relation,
         device=device,
@@ -302,7 +301,7 @@ def train(
         "attn_num_heads": list(parameters.get("attn_num_heads", [])),
         "aggregator": parameters.get("aggregator", "").lower(),
         "predictor_type": parameters.get("predictor_type", "").lower(),
-        "edge_types": list(graph.etypes),
+        "edge_types": list(candidate_graph.etypes),
         "target_relation": target_relation,
         "node_features_property": node_features_property,
         "add_reverse_edges": parameters.get("add_reverse_edges", False),
@@ -332,7 +331,7 @@ def train(
 
     # Call training method
     new_training_results, new_validation_results = inner_train(
-        graph,
+        candidate_graph,
         train_eid_dict,
         val_eid_dict,
         target_relation,
@@ -356,7 +355,8 @@ def train(
         checkpoint_manifest,
     )
 
-    # Publish the trained model, its predictor and their contract together, only after training completed.
+    # Publish the trained model, its predictor, graph, and contract together, only after training completed.
+    graph, reindex = candidate_graph, candidate_reindex
     training_results, validation_results = new_training_results, new_validation_results
     model, predictor, trained_manifest = (
         trained_model,
@@ -531,12 +531,13 @@ def recommend(
 
     # Calculate recommendation metrics. Recommending absent (novel) links is the procedure's purpose, so ratios that are
     # undefined for an empty selection or a selection without existing edges report 0 instead of aborting the results.
+    total_relevant = sum(1 for exists in existing_edges if exists)
     precision_at_k, recall_at_k = 0.0, 0.0
     if top_scores:
         top_classes = classify(torch_tensor(top_scores), threshold).int().tolist()
-        _, false_positives, false_negatives, true_positives = confusion_counts(top_labels, top_classes)
+        _, false_positives, _, true_positives = confusion_counts(top_labels, top_classes)
         precision_at_k = zero_safe_rate(true_positives, true_positives + false_positives)
-        recall_at_k = zero_safe_rate(true_positives, true_positives + false_negatives)
+        recall_at_k = zero_safe_rate(true_positives, total_relevant)
     f1_denominator = precision_at_k + recall_at_k
     f1_at_k = 2 * precision_at_k * recall_at_k / f1_denominator if f1_denominator > 0 else 0.0
     ap_text = "undefined (no existing edge among the recommendations)"
@@ -571,7 +572,7 @@ def get_training_results() -> mgp_Record:
     Raises:
         RuntimeError: The train method wasn't called yet or its results are outdated.
     """
-    if not training_results or not validation_results:
+    if not training_results:
         raise RuntimeError("Training results are outdated or train method wasn't called. ")
 
     computed_return_value = mgp_Record(training_results=training_results, validation_results=validation_results)
@@ -599,11 +600,13 @@ def load_model(path: str = DEFAULT_CONTEXT_SAVE_DIR) -> mgp_Record:
     """
 
     global model, predictor, trained_manifest
-    bundle = torch_load(path + Context.CHECKPOINT_NAME, map_location=device, weights_only=True)
+    bundle = torch_load(os_path_join(path, Context.CHECKPOINT_NAME), map_location=device, weights_only=True)
     manifest = admit_checkpoint_manifest(bundle)
     loaded_model, loaded_predictor = construct_architecture(manifest)
     loaded_model.load_state_dict(bundle.get("model", {}))
     loaded_predictor.load_state_dict(bundle.get("predictor", {}))
+    loaded_model.eval()
+    loaded_predictor.eval()
     model, predictor, trained_manifest = loaded_model, loaded_predictor, manifest
     computed_return_value = mgp_Record(status=True)
     return computed_return_value
@@ -619,7 +622,10 @@ def reset_parameters() -> mgp_Record:
     Returns:
         status: True if all passed ok.
     """
+    global link_prediction_parameters, device
     reset_train_predict_parameters()
+    link_prediction_parameters = deepcopy(INITIAL_LINK_PREDICTION_PARAMETERS)
+    device = torch_device(Devices.CPU_DEVICE)
     computed_return_value = mgp_Record(status=True)
     return computed_return_value
 

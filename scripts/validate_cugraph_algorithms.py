@@ -257,7 +257,7 @@ def setup_container(container_name: str, run_id: str, data_dir: Path) -> str:
     gid = os_getgid()
 
     # The Bolt port is published on this host's network interface, the address config.yml's memgraph.host names, never
-    # on the loopback address (D-1298); Docker assigns the port, so the run never binds or reaches a peer's endpoint.
+    # on the loopback address; Docker assigns the port, so the run never binds or reaches a peer's endpoint.
     bolt_host = os_environ.get("MEMGRAPH_HOST", "").strip()
     if not bolt_host:
         raise RuntimeError("MEMGRAPH_HOST must name this host's network interface address; it has no default")

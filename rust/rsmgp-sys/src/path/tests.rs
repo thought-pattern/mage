@@ -102,6 +102,6 @@ fn test_edge_at() {
     });
 
     with_dummy!(Path, |path: &Path| {
-        assert!(path.edge_at(0).is_err());
+        assert_eq!(path.edge_at(0).err(), Some(Error::OutOfBoundPathEdgeIndex));
     });
 }

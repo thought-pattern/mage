@@ -8,6 +8,9 @@ std::vector<double> GetDegreeCentrality(const mg_graph::GraphView<> &graph, cons
 
   // Initialize centrality values
   std::vector<double> degree_centralities(number_of_nodes, 0.0);
+  if (number_of_nodes <= 1) {
+    return degree_centralities;
+  }
 
   // Degree centrality is the proportion of neighbors and maximum degree (n-1)
   for (const auto [node_id] : graph.Nodes()) {

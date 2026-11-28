@@ -21,6 +21,9 @@ void CreateCsvFile(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result
 constexpr std::string_view kProcedureDeleteCsvFile = "delete_csv_file";
 constexpr std::string_view kArgumentDeleteCsvFile1 = "filepath";
 
+fs::path DefaultCsvExportRoot();
+fs::path ResolveConfinedCsvPath(std::string_view raw_filepath, const fs::path &export_root = DefaultCsvExportRoot());
+
 void DeleteCsvFile(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, mgp_memory *memory);
 
 }  // namespace CsvUtils

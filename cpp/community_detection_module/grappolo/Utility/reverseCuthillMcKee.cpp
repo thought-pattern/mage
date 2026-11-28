@@ -89,7 +89,6 @@ void algoReverseCuthillMcKee(graph *G, long *pOrder, int nThreads )
             howManyAdded++;
         }
     }
-    free(degree);
     time2 = omp_get_wtime();
     totalTime += time2-time1;
 
@@ -112,14 +111,16 @@ void algoReverseCuthillMcKee(graph *G, long *pOrder, int nThreads )
     long QTail=0; //Tail of the queue (implicitly will represent the size)
     long QtmpTail=0; //Tail of the queue (implicitly will represent the size)
 
-    //Get the smallest degree as the first source vertex
-    term *data = myHeap->elements;
-    heapRemoveMin(myHeap);     //Remove it from the heap
-    Q[0] = data[0].id; //Add the smallest vertex to the queue
-    QTail = 1; //Increment the queue tail
-    visited[data[0].id] = 1; //Mark the vertex as visited
-    R[howManyAdded] = data[0].id; //Enter the vertex in the vector
-    howManyAdded++;
+    if (howManyAdded < NV && myHeap->size > 0) {
+        //Get the smallest degree as the first source vertex
+        long minId = myHeap->elements[0].id;
+        heapRemoveMin(myHeap);     //Remove it from the heap
+        Q[0] = minId; //Add the smallest vertex to the queue
+        QTail = 1; //Increment the queue tail
+        visited[minId] = 1; //Mark the vertex as visited
+        R[howManyAdded] = minId; //Enter the vertex in the vector
+        howManyAdded++;
+    }
 
     long nCC = 1;
 
@@ -160,24 +161,23 @@ void algoReverseCuthillMcKee(graph *G, long *pOrder, int nThreads )
         } //end of while ( !Q.empty() )
 
         /////Now look for the next smallest id:
-        bool found = 1;
         if(howManyAdded < NV) {
-            term *data;
-            do {
-                data = myHeap->elements;
+            long nextId = -1;
+            while (myHeap->size > 0) {
+                long cand = myHeap->elements[0].id;
                 heapRemoveMin(myHeap);
-                if (myHeap->size == 0) { //No more elements to look at
-                    found = 0;
+                if (visited[cand] == 0) {
+                    nextId = cand;
                     break;
                 }
-            } while(visited[data[0].id] > 0); //Check if it has already been visited
-            if (found == 0) {
+            }
+            if (nextId < 0) {
                 break; //break from the main loop
             } else { //Add the new source to the list
-                Q[0] = data[0].id; //Add the smallest vertex to the queue
+                Q[0] = nextId; //Add the smallest vertex to the queue
                 QTail = 1; //Increment the queue tail
-                visited[data[0].id] = 1; //Mark the vertex as visited
-                R[howManyAdded] = data[0].id; //Enter the vertex in the vector
+                visited[nextId] = 1; //Mark the vertex as visited
+                R[howManyAdded] = nextId; //Enter the vertex in the vector
                 howManyAdded++; //Increment the #vertices that have been added to the stack
             }
         }//End of if()
@@ -186,6 +186,7 @@ void algoReverseCuthillMcKee(graph *G, long *pOrder, int nThreads )
         total = 0;
     }
     //Clean Up:
+    free(degree);
     free(Q);
     free(Qtmp);
     free(visited);
@@ -295,7 +296,6 @@ void algoReverseCuthillMcKeeStrict( graph *G, long *pOrder, int nThreads )
             howManyAdded++;
         }
     }
-    free(degree);
     time2 = omp_get_wtime();
     totalTime += time2-time1;
 
@@ -318,14 +318,16 @@ void algoReverseCuthillMcKeeStrict( graph *G, long *pOrder, int nThreads )
     long QTail=0; //Tail of the queue (implicitly will represent the size)
     long QtmpTail=0; //Tail of the queue (implicitly will represent the size)
 
-    //Get the smallest degree as the first source vertex
-    term *data = myHeap->elements;
-    heapRemoveMin(myHeap);     //Remove it from the heap
-    Q[0] = data[0].id; //Add the smallest vertex to the queue
-    QTail = 1; //Increment the queue tail
-    visited[data[0].id] = 1; //Mark the vertex as visited
-    R[howManyAdded] = data[0].id; //Enter the vertex in the vector
-    howManyAdded++;
+    if (howManyAdded < NV && myHeap->size > 0) {
+        //Get the smallest degree as the first source vertex
+        long minId = myHeap->elements[0].id;
+        heapRemoveMin(myHeap);     //Remove it from the heap
+        Q[0] = minId; //Add the smallest vertex to the queue
+        QTail = 1; //Increment the queue tail
+        visited[minId] = 1; //Mark the vertex as visited
+        R[howManyAdded] = minId; //Enter the vertex in the vector
+        howManyAdded++;
+    }
 
     long nCC = 1;
 
@@ -359,12 +361,11 @@ void algoReverseCuthillMcKeeStrict( graph *G, long *pOrder, int nThreads )
                 newTerm.weight = degree[Qtmp[Ti]];
                 heapAdd(myTmpHeap, newTerm); //Has to be added in serial
             }
-            term *tmpData;
             for (int Ti=0; Ti<QtmpTail; Ti++) {
-                tmpData = myTmpHeap->elements;
+                long minId = myTmpHeap->elements[0].id;
                 heapRemoveMin(myTmpHeap);
                 long whereInR = __sync_fetch_and_add(&howManyAdded, 1);
-                R[whereInR] = tmpData[0].id; //Add it to the ranked list
+                R[whereInR] = minId; //Add it to the ranked list
             }
             free(myTmpHeap->elements);
             free(myTmpHeap);
@@ -380,24 +381,23 @@ void algoReverseCuthillMcKeeStrict( graph *G, long *pOrder, int nThreads )
         } //end of while ( !Q.empty() )
 
         /////Now look for the next smallest id:
-        bool found = 1;
         if(howManyAdded < NV) {
-            term *data;
-            do {
-                data = myHeap->elements;
+            long nextId = -1;
+            while (myHeap->size > 0) {
+                long cand = myHeap->elements[0].id;
                 heapRemoveMin(myHeap);
-                if (myHeap->size == 0) { //No more elements to look at
-                    found = 0;
+                if (visited[cand] == 0) {
+                    nextId = cand;
                     break;
                 }
-            } while(visited[data[0].id] > 0); //Check if it has already been visited
-            if (found == 0) {
+            }
+            if (nextId < 0) {
                 break; //break from the main loop
             } else { //Add the new source to the list
-                Q[0] = data[0].id; //Add the smallest vertex to the queue
+                Q[0] = nextId; //Add the smallest vertex to the queue
                 QTail = 1; //Increment the queue tail
-                visited[data[0].id] = 1; //Mark the vertex as visited
-                R[howManyAdded] = data[0].id; //Enter the vertex in the vector
+                visited[nextId] = 1; //Mark the vertex as visited
+                R[howManyAdded] = nextId; //Enter the vertex in the vector
                 howManyAdded++; //Increment the #vertices that have been added to the stack
             }
         }//End of if()
@@ -406,6 +406,8 @@ void algoReverseCuthillMcKeeStrict( graph *G, long *pOrder, int nThreads )
         total = 0;
     }
     //Clean Up:
+    free(degree);
+    free(oneLevel);
     free(Q);
     free(Qtmp);
     free(visited);

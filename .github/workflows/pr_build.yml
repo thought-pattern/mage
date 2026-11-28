@@ -38,29 +38,36 @@ jobs:
 
       - name: Compute variables using Python script
         id: compute
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CLIENT_PAYLOAD_JSON: ${{ toJson(github.event.client_payload) }}
+          INPUT_PR: ${{ github.event.inputs.pr }}
         run: |
-          # Pass the client payload (as JSON) to the Python script.
-          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-            payload='${{ toJson(github.event.client_payload) }}'
+          # Pass the client payload (as JSON) to the Python script via environment variables only.
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            payload="$CLIENT_PAYLOAD_JSON"
           else
-            # Check if the 'pr' input is empty; if so, get PR from git
-            if [ -z "${{ github.event.inputs.pr }}" ]; then
-              pr=$(python3 -c "import subprocess; print(subprocess.run(['git', 'log', '--pretty=%B'], capture_output=True, text=True).stdout.split('\n')[0].split('(#')[1].split(')')[0] if '(#' in subprocess.run(['git', 'log', '--pretty=%B'], capture_output=True, text=True).stdout.split('\n')[0] else '0')")
+            if [ -z "$INPUT_PR" ]; then
+              pr=$(python3 -c "import subprocess; line = subprocess.run(['git', 'log', '-1', '--pretty=%s'], capture_output=True, text=True, check=False).stdout.strip(); print(line.split('(#')[1].split(')')[0] if '(#' in line else '0')")
             else
-              pr="${{ github.event.inputs.pr }}"
+              if ! [[ "$INPUT_PR" =~ ^(pr)?[0-9]+$ ]]; then
+                echo "Invalid pr input: $INPUT_PR" >&2
+                exit 1
+              fi
+              pr="$INPUT_PR"
             fi
-
-            # now reformat it as JSON
-            payload="{\"pr\": \"${pr}\"}"
+            payload=$(PR_VAL="$pr" python3 -c 'import json, os; print(json.dumps({"pr": os.environ["PR_VAL"]}))')
           fi
           echo "Received payload: $payload"
           read mage_version memgraph_version memgraph_commit pr < <(python3 scripts/pr_build_vars.py "$payload")
-          echo "mage_version=${mage_version}" >> $GITHUB_OUTPUT
-          echo "memgraph_version=${memgraph_version}" >> $GITHUB_OUTPUT
-          echo "memgraph_commit=${memgraph_commit}" >> $GITHUB_OUTPUT
-          echo "pr=${pr}" >> $GITHUB_OUTPUT
-          binary_name_base=$(python3 -c "import urllib.parse; print(urllib.parse.quote('memgraph_' + '$memgraph_version' + '-1'))")
-          echo "binary_name_base=${binary_name_base}" >> $GITHUB_OUTPUT
+          binary_name_base=$(MEMGRAPH_VERSION_VAL="$memgraph_version" python3 -c 'import os, urllib.parse; print(urllib.parse.quote("memgraph_" + os.environ["MEMGRAPH_VERSION_VAL"] + "-1"))')
+          {
+            echo "mage_version=${mage_version}"
+            echo "memgraph_version=${memgraph_version}"
+            echo "memgraph_commit=${memgraph_commit}"
+            echo "pr=${pr}"
+            echo "binary_name_base=${binary_name_base}"
+          } >> "$GITHUB_OUTPUT"
       
           # Print to console for debugging:
           echo "DEBUG: mage_version=${mage_version}"

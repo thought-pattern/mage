@@ -1,6 +1,7 @@
 """Utilities for link prediction util."""
 
 from functools import partial as functools_partial
+from math import isfinite
 from os import (
     fdopen as os_fdopen,
     fsync as os_fsync,
@@ -71,7 +72,15 @@ def add_self_loop(g: DGLGraph, self_loop_edge_type: str) -> DGLGraph:
     idtype = g.idtype
     for ntype in g.ntypes:
         nids = torch_arange(start=0, end=g.num_nodes(ntype), step=1, dtype=idtype, device=device)
-        data_dict[(ntype, self_loop_edge_type, ntype)] = (nids, nids)
+        loop_etype = (ntype, self_loop_edge_type, ntype)
+        if loop_etype in data_dict:
+            existing_src, existing_dst = data_dict.get(loop_etype, (nids[:0], nids[:0]))
+            data_dict[loop_etype] = (
+                torch_cat([existing_src, nids]),
+                torch_cat([existing_dst, nids]),
+            )
+        else:
+            data_dict[loop_etype] = (nids, nids)
         num_nodes_dict[ntype] = g.num_nodes(ntype)
 
     computed_return_value = dgl_heterograph(data_dict=data_dict, num_nodes_dict=num_nodes_dict, idtype=idtype, device=device)
@@ -117,6 +126,11 @@ def preprocess(graph: DGLGraph, split_ratio: float, target_relation, device: tor
         "         1. Training mask: target relation to training edge IDs\n            2. Validation ma"  # Continue literal.
         "sk: target relation to validation edge IDS\n"
     )
+
+    if isinstance(split_ratio, bool) or not isinstance(split_ratio, (int, float)) or not isfinite(split_ratio):
+        raise ValueError("Split ratio must be greater than 0 and at most 1. ")
+    if split_ratio <= 0.0 or split_ratio > 1.0:
+        raise ValueError("Split ratio must be greater than 0 and at most 1. ")
 
     # First set all seeds
     rnd_seed = 0
@@ -258,6 +272,15 @@ def epoch_metrics(metrics: list[str], statistics: dict, threshold: float, epoch:
         elif metric_name == Metrics.FALSE_NEGATIVES:
             result[Metrics.FALSE_NEGATIVES] = fn
     return result
+
+
+def all_examples_correct(statistics: dict, threshold: float) -> bool:
+    """Returns True only when every example in statistics was classified without error (no rounding)."""
+    labels = torch_cat(statistics.get("labels", [])).numpy().astype(int)
+    probs = torch_cat(statistics.get("probs", [])).numpy()
+    classes = classify(probs, threshold).astype(int)
+    exact_match = bool(labels.shape[0] > 0 and (classes == labels).all())
+    return exact_match
 
 
 def exclude_held_out(target_etypes: list, held_out_ids: torch_Tensor, seed_edges: dict) -> dict:
@@ -497,8 +520,8 @@ def inner_train(
         if epoch % console_log_freq == 0 and training_statistics:
             epoch_training_result = epoch_metrics(metrics, training_statistics, threshold, epoch)
             training_results.append(epoch_training_result)
-            # Check if training finished
-            if Metrics.ACCURACY in metrics and epoch_training_result.get(Metrics.ACCURACY, 0.0) == 1.0 and epoch > 1:
+            # Check if training finished: require exact unrounded zero-error classification across all training examples
+            if Metrics.ACCURACY in metrics and all_examples_correct(training_statistics, threshold) and epoch > 1:
                 tr_finished = True
             # Evaluate on the validation set
             model.eval()
@@ -544,7 +567,9 @@ def inner_train(
         if tr_finished:
             break
 
-    # Save model at the end of the training
+    # Leave the published model and predictor in evaluation mode and save the final checkpoint.
+    model.eval()
+    predictor.eval()
     save_context(model, predictor, checkpoint_manifest, context_save_dir)
 
     return training_results, validation_results
@@ -566,7 +591,7 @@ def save_context(
         checkpoint_manifest (dict): Architecture and graph contract of model and predictor.
         context_save_dir: str -> Path where the checkpoint will be saved every checkpoint_freq epochs.
     """
-    checkpoint_path = context_save_dir + Context.CHECKPOINT_NAME
+    checkpoint_path = os_path.join(context_save_dir, Context.CHECKPOINT_NAME)
     bundle = {
         "manifest": checkpoint_manifest,
         "model": model.state_dict(),

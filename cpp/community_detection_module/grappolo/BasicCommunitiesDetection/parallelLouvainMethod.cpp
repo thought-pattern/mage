@@ -252,8 +252,8 @@ reduction(+:e_xx) reduction(+:a2_x)
 #ifdef PRINT_TERSE_STATS_
 #endif
 
-        //Break if modularity gain is not sufficient
-        if((currMod - prevMod) < thresMod) {
+        //Break if modularity gain is not sufficient or objective became non-finite
+        if(!std::isfinite(currMod) || (currMod - prevMod) < thresMod) {
             break;
         }
 
@@ -293,6 +293,8 @@ reduction(+:e_xx) reduction(+:a2_x)
     free(pastCommAss);
     free(currCommAss);
     free(targetCommAss);
+    free(vDegree);
+    free(cInfo);
     free(cUpdate);
     free(clusterWeightInternal);
 

@@ -22,8 +22,6 @@ use crate::value::*;
 use crate::mgp::ffi;
 use mockall_double::double;
 
-// NOTE: Not possible to implement [std::iter::IntoIterator] because the [ListIterator] holds the
-// [List] reference which needs the lifetime specifier.
 pub struct List {
     ptr: *mut mgp_list,
     memgraph: Memgraph,
@@ -41,7 +39,7 @@ impl Drop for List {
 
 pub struct ListIterator<'a> {
     list: &'a List,
-    position: u64,
+    position: usize,
 }
 
 impl<'a> Iterator for ListIterator<'a> {
@@ -74,16 +72,17 @@ impl List {
         }
     }
 
-    pub fn make_empty(capacity: u64, memgraph: &Memgraph) -> Result<List> {
+    pub fn make_empty<M: MemgraphMemory + ?Sized>(capacity: usize, memgraph: &M) -> Result<List> {
+        let mg = memgraph.sealed_as_memgraph(MemorySeal(()));
         unsafe {
             let mgp_ptr = invoke_mgp_func_with_res!(
                 *mut mgp_list,
                 Error::UnableToCreateEmptyList,
                 ffi::mgp_list_make_empty,
                 capacity,
-                memgraph.memory_ptr()
+                mg.memory_ptr()
             )?;
-            Ok(List::new(mgp_ptr, &memgraph))
+            Ok(List::new(mgp_ptr, &mg))
         }
     }
 
@@ -95,7 +94,7 @@ impl List {
             "Unable to create list copy because the given pointer is null."
         );
 
-        let size = invoke_mgp_func!(u64, ffi::mgp_list_size, ptr).unwrap();
+        let size = invoke_mgp_func!(usize, ffi::mgp_list_size, ptr).unwrap();
         let mgp_copy = List::make_empty(size, memgraph)?;
         for index in 0..size {
             let mgp_value = invoke_mgp_func!(*mut mgp_value, ffi::mgp_list_at, ptr, index).unwrap();
@@ -142,17 +141,17 @@ impl List {
         }
     }
 
-    pub fn size(&self) -> u64 {
-        unsafe { invoke_mgp_func!(u64, ffi::mgp_list_size, self.ptr).unwrap() }
+    pub fn size(&self) -> usize {
+        unsafe { invoke_mgp_func!(usize, ffi::mgp_list_size, self.ptr).unwrap() }
     }
 
-    pub fn capacity(&self) -> u64 {
-        unsafe { invoke_mgp_func!(u64, ffi::mgp_list_capacity, self.ptr).unwrap() }
+    pub fn capacity(&self) -> usize {
+        unsafe { invoke_mgp_func!(usize, ffi::mgp_list_capacity, self.ptr).unwrap() }
     }
 
     /// Always copies the underlying value because in case of the capacity change any references
     /// would become invalid.
-    pub fn value_at(&self, index: u64) -> Result<Value> {
+    pub fn value_at(&self, index: usize) -> Result<Value> {
         unsafe {
             let c_value = invoke_mgp_func_with_res!(
                 *mut mgp_value,
@@ -165,7 +164,7 @@ impl List {
         }
     }
 
-    pub fn iter(&self) -> Result<ListIterator> {
+    pub fn iter(&self) -> Result<ListIterator<'_>> {
         Ok(ListIterator {
             list: self,
             position: 0,

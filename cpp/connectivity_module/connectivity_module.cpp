@@ -11,16 +11,16 @@ constexpr char const *kProcedureGet = "get";
 constexpr char const *kFieldVertex = "node";
 constexpr char const *kFieldComponentId = "component_id";
 
-void InsertWeaklyComponentResult(mgp_graph *graph, mgp_result *result, mgp_memory *memory, const int component_id,
-                                 const int vertex_id) {
-  auto *vertex = mg_utility::GetNodeForInsertion(vertex_id, graph, memory);
+void InsertWeaklyComponentResult(mgp_graph *graph, mgp_result *result, mgp_memory *memory,
+                                 const std::uint64_t component_id, const std::uint64_t vertex_id) {
+  auto *vertex = mg_utility::GetNodeForInsertion(static_cast<std::int64_t>(vertex_id), graph, memory);
   if (!vertex) return;
 
   auto *record = mgp::result_new_record(result);
   if (record == nullptr) throw mg_exception::NotEnoughMemoryException();
 
   mg_utility::InsertNodeValueResult(record, kFieldVertex, vertex, memory);
-  mg_utility::InsertIntValueResult(record, kFieldComponentId, component_id, memory);
+  mg_utility::InsertIntValueResult(record, kFieldComponentId, static_cast<std::int64_t>(component_id), memory);
 }
 
 /// Finds weakly connected components of a graph.

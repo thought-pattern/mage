@@ -54,19 +54,16 @@ class TGNEdgesSelfSupervised(TGN):
         ) = data
 
         batch_size = sources.shape[0]
+        neg_size = negative_sources.shape[0]
         same_size = (
-            batch_size
-            == destinations.shape[0]
-            == negative_sources.shape[0]
-            == negative_destinations.shape[0]
-            == timestamps.shape[0]
-            == len(edge_idxs)
-            == len(edge_features)
+            batch_size == destinations.shape[0] == timestamps.shape[0] == len(edge_idxs) == len(edge_features)
+            and neg_size == negative_destinations.shape[0]
+            and neg_size in (0, batch_size)
         )
         if not same_size:
             raise ValueError(
                 "Sources, destinations, negative sources, negative destinations, timestamps, edge indexes, and edge "
-                f"features must have the same size; received {batch_size}, {destinations.shape[0]}, "
+                f"features must have compatible sizes; received {batch_size}, {destinations.shape[0]}, "
                 f"{negative_sources.shape[0]}, {negative_destinations.shape[0]}, {timestamps.shape[0]}, "
                 f"{len(edge_idxs)}, and {len(edge_features)}"
             )
@@ -84,12 +81,15 @@ class TGNEdgesSelfSupervised(TGN):
 
         embeddings = self.tgn_net(graph_data)
 
-        graph_data_negative = self.get_graph_data(
-            np_concatenate([negative_sources.copy(), negative_destinations.copy()], dtype=int),
-            np_concatenate([timestamps, timestamps]),
-        )
-
-        embeddings_negative = self.tgn_net(graph_data_negative)
+        if neg_size > 0:
+            neg_timestamps = timestamps[:neg_size]
+            graph_data_negative = self.get_graph_data(
+                np_concatenate([negative_sources.copy(), negative_destinations.copy()], dtype=int),
+                np_concatenate([neg_timestamps, neg_timestamps]),
+            )
+            embeddings_negative = self.tgn_net(graph_data_negative)
+        else:
+            embeddings_negative = embeddings[:0]
 
         # here we update raw message store, and this batch will be used in next
         # call of tgn in function self.process_previous_batches

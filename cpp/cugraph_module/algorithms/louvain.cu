@@ -102,8 +102,12 @@ void LouvainProc(mgp_list *args, mgp_graph *graph, mgp_result *result, mgp_memor
 }  // namespace
 
 extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *memory) {
-  mgp_value *default_max_iterations;
-  mgp_value *default_resolution;
+  mgp_value *default_max_iterations = nullptr;
+  mgp_value *default_resolution = nullptr;
+  auto cleanup = [&]() {
+    if (default_max_iterations) mgp_value_destroy(default_max_iterations);
+    if (default_resolution) mgp_value_destroy(default_resolution);
+  };
   try {
     auto *louvain_proc = mgp::module_add_read_procedure(module, kProcedureLouvain, LouvainProc);
 
@@ -116,13 +120,11 @@ extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *mem
     mgp::proc_add_result(louvain_proc, kResultFieldNode, mgp::type_node());
     mgp::proc_add_result(louvain_proc, kResultFieldPartition, mgp::type_int());
   } catch (const std::exception &e) {
-    mgp_value_destroy(default_max_iterations);
-    mgp_value_destroy(default_resolution);
+    cleanup();
     return 1;
   }
 
-  mgp_value_destroy(default_max_iterations);
-  mgp_value_destroy(default_resolution);
+  cleanup();
   return 0;
 }
 

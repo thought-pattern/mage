@@ -15,7 +15,7 @@ void ChainNodes(mgp_list *args, mgp_graph *memgraph_graph, mgp_result *result, m
     auto connections = mgp::List();
 
     const auto list_size = list_of_nodes.Size();
-    for (auto i = 0; i < list_size - 1; i++) {
+    for (size_t i = 0; i + 1 < list_size; i++) {
       const auto begin_node = list_of_nodes[i].ValueNode();
       const auto end_node = list_of_nodes[i+1].ValueNode();
 

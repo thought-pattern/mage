@@ -207,7 +207,7 @@ This will build any new algorithm added to MAGE, and load it inside Memgraph.
 **MAGE**:
 
 ```
-docker run --rm -p 7687:7687 -p 7444:7444 --name mage memgraph-mage
+docker run --rm -p 7687:7687 -p 7444:7444 --name mage memgraph-mage:prod
 ```
 
 **NOTE**: if you made any changes while the **MAGE** Docker container was

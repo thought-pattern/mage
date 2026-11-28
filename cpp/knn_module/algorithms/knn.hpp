@@ -1,3 +1,5 @@
+#pragma once
+
 #include <mgp.hpp>
 
 #include <fmt/format.h>
@@ -16,7 +18,7 @@ namespace knn_util {
 
 // Configuration for KNN algorithm
 struct KNNConfig {
-  uint64_t top_k = 1;
+  int64_t top_k = 1;
   double similarity_cutoff = 0.0;
   double delta_threshold = 0.001;
   int max_iterations = 100;
@@ -44,13 +46,31 @@ namespace knn_algs {
 
 inline double CosineSimilarity(const std::vector<double> &vec1, const std::vector<double> &vec2, const double norm1,
                                const double norm2) {
-  const double dot =
+  if (norm1 == 0.0 || norm2 == 0.0) return 0.0;
+  double dot =
       std::transform_reduce(vec1.begin(), vec1.end(), vec2.begin(), 0.0, std::plus<>(), std::multiplies<>());
 
-  const double denom = norm1 * norm2;
-  if (denom < 1e-9) return 0.0;
-  const auto cosine_distance = dot / denom;
-  return (cosine_distance + 1) / 2.0;
+  double denom = norm1 * norm2;
+  if (denom == 0.0) {
+    double scale = 0.0;
+    for (double x : vec1) scale = std::max(scale, std::abs(x));
+    for (double y : vec2) scale = std::max(scale, std::abs(y));
+    if (scale == 0.0) return 0.0;
+    double s1 = 0.0;
+    double s2 = 0.0;
+    dot = 0.0;
+    for (size_t i = 0; i < vec1.size(); ++i) {
+      const double a = vec1[i] / scale;
+      const double b = vec2[i] / scale;
+      dot += a * b;
+      s1 += a * a;
+      s2 += b * b;
+    }
+    denom = std::sqrt(s1) * std::sqrt(s2);
+    if (denom == 0.0) return 0.0;
+  }
+  const auto cosine_distance = std::clamp(dot / denom, -1.0, 1.0);
+  return (cosine_distance + 1.0) / 2.0;
 }
 
 // Structure to hold pre-loaded node data for efficient comparison
@@ -64,7 +84,7 @@ struct NodeData {
 };
 
 // Pre-load node properties into memory for efficient comparison
-std::vector<NodeData> PreloadNodeData(const std::vector<mgp::Node> &nodes, const knn_util::KNNConfig &config) {
+inline std::vector<NodeData> PreloadNodeData(const std::vector<mgp::Node> &nodes, const knn_util::KNNConfig &config) {
   std::vector<NodeData> node_data;
   node_data.reserve(nodes.size());
   const auto properties_size = config.node_properties.size();
@@ -123,7 +143,7 @@ std::vector<NodeData> PreloadNodeData(const std::vector<mgp::Node> &nodes, const
   return node_data;
 }
 
-void PreloadNorms(std::vector<NodeData> &node_data, const knn_util::KNNConfig &config) {
+inline void PreloadNorms(std::vector<NodeData> &node_data, const knn_util::KNNConfig &config) {
 #pragma omp parallel for
   for (size_t ni = 0; ni < node_data.size(); ++ni) {
     auto &node = node_data[ni];
@@ -138,7 +158,7 @@ void PreloadNorms(std::vector<NodeData> &node_data, const knn_util::KNNConfig &c
 }
 
 // Calculate similarity between pre-loaded node data
-double CalculateNodeSimilarity(const NodeData &node1_data, const NodeData &node2_data) {
+inline double CalculateNodeSimilarity(const NodeData &node1_data, const NodeData &node2_data) {
   double total_similarity = 0.0;
   const size_t num_properties = node1_data.property_values.size();
 
@@ -157,7 +177,8 @@ double CalculateNodeSimilarity(const NodeData &node1_data, const NodeData &node2
   return total_similarity / num_properties;
 }
 
-std::vector<uint64_t> SampleKDistinctWithOmitted(uint64_t n, uint64_t k, uint64_t omit, std::mt19937 &rng) {  // NOSONAR
+inline std::vector<uint64_t> SampleKDistinctWithOmitted(uint64_t n, uint64_t k, uint64_t omit,
+                                                        std::mt19937 &rng) {  // NOSONAR
   // [0, n) with ommited index
   auto filtered = std::views::iota(uint64_t{0}, n) | std::views::filter([omit](uint64_t x) { return x != omit; });
   std::vector<uint64_t> population(filtered.begin(), filtered.end());
@@ -169,7 +190,7 @@ std::vector<uint64_t> SampleKDistinctWithOmitted(uint64_t n, uint64_t k, uint64_
   return result;
 }
 
-std::vector<uint64_t> SampleKDistinct(uint64_t n, uint64_t k, std::mt19937 &rng) {  // NOSONAR
+inline std::vector<uint64_t> SampleKDistinct(uint64_t n, uint64_t k, std::mt19937 &rng) {  // NOSONAR
   // [0, n)
   auto filtered = std::views::iota(uint64_t{0}, n);
   std::vector<uint64_t> population(filtered.begin(), filtered.end());
@@ -181,8 +202,8 @@ std::vector<uint64_t> SampleKDistinct(uint64_t n, uint64_t k, std::mt19937 &rng)
   return result;
 }
 
-std::vector<uint64_t> SampleFromVector(const std::vector<uint64_t> &indices, uint64_t k,
-                                       std::mt19937 &rng) {  // NOSONAR
+inline std::vector<uint64_t> SampleFromVector(const std::vector<uint64_t> &indices, uint64_t k,
+                                              std::mt19937 &rng) {  // NOSONAR
   auto sample = SampleKDistinct(indices.size(), k, rng);
 
   std::vector<uint64_t> result;
@@ -195,16 +216,25 @@ std::vector<uint64_t> SampleFromVector(const std::vector<uint64_t> &indices, uin
   return result;
 }
 
-std::vector<std::vector<knn_util::KNNNeighbour>> InitializeNeighborhoodLists(const std::vector<NodeData> &node_data,
-                                                                             const knn_util::KNNConfig &config,
-                                                                             size_t num_nodes, std::mt19937 &rng) {
+inline std::mt19937 MakeDeterministicRng(std::mt19937::result_type base_seed, uint64_t tag1, uint64_t tag2 = 0) {
+  std::seed_seq seq{static_cast<uint32_t>(base_seed),       static_cast<uint32_t>(tag1),
+                    static_cast<uint32_t>(tag1 >> 32U),     static_cast<uint32_t>(tag2),
+                    static_cast<uint32_t>(tag2 >> 32U),     0x9e3779b9U};
+  return std::mt19937(seq);
+}
+
+inline std::vector<std::vector<knn_util::KNNNeighbour>> InitializeNeighborhoodLists(
+    const std::vector<NodeData> &node_data, const knn_util::KNNConfig &config, size_t num_nodes,
+    std::mt19937::result_type base_seed) {
   std::vector<std::vector<knn_util::KNNNeighbour>> neighbour_list(num_nodes);
+  const auto top_k = static_cast<uint64_t>(config.top_k);
 
 #pragma omp parallel for
   for (size_t node_id = 0; node_id < num_nodes; node_id++) {
+    std::mt19937 node_rng = MakeDeterministicRng(base_seed, static_cast<uint64_t>(node_id), 1ULL);
     std::vector<knn_util::KNNNeighbour> heap;
     // Sample K random neighbors for this node
-    std::vector<uint64_t> sampled_neighbours = SampleKDistinctWithOmitted(num_nodes, config.top_k, node_id, rng);
+    std::vector<uint64_t> sampled_neighbours = SampleKDistinctWithOmitted(num_nodes, top_k, node_id, node_rng);
     for (auto sample : sampled_neighbours) {
       double similarity = CalculateNodeSimilarity(node_data[node_id], node_data[sample]);
       heap.emplace_back(sample, similarity);
@@ -219,7 +249,7 @@ std::vector<std::vector<knn_util::KNNNeighbour>> InitializeNeighborhoodLists(con
   return neighbour_list;
 }
 
-std::vector<uint64_t> Union(const std::vector<uint64_t> &first, const std::vector<uint64_t> &second) {
+inline std::vector<uint64_t> Union(const std::vector<uint64_t> &first, const std::vector<uint64_t> &second) {
   std::unordered_set<uint64_t> seen;
   seen.reserve(first.size() + second.size());
   seen.insert(first.begin(), first.end());
@@ -228,7 +258,7 @@ std::vector<uint64_t> Union(const std::vector<uint64_t> &first, const std::vecto
   return {seen.begin(), seen.end()};
 }
 
-uint64_t UpdateNN(std::vector<knn_util::KNNNeighbour> &neighborhood, uint64_t new_neighbour, double sim) {
+inline uint64_t UpdateNN(std::vector<knn_util::KNNNeighbour> &neighborhood, uint64_t new_neighbour, double sim) {
   if (sim < neighborhood.front().similarity) {
     return 0;
   }
@@ -247,8 +277,8 @@ uint64_t UpdateNN(std::vector<knn_util::KNNNeighbour> &neighborhood, uint64_t ne
 }
 
 // Main KNN algorithm implementation
-std::vector<std::tuple<mgp::Node, mgp::Node, double>> CalculateKNN(const mgp::Graph &graph,
-                                                                   const knn_util::KNNConfig &config) {
+inline std::vector<std::tuple<mgp::Node, mgp::Node, double>> CalculateKNN(const mgp::Graph &graph,
+                                                                          const knn_util::KNNConfig &config) {
   // we can't reserve here because it's an iterator
   std::vector<mgp::Node> nodes;
   for (const auto &node : graph.Nodes()) {
@@ -268,31 +298,38 @@ std::vector<std::tuple<mgp::Node, mgp::Node, double>> CalculateKNN(const mgp::Gr
   PreloadNorms(node_data, config);
 
   const auto num_nodes = nodes.size();
+  const auto top_k = static_cast<uint64_t>(config.top_k);
   uint64_t sample_rate_size =
-      std::max<uint64_t>(1ULL, static_cast<uint64_t>(config.sample_rate * static_cast<double>(config.top_k)));
-  double update_termination_convergence = config.delta_threshold * num_nodes * config.top_k;
-  std::mt19937 rng{config.random_seed};  // NOSONAR
+      std::max<uint64_t>(1ULL, static_cast<uint64_t>(config.sample_rate * static_cast<double>(top_k)));
+  double update_termination_convergence = config.delta_threshold * static_cast<double>(num_nodes * top_k);
+  const auto base_seed = static_cast<std::mt19937::result_type>(config.random_seed);
+  std::mt19937 rng{base_seed};  // NOSONAR
 
-  std::vector<std::vector<knn_util::KNNNeighbour>> B = InitializeNeighborhoodLists(node_data, config, num_nodes, rng);
+  std::vector<std::vector<knn_util::KNNNeighbour>> B =
+      InitializeNeighborhoodLists(node_data, config, num_nodes, base_seed);
 
   std::vector<std::vector<uint64_t>> olds(num_nodes);
   std::vector<std::vector<uint64_t>> news(num_nodes);
   std::vector<std::vector<uint64_t>> olds_rev(num_nodes);
   std::vector<std::vector<uint64_t>> news_rev(num_nodes);
   for (size_t v = 0; v < num_nodes; v++) {
-    olds[v].reserve(config.top_k);
-    news[v].reserve(config.top_k);
-    olds_rev[v].reserve(config.top_k);
-    news_rev[v].reserve(config.top_k);
+    olds[v].reserve(top_k);
+    news[v].reserve(top_k);
+    olds_rev[v].reserve(top_k);
+    news_rev[v].reserve(top_k);
   }
 
   for (auto iter = 0; iter < config.max_iterations; iter++) {
+    for (size_t v = 0; v < num_nodes; v++) {
+      olds_rev[v].clear();
+      news_rev[v].clear();
+    }
     for (size_t v = 0; v < num_nodes; v++) {
       olds[v].clear();
       news[v].clear();
 
       std::vector<uint64_t> new_neighbour_idx;
-      new_neighbour_idx.reserve(config.top_k);
+      new_neighbour_idx.reserve(top_k);
       for (size_t i = 0; i < B[v].size(); i++) {
         const auto &nb = B[v][i];
         if (!nb.is_new_neighbour) {
@@ -321,9 +358,11 @@ std::vector<std::tuple<mgp::Node, mgp::Node, double>> CalculateKNN(const mgp::Gr
 
 #pragma omp parallel for reduction(+ : updates) schedule(dynamic)
     for (size_t v = 0; v < num_nodes; v++) {
-      const auto sampled_old_rev = SampleFromVector(olds_rev[v], sample_rate_size, rng);
+      std::mt19937 local_rng =
+          MakeDeterministicRng(base_seed, static_cast<uint64_t>(v), static_cast<uint64_t>(iter) + 2ULL);
+      const auto sampled_old_rev = SampleFromVector(olds_rev[v], sample_rate_size, local_rng);
       olds[v] = Union(olds[v], sampled_old_rev);
-      const auto sampled_new_rev = SampleFromVector(news_rev[v], sample_rate_size, rng);
+      const auto sampled_new_rev = SampleFromVector(news_rev[v], sample_rate_size, local_rng);
       news[v] = Union(news[v], sampled_new_rev);
 
       const auto news_size = news[v].size();

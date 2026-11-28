@@ -9,7 +9,7 @@ constexpr char const *kProcedureMax = "max";
 
 constexpr char const *kFieldMatchingNumber = "maximum_bipartite_matching";
 
-void InsertBipartiteMatchingRecord(mgp_result *result, mgp_memory *memory, const int matching_number) {
+void InsertBipartiteMatchingRecord(mgp_result *result, mgp_memory *memory, const std::int64_t matching_number) {
   auto *record = mgp::result_new_record(result);
 
   mg_utility::InsertIntValueResult(record, kFieldMatchingNumber, matching_number, memory);
@@ -20,7 +20,7 @@ void GetMaximumBipartiteMatching(mgp_list *args, mgp_graph *memgraph_graph, mgp_
     auto graph = mg_utility::GetGraphView(memgraph_graph, result, memory, mg_graph::GraphType::kUndirectedGraph);
     auto maximum_bipartite_matching = bipartite_matching_alg::BipartiteMatching(*graph);
 
-    InsertBipartiteMatchingRecord(result, memory, maximum_bipartite_matching);
+    InsertBipartiteMatchingRecord(result, memory, static_cast<std::int64_t>(maximum_bipartite_matching));
   } catch (const std::exception &e) {
     // We must not let any exceptions out of our module.
     mgp::result_set_error_msg(result, e.what());

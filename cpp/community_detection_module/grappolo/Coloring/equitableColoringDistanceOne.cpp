@@ -196,9 +196,9 @@ void equitableDistanceOneColorBased(graph *G, mgp_graph *mg_graph, int *vtxColor
       }
       free(Mark);
     } //End of outer for loop(vi)
-  }//End of for(ci)
-  [[maybe_unused]] const enum mgp_error untracking_error = mgp_untrack_current_thread_allocations(mg_graph);
+    [[maybe_unused]] const enum mgp_error untracking_error = mgp_untrack_current_thread_allocations(mg_graph);
 }
+  }//End of for(ci)
   time2  = omp_get_wtime();
   totalTime += time2 - time1;
 #ifdef PRINT_DETAILED_STATS_
@@ -227,5 +227,8 @@ void equitableDistanceOneColorBased(graph *G, mgp_graph *mg_graph, int *vtxColor
   }//End of outer for loop: for each vertex
   myConflicts = myConflicts / 2; //Have counted each conflict twice
 
+  free(colorIndex);
+  free(colorAdded);
+  free(colorPtr);
 }//End of colorBasedEquitable()
 

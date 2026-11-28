@@ -112,11 +112,18 @@ void KatzCentralityProc(mgp_list *args, mgp_graph *graph, mgp_result *result, mg
 }  // namespace
 
 extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *memory) {
-  mgp_value *default_alpha;
-  mgp_value *default_beta;
-  mgp_value *default_epsilon;
-  mgp_value *default_max_iterations;
-  mgp_value *default_normalized;
+  mgp_value *default_alpha = nullptr;
+  mgp_value *default_beta = nullptr;
+  mgp_value *default_epsilon = nullptr;
+  mgp_value *default_max_iterations = nullptr;
+  mgp_value *default_normalized = nullptr;
+  auto cleanup = [&]() {
+    if (default_alpha) mgp_value_destroy(default_alpha);
+    if (default_beta) mgp_value_destroy(default_beta);
+    if (default_epsilon) mgp_value_destroy(default_epsilon);
+    if (default_max_iterations) mgp_value_destroy(default_max_iterations);
+    if (default_normalized) mgp_value_destroy(default_normalized);
+  };
   try {
     auto *katz_proc = mgp::module_add_read_procedure(module, kProcedureKatzCentrality, KatzCentralityProc);
 
@@ -135,19 +142,11 @@ extern "C" int mgp_init_module(struct mgp_module *module, struct mgp_memory *mem
     mgp::proc_add_result(katz_proc, kResultFieldNode, mgp::type_node());
     mgp::proc_add_result(katz_proc, kResultFieldKatzCentrality, mgp::type_float());
   } catch (const std::exception &e) {
-    mgp_value_destroy(default_alpha);
-    mgp_value_destroy(default_beta);
-    mgp_value_destroy(default_epsilon);
-    mgp_value_destroy(default_max_iterations);
-    mgp_value_destroy(default_normalized);
+    cleanup();
     return 1;
   }
 
-  mgp_value_destroy(default_alpha);
-  mgp_value_destroy(default_beta);
-  mgp_value_destroy(default_epsilon);
-  mgp_value_destroy(default_max_iterations);
-  mgp_value_destroy(default_normalized);
+  cleanup();
   return 0;
 }
 

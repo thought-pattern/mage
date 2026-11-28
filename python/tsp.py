@@ -18,6 +18,16 @@ tsp_solving_methods = {
 }
 
 
+def normalize_solving_method(method: str) -> str:
+    """Normalizes documented TSP method names (case and hyphen/underscore) and rejects unknown methods."""
+    if not isinstance(method, str):
+        raise TypeError("TSP solving method must be a string.")
+    normalized = method.strip().lower().replace("-", "_")
+    if normalized not in tsp_solving_methods:
+        raise ValueError(f"Unsupported TSP solving method {method!r}; choose '1.5-approx', '2-approx', or 'greedy'.")
+    return normalized
+
+
 def solve(points: list[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD) -> mgp_Record:
     """
     The tsp solver returns 2 fields whose elements at indexes are correlated
@@ -28,8 +38,8 @@ def solve(points: list[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD) -> mgp
     The pairs of them represent individual edges between 2 nodes in the graph.
 
     The required argument is the list of cities one wants to find the path from.
-    The optional argument `method` is by default 'greedy'. Other arguments that can be
-    specified are '2-approx' and '1.5-approx'
+    The optional argument `method` is by default '1.5-approx'. Other arguments that can be
+    specified are '2-approx' and 'greedy'.
 
     The procedure can be invoked in openCypher using the following calls:
     MATCH (n:Point)
@@ -47,10 +57,9 @@ def solve(points: list[mgp_Vertex], method: str = DEFAULT_SOLVING_METHOD) -> mgp
         computed_return_value = mgp_Record(sources=None, destinations=None)
         return computed_return_value
 
-    if method.lower() not in tsp_solving_methods:
-        method = DEFAULT_SOLVING_METHOD
-
-    order = tsp_solving_methods.get(method, solve_1_5_approx)(dm)
+    selected_method = normalize_solving_method(method)
+    solver = tsp_solving_methods.get(selected_method, solve_1_5_approx)
+    order = solver(dm)
 
     sources = [points[order[x]] for x in range(len(order) - 1)]
     destinations = [points[order[x]] for x in range(1, len(order))]

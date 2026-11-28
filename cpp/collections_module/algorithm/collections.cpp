@@ -1,12 +1,150 @@
 #include "collections.hpp"
 #include <algorithm>
+#include <bit>
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <list>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
+namespace {
+
+bool ContainsNull(const mgp::Value &value) {
+  if (value.IsNull()) {
+    return true;
+  }
+  if (value.IsList()) {
+    for (const auto &element : value.ValueList()) {
+      if (ContainsNull(element)) {
+        return true;
+      }
+    }
+  } else if (value.IsMap()) {
+    for (const auto &item : value.ValueMap()) {
+      if (ContainsNull(item.value)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+int64_t DoubleToCheckedInt64(double d) {
+  constexpr double kMinInt64AsDouble = -9223372036854775808.0;
+  constexpr double kExclusiveMaxInt64AsDouble = 9223372036854775808.0;
+  if (!std::isfinite(d) || d < kMinInt64AsDouble || d >= kExclusiveMaxInt64AsDouble) {
+    throw mgp::ValueException("Floating-point value is outside the signed 64-bit integer range.");
+  }
+  return static_cast<int64_t>(d);
+}
+
+std::string TypeTag(mgp::Type type) {
+  std::ostringstream oss;
+  oss << type;
+  return oss.str();
+}
+
+std::string StructuralKey(const mgp::Value &value) {
+  std::string out = TypeTag(value.Type());
+  out.push_back(':');
+  if (value.IsNull()) {
+    return out;
+  }
+  if (value.IsList()) {
+    out.push_back('[');
+    for (const auto item : value.ValueList()) {
+      const std::string sub = StructuralKey(item);
+      out += std::to_string(sub.size());
+      out.push_back('#');
+      out += sub;
+    }
+    out.push_back(']');
+    return out;
+  }
+  if (value.IsMap()) {
+    std::map<std::string, std::string> sorted_items;
+    for (const auto item : value.ValueMap()) {
+      sorted_items.emplace(std::string(item.key), StructuralKey(item.value));
+    }
+    out.push_back('{');
+    for (const auto &[k, v] : sorted_items) {
+      out += std::to_string(k.size());
+      out.push_back(':');
+      out += k;
+      out.push_back('=');
+      out += std::to_string(v.size());
+      out.push_back('#');
+      out += v;
+    }
+    out.push_back('}');
+    return out;
+  }
+  const std::string rendered = value.ToString();
+  out += std::to_string(rendered.size());
+  out.push_back(':');
+  out += rendered;
+  return out;
+}
+
+mgp::Map BuildFrequencyMap(const mgp::List &input_list) {
+  std::unordered_map<mgp::Value, int64_t> frequency_map;
+  for (auto &&element : input_list) {
+    frequency_map[element]++;
+  }
+
+  struct BucketEntry {
+    std::string type_tag;
+    std::string structural_key;
+    int64_t count{0};
+  };
+
+  std::map<std::string, std::vector<BucketEntry>> grouped;
+  for (const auto &[element, count] : frequency_map) {
+    const std::string base_key = element.IsNull() ? std::string("NO_VALUE") : element.ToString();
+    grouped[base_key].push_back(BucketEntry{TypeTag(element.Type()), StructuralKey(element), count});
+  }
+
+  mgp::Map result_map;
+  std::unordered_set<std::string> used_keys;
+  for (const auto &[base_key, entries] : grouped) {
+    if (entries.size() == 1) {
+      used_keys.insert(base_key);
+      result_map.Insert(base_key, mgp::Value(entries[0].count));
+    }
+  }
+  for (auto &[base_key, entries] : grouped) {
+    if (entries.size() <= 1) {
+      continue;
+    }
+    std::sort(entries.begin(), entries.end(), [](const BucketEntry &a, const BucketEntry &b) {
+      if (a.type_tag != b.type_tag) {
+        return a.type_tag < b.type_tag;
+      }
+      return a.structural_key < b.structural_key;
+    });
+    for (const auto &entry : entries) {
+      std::string key = entry.type_tag + ":" + base_key;
+      size_t ordinal = 2;
+      while (used_keys.contains(key)) {
+        key = entry.type_tag + "#" + std::to_string(ordinal) + ":" + base_key;
+        ++ordinal;
+      }
+      used_keys.insert(key);
+      result_map.Insert(key, mgp::Value(entry.count));
+    }
+  }
+  return result_map;
+}
+
+}  // namespace
+
 void Collections::SetResult(mgp::Result &result, const mgp::Value &value) {
   switch (value.Type()) {
+    case mgp::Type::Null:
+      return result.SetValue();
     case mgp::Type::Bool:
       return result.SetValue(value.ValueBool());
     case mgp::Type::Int:
@@ -33,6 +171,14 @@ void Collections::SetResult(mgp::Result &result, const mgp::Value &value) {
       return result.SetValue(value.ValueLocalDateTime());
     case mgp::Type::Duration:
       return result.SetValue(value.ValueDuration());
+    case mgp::Type::ZonedDateTime:
+      return result.SetValue(value.ValueZonedDateTime());
+    case mgp::Type::Point2d:
+      return result.SetValue(value.ValuePoint2d());
+    case mgp::Type::Point3d:
+      return result.SetValue(value.ValuePoint3d());
+    case mgp::Type::Enum:
+      return result.SetValue(value.ValueEnum());
 
     default:
         std::ostringstream oss;
@@ -47,6 +193,10 @@ void Collections::SumLongs(mgp_list *args, mgp_func_context *ctx, mgp_func_resul
   auto result = mgp::Result(res);
 
   try {
+    if (arguments[0].IsNull()) {
+      result.SetValue();
+      return;
+    }
     int64_t sum{0};
     const auto list{arguments[0].ValueList()};
 
@@ -56,7 +206,12 @@ void Collections::SumLongs(mgp_list *args, mgp_func_context *ctx, mgp_func_resul
         oss << list_item.Type();
         throw mgp::ValueException("Unsupported type for this operation, received type: " + oss.str());
       }
-      sum += static_cast<int64_t>(list_item.ValueNumeric());
+      const int64_t addend = list_item.IsInt() ? list_item.ValueInt() : DoubleToCheckedInt64(list_item.ValueDouble());
+      if ((addend > 0 && sum > std::numeric_limits<int64_t>::max() - addend) ||
+          (addend < 0 && sum < std::numeric_limits<int64_t>::min() - addend)) {
+        throw mgp::ValueException("Signed 64-bit integer overflow in sum_longs.");
+      }
+      sum += addend;
     }
     result.SetValue(sum);
 
@@ -72,8 +227,18 @@ void Collections::Avg(mgp_list *args, mgp_func_context *ctx, mgp_func_result *re
   auto result = mgp::Result(res);
 
   try {
-    double average{0};
+    if (arguments[0].IsNull()) {
+      result.SetValue();
+      return;
+    }
     const auto list{arguments[0].ValueList()};
+    if (list.Empty()) {
+      result.SetValue();
+      return;
+    }
+    double sum{0.0};
+    bool all_finite{true};
+    const size_t count = list.Size();
 
     for (const auto list_item : list) {
       if (!list_item.IsNumeric()) {
@@ -81,9 +246,28 @@ void Collections::Avg(mgp_list *args, mgp_func_context *ctx, mgp_func_result *re
         oss << list_item.Type();
         throw mgp::ValueException("Unsupported type for this operation, received type: " + oss.str());
       }
-      average += list_item.ValueNumeric();
+      const double val = list_item.ValueNumeric();
+      if (!std::isfinite(val)) {
+        all_finite = false;
+      }
+      sum += val;
     }
-    average /= list.Size();
+
+    double average{0.0};
+    if (!std::isfinite(sum) && all_finite) {
+      const int scale_exp = static_cast<int>(std::bit_width(count));
+      double scaled_sum{0.0};
+      for (const auto list_item : list) {
+        scaled_sum += std::ldexp(list_item.ValueNumeric(), -scale_exp);
+      }
+      const double scaled_avg = scaled_sum / static_cast<double>(count);
+      average = std::ldexp(scaled_avg, scale_exp);
+      if (!std::isfinite(average)) {
+        average = std::copysign(std::numeric_limits<double>::max(), scaled_avg);
+      }
+    } else {
+      average = sum / static_cast<double>(count);
+    }
 
     result.SetValue(average);
 
@@ -99,6 +283,10 @@ void Collections::ContainsAll(mgp_list *args, mgp_func_context *ctx, mgp_func_re
   auto result = mgp::Result(res);
 
   try {
+    if (arguments[0].IsNull() || arguments[1].IsNull()) {
+      result.SetValue(false);
+      return;
+    }
     const auto list1{arguments[0].ValueList()};
     std::unordered_set<mgp::Value> set(list1.begin(), list1.end());
 
@@ -106,7 +294,8 @@ void Collections::ContainsAll(mgp_list *args, mgp_func_context *ctx, mgp_func_re
 
     std::unordered_set<mgp::Value> values(list2.begin(), list2.end());
 
-    result.SetValue(std::all_of(values.begin(), values.end(), [&set](const auto &x) { return set.contains(x); }));
+    result.SetValue(
+        std::all_of(values.begin(), values.end(), [&set](const auto &x) { return !ContainsNull(x) && set.contains(x); }));
 
   } catch (const std::exception &e) {
     result.SetErrorMessage(e.what());
@@ -152,24 +341,24 @@ void Collections::RemoveAll(mgp_list *args, mgp_func_context *ctx, mgp_func_resu
   auto result = mgp::Result(res);
 
   try {
+    if (arguments[0].IsNull()) {
+      result.SetValue();
+      return;
+    }
+    if (arguments[1].IsNull()) {
+      result.SetValue(arguments[0].ValueList());
+      return;
+    }
     const auto input_list = arguments[0].ValueList();
     const auto to_remove_list = arguments[1].ValueList();
 
-    std::unordered_multiset<mgp::Value> searchable(input_list.begin(),input_list.end());
-
-    for (const auto key : to_remove_list) {
-      while (true) {
-        auto itr = searchable.find(key);
-        if (itr == searchable.end()) {
-          break;
-        }
-        searchable.erase(itr);
-      }
-    }
+    const std::unordered_set<mgp::Value> to_remove(to_remove_list.begin(), to_remove_list.end());
 
     mgp::List final_list = mgp::List();
-    for (const auto &element : searchable) {
-      final_list.AppendExtend(std::move(element));
+    for (const auto &element : input_list) {
+      if (!to_remove.contains(element)) {
+        final_list.AppendExtend(element);
+      }
     }
 
     result.SetValue(final_list);
@@ -275,22 +464,37 @@ void Collections::ContainsSorted(mgp_list *args, mgp_func_context *ctx, mgp_func
   const auto arguments = mgp::List(args);
   auto result = mgp::Result(res);
   try {
+    if (arguments[0].IsNull()) {
+      result.SetValue(false);
+      return;
+    }
     bool contains{false};
     const auto list = arguments[0].ValueList();
     const auto element = arguments[1];
+    if (list.Empty() || (!element.IsNull() && ContainsNull(element))) {
+      result.SetValue(false);
+      return;
+    }
 
-    int left{0};
-    int right{static_cast<int>(list.Size() - 1)};
-    int check;
+    size_t left{0};
+    size_t right{list.Size() - 1};
 
     while (left <= right) {
-      check = (left + right) / 2;
-      if (list[check] == element) {
+      const size_t check = left + (right - left) / 2;
+      if (!element.IsNull() && list[check] == element) {
         contains = true;
         break;
+      } else if (list[check].IsNull() && element.IsNull()) {
+        break;
       } else if (element < list[check]) {
+        if (check == 0) {
+          break;
+        }
         right = check - 1;
       } else {
+        if (check == std::numeric_limits<size_t>::max()) {
+          break;
+        }
         left = check + 1;
       }
     }
@@ -308,16 +512,22 @@ void Collections::Max(mgp_list *args, mgp_func_context *ctx, mgp_func_result *re
   const auto arguments = mgp::List(args);
   auto result = mgp::Result(res);
   try {
+    if (arguments[0].IsNull()) {
+      result.SetValue();
+      return;
+    }
     const auto list = arguments[0].ValueList();
 
     if (list.Empty()) {
       throw mgp::ValueException("Empty input list.");
     }
 
-    mgp::Value max = mgp::Value(list[0]);
-
+    mgp::Value max{};
     for (const auto value : list) {
-      if (max < value) {  // this will throw an error in case values can't be compared
+      if (value.IsNull()) {
+        continue;
+      }
+      if (max.IsNull() || max < value) {  // `<` throws if the values can't be compared
         max = value;
       }
     }
@@ -405,12 +615,16 @@ void Collections::Contains(mgp_list *args, mgp_func_context *ctx, mgp_func_resul
   const auto arguments = mgp::List(args);
   auto result = mgp::Result(res);
   try {
+    if (arguments[0].IsNull()) {
+      result.SetValue(false);
+      return;
+    }
     const mgp::List &list = arguments[0].ValueList();
     const mgp::Value &value = arguments[1];
 
     bool contains_value{false};
 
-    if (list.Empty()) {
+    if (ContainsNull(value) || list.Empty()) {
       result.SetValue(contains_value);
       return;
     }
@@ -452,23 +666,34 @@ void Collections::Min(mgp_list *args, mgp_func_context *ctx, mgp_func_result *re
   const auto arguments = mgp::List(args);
   auto result = mgp::Result(res);
   try {
+    if (arguments[0].IsNull()) {
+      result.SetValue();
+      return;
+    }
     const mgp::List &list = arguments[0].ValueList();
     if (list.Empty()) {
       throw mgp::ValueException("Empty input list");
     }
-    const mgp::Type &type = list[0].Type();
 
-    if (type == mgp::Type::Map || type == mgp::Type::Path || type == mgp::Type::List) {
-      std::ostringstream oss;
-      oss << type;
-      std::string s = oss.str();
-      throw mgp::ValueException("Unsuppported type for this operation, receieved type: " + s);
-    }
-
-    bool isListNumeric = list[0].IsNumeric();
-    mgp::Value min{list[0]};
+    mgp::Value min{};
+    mgp::Type type{mgp::Type::Null};
+    bool is_numeric{false};
     for (size_t i = 0; i < list.Size(); i++) {
-      if (list[i].Type() != type && !(isListNumeric && list[i].IsNumeric())) {
+      if (list[i].IsNull()) {
+        continue;
+      }
+      if (min.IsNull()) {
+        type = list[i].Type();
+        if (type == mgp::Type::Map || type == mgp::Type::Path || type == mgp::Type::List) {
+          std::ostringstream oss;
+          oss << type;
+          throw mgp::ValueException("Unsupported type for this operation, received type: " + oss.str());
+        }
+        is_numeric = list[i].IsNumeric();
+        min = list[i];
+        continue;
+      }
+      if (list[i].Type() != type && !(is_numeric && list[i].IsNumeric())) {
         throw mgp::ValueException("All elements must be of the same type!");
       }
 
@@ -597,19 +822,12 @@ void Collections::FrequenciesAsMap(mgp_list *args, mgp_func_context *ctx, mgp_fu
   auto result = mgp::Result(res);
 
   try {
+    if (arguments[0].IsNull()) {
+      result.SetValue(mgp::Map());
+      return;
+    }
     auto const input_list = arguments[0].ValueList();
-    std::unordered_map<mgp::Value, int64_t> frequency_map;
-
-    for (auto &&element : input_list) {
-      frequency_map[element]++;
-    }
-
-    mgp::Map result_map;
-    for (auto &&[element, count] : frequency_map) {
-      auto const key = element.ToString();
-      result_map.Insert(key, mgp::Value(count));
-    }
-
+    mgp::Map result_map = BuildFrequencyMap(input_list);
     result.SetValue(std::move(result_map));
 
   } catch (std::exception const &e) {

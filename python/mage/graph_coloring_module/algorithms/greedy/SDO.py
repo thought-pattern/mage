@@ -38,13 +38,14 @@ class SDO(Algorithm):
         no_of_colors = param_value(graph, parameters, Parameter.NO_OF_COLORS)
 
         processed = [False for _ in graph.nodes]
+        neighbor_colors: list[set[int]] = [set() for _ in graph.nodes]
         saturation_degrees = [0 for _ in graph.nodes]
         chromosome = [-1 for _ in graph.nodes]
 
         while not all(processed):
             current_node = self.get_non_processed_node(processed)
             sorted_nodes = PriorityQueue()
-            sorted_nodes.put((saturation_degrees[current_node], current_node))
+            sorted_nodes.put((-1 * saturation_degrees[current_node], current_node))
 
             while not sorted_nodes.empty():
                 node = sorted_nodes.get()[1]
@@ -60,8 +61,9 @@ class SDO(Algorithm):
                     chromosome[node] = color
 
                     for neigh in graph[node]:
-                        if not processed[neigh]:
-                            saturation_degrees[neigh] += 1
+                        if not processed[neigh] and color not in neighbor_colors[neigh]:
+                            neighbor_colors[neigh].add(color)
+                            saturation_degrees[neigh] = len(neighbor_colors[neigh])
                             sorted_nodes.put((-1 * saturation_degrees[neigh], neigh))
 
         computed_return_value = Individual(no_of_colors, graph, chromosome)

@@ -1,7 +1,6 @@
 """Utilities for bfs weight min max."""
 
 from collections import deque
-from collections.abc import Iterable, Mapping
 from math import isfinite
 
 
@@ -32,13 +31,17 @@ def BFS_find_weight_min_max(start_v: object, edge_property: str) -> tuple[float,
         current_v = next_queue.popleft()
 
         out_edges = getattr(current_v, "out_edges", False)
-        if not isinstance(out_edges, Iterable):
+        if isinstance(out_edges, (bool, str, bytes)) or not hasattr(out_edges, "__iter__"):
             raise TypeError("every traversed vertex must provide iterable out_edges")
         for e in out_edges:
             # if there are edges without the given property, we ignore them,
             # in order to support heterogeneous graphs
             properties = getattr(e, "properties", False)
-            if not isinstance(properties, Mapping):
+            if (
+                isinstance(properties, (bool, str, bytes))
+                or not callable(getattr(properties, "get", False))
+                or not hasattr(properties, "__contains__")
+            ):
                 raise TypeError("every traversed edge must provide a property mapping")
             if edge_property not in properties:
                 continue
@@ -62,5 +65,5 @@ def BFS_find_weight_min_max(start_v: object, edge_property: str) -> tuple[float,
                 next_queue.append(to_vertex)
 
     if not found_weight:
-        raise ValueError(f"no reachable edge provides property {edge_property!r}")
+        return 0.0, 0.0
     return max_weight, min_weight

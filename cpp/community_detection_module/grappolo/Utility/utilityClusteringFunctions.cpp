@@ -91,7 +91,10 @@ double calConstantForSecondTerm(double* vDegree, long NV) {
   for (long i=0; i<NV; i++) {
       totalEdgeWeightTwice += vDegree[i];
   }
-  return (double)1/totalEdgeWeightTwice;
+  if (totalEdgeWeightTwice <= 0.0) {
+      return 0.0;
+  }
+  return 1.0 / totalEdgeWeightTwice;
 }//End of calConstantForSecondTerm()
 
 void initCommAss(long* pastCommAss, long* currCommAss, long NV) {

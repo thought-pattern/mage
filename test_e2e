@@ -1,39 +1,34 @@
 #!/usr/bin/env python3
 
-import argparse
-import os
-import subprocess
+from argparse import ArgumentParser
+from os import chdir as os_chdir, environ as os_environ, getcwd as os_getcwd
+from subprocess import run as subprocess_run
 
-WORK_DIRECTORY = os.getcwd()
+WORK_DIRECTORY = os_getcwd()
 E2E_DIRECTORY = f"{WORK_DIRECTORY}/e2e"
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(
+    parser = ArgumentParser(
         description="Test MAGE E2E, make sure to have your Memgraph instance ready."
     )
     parser.add_argument(
-        "-k", help="Add filter to tests you want to run", type=str, required=False
+        "-k", default="", help="Add filter to tests you want to run", type=str, required=False
     )
     args = parser.parse_args()
     return args
 
 
-#################################################
-#                End to end tests               #
-#################################################
-
-
-def main(test_filter: str = None):
-    os.environ["PYTHONPATH"] = E2E_DIRECTORY
-    os.chdir(E2E_DIRECTORY)
+def main(test_filter: str = "") -> int:
+    os_environ["PYTHONPATH"] = E2E_DIRECTORY
+    os_chdir(E2E_DIRECTORY)
     command = ["python3", "-m", "pytest", ".", "-vv"]
     if test_filter:
         command.extend(["-k", test_filter])
-    subprocess.run(command)
+    completed = subprocess_run(command, check=False)
+    return completed.returncode
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
-    test_filter = args.k
-    main(test_filter=test_filter)
+    parsed_args = parse_arguments()
+    raise SystemExit(main(test_filter=parsed_args.k))

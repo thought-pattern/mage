@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <omp.h>
 #include "louvain.hpp"
 #include "mg_utils.hpp"
@@ -15,7 +16,15 @@ std::vector<int64_t> GrappoloCommunityDetection(GrappoloGraph &grappolo_graph, m
 
   auto number_of_vertices = grappolo_graph.numVertices;
 
-  auto *cluster_array = (long *)malloc(number_of_vertices * sizeof(long));
+  auto *cluster_array = static_cast<long *>(
+      malloc(static_cast<std::size_t>(std::max<long>(1, number_of_vertices)) * sizeof(long)));
+  if (cluster_array == nullptr) {
+    free(grappolo_graph.edgeListPtrs);
+    free(grappolo_graph.edgeList);
+    free(&grappolo_graph);
+    throw mg_exception::NotEnoughMemoryException();
+  }
+  std::unique_ptr<long, void (*)(void *)> cluster_guard(cluster_array, std::free);
 #pragma omp parallel for
   for (long i = 0; i < number_of_vertices; i++) {
     cluster_array[i] = -1;
@@ -37,7 +46,7 @@ std::vector<int64_t> GrappoloCommunityDetection(GrappoloGraph &grappolo_graph, m
     result.emplace_back(cluster_array[i]);
   }
   // Detach memory, no need to free graph instance, it will be removed inside algorithm
-  free(cluster_array);
+  cluster_guard.reset();
 
   // Return empty vector if algorithm has failed
   return result;
@@ -129,32 +138,38 @@ LouvainGraph GetLouvainSubgraph(mgp_memory *memory, mgp_graph *memgraph_graph, m
 
 void GetGrappoloSuitableGraph(GrappoloGraph &grappolo_graph, int num_threads, const LouvainGraph &louvain_graph) {
   const auto number_of_edges = louvain_graph.edges.size();
-  
-  auto edge_index = 0;
-  auto tmp_edge_list = std::unique_ptr<edge[]>(new edge[number_of_edges]);  // Every edge stored ONCE
+
+  std::vector<edge> tmp_edge_list(number_of_edges);  // Every edge stored ONCE
+  std::size_t edge_index = 0;
   for (const auto &[source, destination, weight] : louvain_graph.edges) {
-    tmp_edge_list[edge_index].head = source;  // The H index: Zero-based indexing
-    tmp_edge_list[edge_index].tail = destination;  // The T index: Zero-based indexing
-    tmp_edge_list[edge_index].weight = weight; // The weight
+    tmp_edge_list[edge_index].head = static_cast<long>(source);       // The H index: Zero-based indexing
+    tmp_edge_list[edge_index].tail = static_cast<long>(destination);  // The T index: Zero-based indexing
+    tmp_edge_list[edge_index].weight = weight;                        // The weight
     edge_index++;
   }
   const auto number_of_vertices = louvain_graph.memgraph_id_to_id.size();
 
+  const int previous_omp_threads = std::max(1, omp_get_max_threads());
+  const mg_utility::OnScopeExit restore_omp_threads(
+      [previous_omp_threads] { omp_set_num_threads(previous_omp_threads); });
+  num_threads = std::max(num_threads, 1);
   omp_set_num_threads(num_threads);
   auto *edge_list_ptrs = static_cast<long *>(malloc((number_of_vertices + 1) * sizeof(long)));
   if (edge_list_ptrs == nullptr) {
     throw mg_exception::NotEnoughMemoryException();
   }
+  std::unique_ptr<long, void (*)(void *)> edge_list_ptrs_guard(edge_list_ptrs, std::free);
 
   auto *edge_list = static_cast<edge *>(malloc(number_of_edges * 2 * sizeof(edge)));  // Every edge stored twice
   if (edge_list == nullptr) {
     throw mg_exception::NotEnoughMemoryException();
   }
+  std::unique_ptr<edge, void (*)(void *)> edge_list_guard(edge_list, std::free);
 
 #pragma omp parallel for
   for (std::size_t i = 0; i <= number_of_vertices; i++) edge_list_ptrs[i] = 0;  // For first touch purposes
 
-    // Build the EdgeListPtr Array: Cumulative addition
+  // Build the EdgeListPtr Array: Cumulative addition
 #pragma omp parallel for
   for (std::size_t i = 0; i < number_of_edges; i++) {
     __sync_fetch_and_add(&edge_list_ptrs[tmp_edge_list[i].head + 1], 1);  // Leave 0th position intact
@@ -164,21 +179,23 @@ void GetGrappoloSuitableGraph(GrappoloGraph &grappolo_graph, int num_threads, co
     edge_list_ptrs[i + 1] += edge_list_ptrs[i];  // Prefix Sum
   }
   // The last element of Cumulative will hold the total number of characters
-  if (2 * number_of_edges != edge_list_ptrs[number_of_vertices]) {
+  if (2 * number_of_edges != static_cast<std::size_t>(edge_list_ptrs[number_of_vertices])) {
     throw std::runtime_error("Community detection error: Error while graph fetching in the edge prefix sum creation");
   }
 
   // Keep track of how many edges have been added for a vertex:
-  auto added = std::unique_ptr<long[]>(new long[number_of_vertices]);
-  if (added == nullptr) {
+  std::vector<long> added;
+  try {
+    added.resize(number_of_vertices, 0);
+  } catch (const std::bad_alloc &) {
     throw mg_exception::NotEnoughMemoryException();
   }
 #pragma omp parallel for
   for (std::size_t i = 0; i < number_of_vertices; i++) added[i] = 0;
 
-    // Build the edgeList from edgeListTmp:
+  // Build the edgeList from edgeListTmp:
 
-#pragma omp parallel for 
+#pragma omp parallel for
   for (std::size_t i = 0; i < number_of_edges; i++) {
     auto head = tmp_edge_list[i].head;
     auto tail = tmp_edge_list[i].tail;
@@ -194,10 +211,10 @@ void GetGrappoloSuitableGraph(GrappoloGraph &grappolo_graph, int num_threads, co
     edge_list[index].tail = head;
     edge_list[index].weight = weight;
   }
-  grappolo_graph.numVertices = number_of_vertices;
-  grappolo_graph.numEdges = number_of_edges;
-  grappolo_graph.edgeListPtrs = edge_list_ptrs;
-  grappolo_graph.edgeList = edge_list;
-  grappolo_graph.sVertices = number_of_vertices;
+  grappolo_graph.numVertices = static_cast<long>(number_of_vertices);
+  grappolo_graph.numEdges = static_cast<long>(number_of_edges);
+  grappolo_graph.edgeListPtrs = edge_list_ptrs_guard.release();
+  grappolo_graph.edgeList = edge_list_guard.release();
+  grappolo_graph.sVertices = static_cast<long>(number_of_vertices);
 }
 }  // namespace louvain_alg

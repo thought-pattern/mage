@@ -105,21 +105,28 @@ void Map::SetKey(mgp_list *args, mgp_func_context *ctx, mgp_func_result *res, mg
 }
 
 void Map::RemoveRecursion(mgp::Map &result, bool recursive, std::string_view key) {
+  std::vector<std::string> to_erase;
+  std::vector<std::pair<std::string, mgp::Value>> to_update;
   for (auto element : result) {
     if (element.key == key) {
-      result.Erase(element.key);
+      to_erase.emplace_back(element.key);
       continue;
     }
     if (element.value.IsMap() && recursive) {
-      // TO-DO no need for non_const_value_map in new version of memgraph
       mgp::Map non_const_value_map = mgp::Map(std::move(element.value.ValueMap()));
       RemoveRecursion(non_const_value_map, recursive, key);
       if (non_const_value_map.Empty()) {
-        result.Erase(element.key);
+        to_erase.emplace_back(element.key);
         continue;
       }
-      result.Update(element.key, mgp::Value(std::move(non_const_value_map)));
+      to_update.emplace_back(std::string(element.key), mgp::Value(std::move(non_const_value_map)));
     }
+  }
+  for (const auto &erase_key : to_erase) {
+    result.Erase(erase_key);
+  }
+  for (auto &[update_key, updated_val] : to_update) {
+    result.Update(update_key, std::move(updated_val));
   }
 }
 
@@ -250,24 +257,28 @@ void Map::FromLists(mgp_list *args, mgp_func_context *ctx, mgp_func_result *res,
 }
 
 void Map::RemoveRecursionSet(mgp::Map &result, bool recursive, std::unordered_set<std::string> &set) {
+  std::vector<std::string> to_erase;
+  std::vector<std::pair<std::string, mgp::Value>> to_update;
   for (auto element : result) {
-    bool inSet = false;
     if (set.find(std::string(element.key)) != set.end()) {
-      inSet = true;
-    }
-    if (inSet) {
-      result.Erase(element.key);
+      to_erase.emplace_back(element.key);
       continue;
     }
     if (element.value.IsMap() && recursive) {
       mgp::Map non_const_value_map = mgp::Map(std::move(element.value.ValueMap()));
       RemoveRecursionSet(non_const_value_map, recursive, set);
       if (non_const_value_map.Empty()) {
-        result.Erase(element.key);
+        to_erase.emplace_back(element.key);
         continue;
       }
-      result.Update(element.key, mgp::Value(std::move(non_const_value_map)));
+      to_update.emplace_back(std::string(element.key), mgp::Value(std::move(non_const_value_map)));
     }
+  }
+  for (const auto &erase_key : to_erase) {
+    result.Erase(erase_key);
+  }
+  for (auto &[update_key, updated_val] : to_update) {
+    result.Update(update_key, std::move(updated_val));
   }
 }
 

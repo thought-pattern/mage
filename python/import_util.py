@@ -45,12 +45,130 @@ CYPHER_IMPORT_CONFIG_TYPES = {
     "username": str,
     "password": str,
     "encrypted": bool,
+    "database": str,
+    "db": str,
     "startLine": int,
 }
 
 # GraphML boolean data: the XML Schema lexical forms plus the exporter's str(bool) spelling.
 GRAPHML_TRUE_TOKENS = {"true", "True", "1"}
 GRAPHML_FALSE_TOKENS = {"false", "False", "0"}
+
+
+def cypher_identifier(name: str) -> str:
+    """Backtick-quotes an identifier; embedded backticks are doubled."""
+    escaped = name.replace("`", "``")
+    return f"`{escaped}`"
+
+
+def split_cypher_statements(script: str) -> list[tuple[int, str]]:
+    """
+    Splits a Cypher script into (start_line, statement) pairs on top-level semicolons while preserving semicolons and
+    newlines inside single-quoted strings, double-quoted strings, backtick identifiers, and -- / // / /* */ comments.
+    """
+    statements: list[tuple[int, str]] = []
+    buf: list[str] = []
+    state = "normal"
+    line_num = 1
+    stmt_start_line = 0
+    idx = 0
+    length = len(script)
+
+    while idx < length:
+        ch = script[idx]
+        nxt = script[idx + 1] if idx + 1 < length else ""
+
+        if state == "normal":
+            if ch.isspace():
+                if stmt_start_line > 0:
+                    buf.append(ch)
+                if ch == "\n":
+                    line_num += 1
+                idx += 1
+                continue
+            if (ch == "-" and nxt == "-") or (ch == "/" and nxt == "/"):
+                state = "line_comment"
+                idx += 2
+                continue
+            if ch == "/" and nxt == "*":
+                state = "block_comment"
+                if stmt_start_line > 0:
+                    buf.append(" ")
+                idx += 2
+                continue
+            if ch == ";":
+                text = "".join(buf).strip()
+                if text:
+                    statements.append((stmt_start_line or line_num, f"{text};"))
+                buf = []
+                stmt_start_line = 0
+                idx += 1
+                continue
+            if stmt_start_line == 0:
+                stmt_start_line = line_num
+            buf.append(ch)
+            if ch == "'":
+                state = "single_quote"
+            elif ch == '"':
+                state = "double_quote"
+            elif ch == "`":
+                state = "backtick"
+            idx += 1
+            continue
+
+        if state == "line_comment":
+            if ch == "\n":
+                line_num += 1
+                if stmt_start_line > 0:
+                    buf.append("\n")
+                state = "normal"
+            idx += 1
+            continue
+
+        if state == "block_comment":
+            if ch == "*" and nxt == "/":
+                state = "normal"
+                idx += 2
+                continue
+            if ch == "\n":
+                line_num += 1
+                if stmt_start_line > 0:
+                    buf.append("\n")
+            idx += 1
+            continue
+
+        if state in ("single_quote", "double_quote"):
+            quote_char = "'" if state == "single_quote" else '"'
+            buf.append(ch)
+            if ch == "\n":
+                line_num += 1
+            if ch == "\\" and idx + 1 < length:
+                esc = script[idx + 1]
+                buf.append(esc)
+                if esc == "\n":
+                    line_num += 1
+                idx += 2
+                continue
+            if ch == quote_char:
+                state = "normal"
+            idx += 1
+            continue
+
+        buf.append(ch)
+        if ch == "\n":
+            line_num += 1
+        if ch == "`":
+            if nxt == "`":
+                buf.append(nxt)
+                idx += 2
+                continue
+            state = "normal"
+        idx += 1
+
+    trailing = "".join(buf).strip()
+    if trailing:
+        statements.append((stmt_start_line or line_num, trailing))
+    return statements
 
 
 def parse_timedelta_text(text: str) -> timedelta:
@@ -138,26 +256,37 @@ def import_edge(
     return False
 
 
-def admit_cypher_import_config(config: mgp_Map) -> dict:
+def admit_cypher_import_config(config: mgp_Map, ctx: object = None) -> dict:
     """
-    Validates the cypher import target and resume line. An omitted target is GQLAlchemy's environment-configured
-    endpoint (MG_HOST, MG_PORT, MG_USERNAME, MG_PASSWORD, MG_ENCRYPT), the same one export_util.cypher_all reads.
+    Validates the cypher import target, database and resume line. An omitted target is GQLAlchemy's
+    environment-configured endpoint (MG_HOST, MG_PORT, MG_USERNAME, MG_PASSWORD, MG_ENCRYPT), the same one
+    export_util.cypher_all reads.
     """
+    raw_cfg = dict(config) if config is not None else {}
     settings = {
         "host": MG_HOST,
         "port": MG_PORT,
         "username": MG_USERNAME,
         "password": MG_PASSWORD,
         "encrypted": MG_ENCRYPTED,
+        "database": "",
         "startLine": 1,
     }
-    for key, value in dict(config).items():
+    for key, value in raw_cfg.items():
         if key not in CYPHER_IMPORT_CONFIG_TYPES:
             raise KeyError(f"Unknown cypher import config key {key!r}; expected one of {sorted(CYPHER_IMPORT_CONFIG_TYPES)}.")
         expected_type = CYPHER_IMPORT_CONFIG_TYPES.get(key, object)
         if not isinstance(value, expected_type) or (expected_type is int and isinstance(value, bool)):
             raise TypeError(f"Cypher import config {key!r} must be {expected_type.__name__}, received {value!r}.")
         settings[key] = value
+    if "database" in raw_cfg and "db" in raw_cfg and raw_cfg.get("database") != raw_cfg.get("db"):
+        raise ValueError("Cypher import config 'database' and 'db' must match when both are supplied.")
+    if "database" not in raw_cfg and "db" in raw_cfg:
+        settings["database"] = raw_cfg.get("db", "")
+    elif "database" not in raw_cfg and ctx is not None:
+        ctx_db = getattr(ctx, "database", None) or getattr(getattr(ctx, "graph", None), "database", None)
+        if isinstance(ctx_db, str) and ctx_db:
+            settings["database"] = ctx_db
     if not settings.get("host", ""):
         raise ValueError("Cypher import config 'host' must name the Memgraph instance that receives the statements.")
     if not 0 < settings.get("port", 0) < 65536:
@@ -169,7 +298,7 @@ def admit_cypher_import_config(config: mgp_Map) -> dict:
 
 def cypher(ctx: mgp_ProcCtx, path: str, config: mgp_Map = DEFAULT_CYPHER_IMPORT_CONFIG) -> mgp_Record:
     """
-    Procedure to import the one-statement-per-line Cypher created by export_util.cypher_all.
+    Procedure to import Cypher statements created by export_util.cypher_all or written across multiple lines.
     The lab import feature should be prefered.
 
     A procedure cannot run Cypher inside its calling transaction, so the statements run on a separate Bolt connection
@@ -182,21 +311,24 @@ def cypher(ctx: mgp_ProcCtx, path: str, config: mgp_Map = DEFAULT_CYPHER_IMPORT_
     path : str
         Path to the Cypher file that is being imported.
     config : Map
-        host, port, username, password, encrypted: the receiving Memgraph instance; omitted keys use GQLAlchemy's
-            MG_HOST/MG_PORT/MG_USERNAME/MG_PASSWORD/MG_ENCRYPT environment configuration.
-        startLine (int) = 1: first file line to execute, for resuming after a reported failure.
+        host, port, username, password, encrypted, database: the receiving Memgraph instance and optional database;
+            omitted keys use GQLAlchemy's MG_HOST/MG_PORT/MG_USERNAME/MG_PASSWORD/MG_ENCRYPT environment configuration.
+        startLine (int) = 1: first statement start line to execute, for resuming after a reported failure.
     """
     if config is DEFAULT_CYPHER_IMPORT_CONFIG:
         config = DEFAULT_CYPHER_IMPORT_CONFIG.copy()
-    settings = admit_cypher_import_config(config)
+    settings = admit_cypher_import_config(config, ctx=ctx)
     target = f"{settings.get('host', '')}:{settings.get('port', 0)}"
+    database = settings.get("database", "")
     start_line = settings.get("startLine", 1)
 
     try:
         with open(path, "r", encoding="utf-8") as file:
-            lines = file.readlines()
+            script = file.read()
     except OSError as err:
         raise OSError("Could not open/read file.") from err
+
+    statements = split_cypher_statements(script)
 
     try:
         connection = mgclient_connect(
@@ -212,9 +344,15 @@ def cypher(ctx: mgp_ProcCtx, path: str, config: mgp_Map = DEFAULT_CYPHER_IMPORT_
     committed = 0
     try:
         connection.autocommit = True
-        for line_number, line in enumerate(lines, start=1):
-            statement = line.strip()
-            if line_number < start_line or not statement:
+        if database:
+            cursor = connection.cursor()
+            try:
+                cursor.execute(f"USE DATABASE {cypher_identifier(database)};")
+                cursor.fetchall()
+            except mgclient_Error as err:
+                raise RuntimeError(f"Cypher import could not select database {database!r} on {target}: {err}") from err
+        for line_number, statement in statements:
+            if line_number < start_line:
                 continue
             ctx.check_must_abort()
             cursor = connection.cursor()
@@ -426,16 +564,20 @@ def set_default_keys(key_dict: dict, properties: dict[str, object], is_for: str)
 def set_default_config(config: mgp_Map) -> mgp_Map:
     if config is None:
         config = dict()
-    if not config.get("readLabels", False):
-        config.update({"readLabels": False})
-    if not config.get("defaultRelationshipType", ""):
-        config.update({"defaultRelationshipType": "RELATED"})
-    if not config.get("storeNodeIds", False):
-        config.update({"storeNodeIds": False})
-    if not config.get("source", {}):
-        config.update({"source": {}})
-    if not config.get("target", {}):
-        config.update({"target": {}})
+    else:
+        config = dict(config)
+    defaults = {
+        "readLabels": False,
+        "defaultRelationshipType": "RELATED",
+        "storeNodeIds": False,
+        "source": {},
+        "target": {},
+    }
+    for key, default_val in defaults.items():
+        if config.get(key) is None:
+            config[key] = default_val
+    if config.get("defaultRelationshipType") == "":
+        config["defaultRelationshipType"] = "RELATED"
     if (
         not isinstance(config.get("readLabels", False), bool)
         or not isinstance(config.get("defaultRelationshipType", ""), str)
@@ -445,8 +587,7 @@ def set_default_config(config: mgp_Map) -> mgp_Map:
         or (config.get("source", {}) and "label" not in config.get("source", {}).keys())
         or (config.get("target", {}) and "label" not in config.get("target", {}).keys())
     ):
-        raise TypeError("Config parameter must be a map with specific \
-             keys and values described in documentation.")
+        raise TypeError("Config parameter must be a map with specific keys and values described in documentation.")
     return config
 
 
@@ -506,8 +647,7 @@ def graphml(
         labels = []
         properties = dict()
         if config.get("readLabels", False):
-            labels = node.attrib.get("labels", "").split(":")
-            labels.pop(0)
+            labels = [lbl for lbl in node.attrib.get("labels", "").split(":") if lbl]
         if config.get("storeNodeIds", False):
             properties.update({"id": node.attrib.get("id", "")})
 
@@ -525,10 +665,10 @@ def graphml(
                     "default_value": "",
                 }
             if config.get("readLabels", False) and working_key.get("name", "") == "labels":
-                new_labels = (data.text or "").split(":")
-                new_labels.pop(0)
-                if new_labels != labels:
-                    labels = labels + new_labels
+                new_labels = [lbl for lbl in (data.text or "").split(":") if lbl]
+                for lbl in new_labels:
+                    if lbl not in labels:
+                        labels.append(lbl)
             else:
                 properties.update(
                     {

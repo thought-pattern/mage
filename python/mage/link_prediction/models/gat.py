@@ -40,7 +40,7 @@ class GAT(torch_nn.Module):
         activations: list[object] = [
             torch_nn.functional.elu for _ in range(self.num_layers - 1)
         ]  # All activations except last layer
-        activations.append(False)
+        activations.append(None)
         # Iterate through all layers
         for i in range(self.num_layers):
             gat_layer = GATConv(

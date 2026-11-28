@@ -54,9 +54,9 @@ namespace mg_cugraph {
 /// Modern cuGraph 25.x API - NO weight_t template parameter.
 /// Edge properties returned as std::vector<edge_arithmetic_property_t<edge_t>>.
 ///
-/// IMPORTANT: This function filters out isolated nodes (nodes with no edges)
-/// because cuGraph cannot handle them. A renumber map is returned that maps
-/// cuGraph's contiguous indices (0..M-1) back to original GraphView indices.
+/// All graph nodes (including isolated nodes) are mapped to contiguous
+/// cuGraph vertex indices (0..N-1), and `renumber_map` maps each cuGraph
+/// index back to the original GraphView index.
 ///
 /// Algorithms must use this renumber map to translate results back to
 /// original Memgraph node IDs via: mg_graph->GetMemgraphNodeId(renumber_map[cuGraph_idx])
@@ -89,11 +89,14 @@ auto CreateCugraphFromMemgraph(const mg_graph::GraphView<> &mg_graph, const mg_g
     mg_edges.insert(mg_edges.end(), undirected_edges.begin(), undirected_edges.end());
   }
 
-  // Step 1: Build set of connected vertices (vertices that appear in at least one edge)
-  std::set<TVertexT> connected_vertices;
+  // Step 1: Build complete set of graph vertices (including isolated vertices)
+  std::set<TVertexT> all_vertices;
+  for (const auto &node : mg_nodes) {
+    all_vertices.insert(static_cast<TVertexT>(node.id));
+  }
   for (const auto &edge : mg_edges) {
-    connected_vertices.insert(static_cast<TVertexT>(edge.from));
-    connected_vertices.insert(static_cast<TVertexT>(edge.to));
+    all_vertices.insert(static_cast<TVertexT>(edge.from));
+    all_vertices.insert(static_cast<TVertexT>(edge.to));
   }
 
   // Step 2: Create bidirectional mappings
@@ -101,10 +104,10 @@ auto CreateCugraphFromMemgraph(const mg_graph::GraphView<> &mg_graph, const mg_g
   // new_to_old (renumber_map): new contiguous index -> original GraphView index
   std::unordered_map<TVertexT, TVertexT> old_to_new;
   std::vector<TVertexT> renumber_map;  // This is what we return
-  renumber_map.reserve(connected_vertices.size());
+  renumber_map.reserve(all_vertices.size());
 
   TVertexT new_idx = 0;
-  for (TVertexT old_idx : connected_vertices) {
+  for (TVertexT old_idx : all_vertices) {
     old_to_new[old_idx] = new_idx;
     renumber_map.push_back(old_idx);
     new_idx++;
@@ -118,7 +121,7 @@ auto CreateCugraphFromMemgraph(const mg_graph::GraphView<> &mg_graph, const mg_g
   std::vector<TWeightT> mg_weight;
   mg_weight.reserve(mg_edges.size());
   std::vector<TVertexT> mg_vertices;
-  mg_vertices.reserve(connected_vertices.size());
+  mg_vertices.reserve(all_vertices.size());
 
   // Remap edges using the old_to_new mapping
   for (const auto &edge : mg_edges) {
@@ -128,7 +131,7 @@ auto CreateCugraphFromMemgraph(const mg_graph::GraphView<> &mg_graph, const mg_g
   }
 
   // Create contiguous vertex list (0..M-1)
-  for (TVertexT i = 0; i < static_cast<TVertexT>(connected_vertices.size()); i++) {
+  for (TVertexT i = 0; i < static_cast<TVertexT>(all_vertices.size()); i++) {
     mg_vertices.push_back(i);
   }
 

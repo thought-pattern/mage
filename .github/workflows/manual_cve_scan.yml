@@ -46,8 +46,8 @@ jobs:
       arch: ${{ inputs.arch }}
       image_url: ${{ inputs.image_url }}
       image_type: ${{ inputs.image_type }}
-      run_trivy: ${{ github.event.inputs.run_trivy == 'true' }}
-      run_grype: ${{ github.event.inputs.run_grype == 'true' }}
-      run_cbt: ${{ github.event.inputs.run_cbt == 'true' }}
-      send_slack_message: ${{ github.event.inputs.send_slack_message == 'true' }}
+      run_trivy: ${{ inputs.run_trivy }}
+      run_grype: ${{ inputs.run_grype }}
+      run_cbt: ${{ inputs.run_cbt }}
+      send_slack_message: ${{ inputs.send_slack_message }}
     secrets: inherit
