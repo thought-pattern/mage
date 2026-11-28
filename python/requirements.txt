@@ -8,7 +8,7 @@ filelock==4.2.12
 gekko==1.2.1
 gensim==4.3.3
 gqlalchemy==1.8.0
-huggingface-hub==2.4.0
+huggingface-hub==2.5.0
 igraph==1.0.0
 neo4j==5.28.2
 networkx==2.8.8
